@@ -1,0 +1,201 @@
+{
+    "users": [
+        {
+            "name": "Rahul Sharma",
+            "email": "rahul.sharma@example.com",
+            "username": "rahul_s",
+            "bio": "Photography enthusiast 📸 | Traveler ✈️",
+            "gender": "male",
+            "status": "active",
+            "profilePhoto": "https://i.pravatar.cc/150?u=rahul"
+        },
+        {
+            "name": "Priya Patel",
+            "email": "priya.p@example.com",
+            "username": "priya_official",
+            "bio": "Fashion Designer 👗 | Coffee Lover ☕",
+            "gender": "female",
+            "status": "active",
+            "profilePhoto": "https://i.pravatar.cc/150?u=priya"
+        },
+        {
+            "name": "Amit Kumar",
+            "email": "amit.k@example.com",
+            "username": "amit_gaming",
+            "bio": "Hardcore Gamer 🎮 | Streamer",
+            "gender": "male",
+            "status": "warned",
+            "warningCount": 2,
+            "profilePhoto": "https://i.pravatar.cc/150?u=amit"
+        },
+        {
+            "name": "Sneha Gupta",
+            "email": "sneha.g@example.com",
+            "username": "sneha_kitchen",
+            "bio": "Home Chef 🍳 | Food Blogger",
+            "gender": "female",
+            "status": "active",
+            "profilePhoto": "https://i.pravatar.cc/150?u=sneha"
+        },
+        {
+            "name": "Vikram Singh",
+            "email": "vikram.s@example.com",
+            "username": "vikram_fitness",
+            "bio": "Fitness Coach 💪 | Gym Rat",
+            "gender": "male",
+            "status": "blocked",
+            "profilePhoto": "https://i.pravatar.cc/150?u=vikram"
+        },
+        {
+            "name": "Anjali Das",
+            "email": "anjali.d@example.com",
+            "username": "anjali_art",
+            "bio": "Artist 🎨 | Painter",
+            "gender": "female",
+            "status": "active",
+            "profilePhoto": "https://i.pravatar.cc/150?u=anjali"
+        },
+        {
+            "name": "Rohan Mehta",
+            "email": "rohan.m@example.com",
+            "username": "rohan_tech",
+            "bio": "Tech Reviewer 📱 | Gadget Freak",
+            "gender": "male",
+            "status": "banned",
+            "reportCount": 15,
+            "profilePhoto": "https://i.pravatar.cc/150?u=rohan"
+        },
+        {
+            "name": "Zara Khan",
+            "email": "zara.k@example.com",
+            "username": "zara_travels",
+            "bio": "Wanderlust 🌍 | Vlogger",
+            "gender": "female",
+            "status": "active",
+            "profilePhoto": "https://i.pravatar.cc/150?u=zara"
+        }
+    ],
+    "posts": [
+        {
+            "type": "image",
+            "caption": "Beautiful sunset at Goa beach! 🌅 #vacation #goa",
+            "mediaUrl": "https://picsum.photos/seed/goa/800/600",
+            "status": "active",
+            "likesCount": 120,
+            "commentsCount": 15
+        },
+        {
+            "type": "text",
+            "caption": "Just announced my new project! Super excited for this journey. 🚀",
+            "status": "active",
+            "likesCount": 45,
+            "commentsCount": 8
+        },
+        {
+            "type": "video",
+            "caption": "My workout routine for beginners. 💪 #fitness",
+            "mediaUrl": "https://assets.mixkit.co/videos/preview/mixkit-man-working-out-in-a-gym-2362-large.mp4",
+            "status": "active",
+            "likesCount": 89,
+            "commentsCount": 22
+        },
+        {
+            "type": "doodle",
+            "caption": "Sunday creative vibes 🎨",
+            "mediaUrl": "https://picsum.photos/seed/art/600/600",
+            "status": "active",
+            "likesCount": 200,
+            "commentsCount": 30
+        },
+        {
+            "type": "image",
+            "caption": "Verified spam content detected",
+            "mediaUrl": "https://picsum.photos/seed/spam/800/600",
+            "status": "hidden",
+            "reportCount": 5
+        },
+        {
+            "type": "text",
+            "caption": "Inappropriate content that violates community guidelines.",
+            "status": "deleted",
+            "reportCount": 12
+        }
+    ],
+    "comments": [
+        {
+            "type": "text",
+            "content": "Amazing click! 😍",
+            "status": "active"
+        },
+        {
+            "type": "text",
+            "content": "Congratulations on the new project!",
+            "status": "active"
+        },
+        {
+            "type": "text",
+            "content": "This is spam, reporting.",
+            "status": "hidden"
+        },
+        {
+            "type": "emoji",
+            "content": "🔥👏",
+            "status": "active"
+        }
+    ],
+    "reports": [
+        {
+            "targetType": "post",
+            "reason": "spam",
+            "description": "This user keeps posting the same link everywhere.",
+            "status": "pending",
+            "priority": "medium"
+        },
+        {
+            "targetType": "user",
+            "reason": "hate_speech",
+            "description": "User is using abusive language in comments.",
+            "status": "reviewing",
+            "priority": "high"
+        },
+        {
+            "targetType": "post",
+            "reason": "nudity",
+            "description": "Inappropriate content in the image.",
+            "status": "resolved",
+            "priority": "high",
+            "adminNotes": "Content removed and user warned."
+        },
+        {
+            "targetType": "comment",
+            "reason": "abuse",
+            "description": "Offensive comment on my post.",
+            "status": "pending",
+            "priority": "low"
+        }
+    ],
+    "liveSessions": [
+        {
+            "title": "Evening Chat with Followers ☕",
+            "type": "video",
+            "status": "live",
+            "viewerCount": 154,
+            "startedAt": "NOW"
+        },
+        {
+            "title": "Gaming Stream - PUBG Mobile",
+            "type": "video",
+            "status": "ended",
+            "viewerCount": 0,
+            "peakViewers": 500,
+            "duration": 3600
+        },
+        {
+            "title": "Violating Content Stream",
+            "type": "video",
+            "status": "terminated",
+            "viewerCount": 0,
+            "terminationReason": "Nudity detected"
+        }
+    ]
+}

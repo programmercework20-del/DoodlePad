@@ -1,0 +1,41 @@
+{
+    "name": "admin-panel-server",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "Backend API for Admin Panel",
+    "main": "server.js",
+    "scripts": {
+        "server": "nodemon server.js",
+        "start": "node server.js",
+        "create-db": "node src/scripts/createDatabase.js",
+        "seed": "node src/scripts/seedAdmin.js",
+        "seed-data": "node src/scripts/seedFullDatabase.js"
+    },
+    "keywords": [
+        "admin",
+        "panel",
+        "api",
+        "mern"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "express": "^4.18.2",
+        "pg": "^8.11.3",
+        "pg-hstore": "^2.3.4",
+        "sequelize": "^6.35.2",
+        "jsonwebtoken": "^9.0.2",
+        "bcrypt": "^5.1.1",
+        "cookie-parser": "^1.4.6",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "multer": "^1.4.5-lts.1",
+        "helmet": "^7.1.0",
+        "express-rate-limit": "^7.1.5",
+        "compression": "^1.7.4",
+        "hpp": "^0.2.3"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.2"
+    }
+}
