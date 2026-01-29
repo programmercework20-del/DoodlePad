@@ -12,12 +12,19 @@ const startServer = async () => {
         console.log("✅ Database connection established successfully.");
 
         // Sync database models
-        // WARNING: In production, use migrations instead of sync
-        if (config.nodeEnv === "development") {
-            await sequelize.sync({ alter: true });
-            console.log("✅ Database models synchronized (Development Mode).");
-        } else {
-            console.log("ℹ️ Production Mode: Skipping auto-sync. Use migrations.");
+        // Using force: false and logging errors instead of crashing
+        try {
+            if (config.nodeEnv === "development") {
+                // Try sync without alter first to be safe, or just sync
+                // Note: 'alter: true' can cause issues with some postgres versions/drivers
+                await sequelize.sync();
+                console.log("✅ Database models synchronized.");
+            } else {
+                console.log("ℹ️ Production Mode: Skipping auto-sync. Use migrations.");
+            }
+        } catch (syncError) {
+            console.error("⚠️ Database Sync Error (Non-Fatal):", syncError.message);
+            console.log("⚠️ Continuing server startup anyway...");
         }
 
         // Start server

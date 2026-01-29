@@ -1,27 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+    fetchLiveSessions,
+    endLiveSession,
+    blockHost
+} from '@/store/slices/liveSlice';
+
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useFetch } from '@/hooks/useFetch';
-import { liveService } from '@/services/live.service';
 import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { Radio, StopCircle, Ban } from 'lucide-react';
+import PageAnimation from '@/components/common/PageAnimation';
 
 export default function LiveSessions() {
+    const dispatch = useDispatch();
+    const { liveSessions, pagination, loading, error } = useSelector((state) => state.live);
+
     const [statusFilter, setStatusFilter] = useState('live');
     const [page, setPage] = useState(1);
     const [confirmDialog, setConfirmDialog] = useState(null);
 
-    const { data, loading, refetch } = useFetch(
-        () => liveService.getAllLiveSessions({ status: statusFilter, page }),
-        [statusFilter, page]
-    );
+    useEffect(() => {
+        dispatch(fetchLiveSessions({ status: statusFilter, page }));
+    }, [dispatch, statusFilter, page]);
 
     const handleEndSession = async (id) => {
         try {
-            await liveService.endLiveSession(id, 'Terminated by admin');
-            refetch();
+            await dispatch(endLiveSession({ id, reason: 'Terminated by admin' })).unwrap();
             setConfirmDialog(null);
         } catch (err) {
             console.error('Error ending session:', err);
@@ -30,8 +37,7 @@ export default function LiveSessions() {
 
     const handleBlockHost = async (id) => {
         try {
-            await liveService.blockHost(id);
-            refetch();
+            await dispatch(blockHost(id)).unwrap();
             setConfirmDialog(null);
         } catch (err) {
             console.error('Error blocking host:', err);
@@ -40,7 +46,7 @@ export default function LiveSessions() {
 
     const getStatusBadge = (status) => {
         const variants = {
-            live: 'destructive', // Red for live
+            live: 'destructive',
             ended: 'secondary',
             terminated: 'outline',
         };
@@ -54,7 +60,7 @@ export default function LiveSessions() {
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <PageAnimation className="space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Live Sessions</h1>
                     <p className="text-gray-500 mt-1">Monitor and control live broadcasts</p>
@@ -68,7 +74,7 @@ export default function LiveSessions() {
                                 key={status}
                                 variant={statusFilter === status ? 'default' : 'outline'}
                                 size="sm"
-                                onClick={() => setStatusFilter(status)}
+                                onClick={() => { setStatusFilter(status); setPage(1); }}
                             >
                                 {status}
                             </Button>
@@ -78,13 +84,18 @@ export default function LiveSessions() {
 
                 {loading && <Loader size="lg" className="py-12" />}
 
-                {!loading && data?.liveSessions && (
+                {error && (
+                    <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
+                        Error loading sessions: {typeof error === 'string' ? error : 'Unknown error'}
+                    </div>
+                )}
+
+                {!loading && liveSessions && (
                     <>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {data.liveSessions.map((session) => (
-                                <div key={session.id} className="bg-white rounded-lg border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                            {liveSessions.map((session) => (
+                                <div key={session.id} className="bg-white rounded-lg border overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-1">
                                     <div className="bg-gray-900 h-48 relative flex items-center justify-center">
-                                        {/* Placeholder for video thumbnail since we don't have real streaming */}
                                         <div className="text-white text-center">
                                             <Radio className="h-12 w-12 mx-auto mb-2 opacity-50" />
                                             <p className="text-sm text-gray-400">Live Preview Unavailable</p>
@@ -150,17 +161,17 @@ export default function LiveSessions() {
                                 </div>
                             ))}
 
-                            {data.liveSessions.length === 0 && (
+                            {liveSessions.length === 0 && (
                                 <div className="col-span-full py-12 text-center text-gray-500">
                                     No live sessions found with status "{statusFilter}"
                                 </div>
                             )}
                         </div>
 
-                        {data.pagination && (
+                        {pagination && (
                             <div className="flex items-center justify-between mt-6">
                                 <p className="text-sm text-gray-500">
-                                    Showing {data.liveSessions.length} of {data.pagination.total} sessions
+                                    Showing {liveSessions.length} of {pagination.total} sessions
                                 </p>
                                 <div className="flex gap-2">
                                     <Button
@@ -175,7 +186,7 @@ export default function LiveSessions() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setPage(page + 1)}
-                                        disabled={page === data.pagination.pages}
+                                        disabled={page === pagination.pages}
                                     >
                                         Next
                                     </Button>
@@ -184,7 +195,7 @@ export default function LiveSessions() {
                         )}
                     </>
                 )}
-            </div>
+            </PageAnimation>
 
             {confirmDialog && (
                 <ConfirmDialog

@@ -1,24 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+    fetchUserById,
+    warnUser,
+    blockUser,
+    unblockUser,
+    banUser
+} from '@/store/slices/userSlice';
+
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useFetch } from '@/hooks/useFetch';
-import { userService } from '@/services/user.service';
 import Loader from '@/components/common/Loader';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, AlertTriangle, Ban, XCircle, CheckCircle } from 'lucide-react';
+import PageAnimation from '@/components/common/PageAnimation';
 
 export default function UserDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const dispatch = useDispatch();
+
+    // Redux State
+    const { currentUser: user, stats, loading, error } = useSelector((state) => state.users);
+
     const [confirmDialog, setConfirmDialog] = useState(null);
 
-    const { data, loading, error, refetch } = useFetch(
-        () => userService.getUserById(id),
-        [id]
-    );
+    // Fetch user on mount
+    useEffect(() => {
+        if (id) {
+            dispatch(fetchUserById(id));
+        }
+    }, [dispatch, id]);
 
     const handleAction = async (action, confirmConfig) => {
         setConfirmDialog(confirmConfig);
@@ -26,14 +41,18 @@ export default function UserDetails() {
 
     const executeAction = async (actionFn) => {
         try {
-            await actionFn();
-            refetch();
+            await dispatch(actionFn).unwrap();
+            // Refetch can be skipped if Redux state is updated optimistically, 
+            // but for safety we can refetch or just rely on state update from thunk
+            // dispatch(fetchUserById(id)); 
+            // The thunks inside userSlice already return updated status, 
+            // and the reducer updates currentUser, so no refetch needed!
         } catch (err) {
             console.error('Action failed:', err);
         }
     };
 
-    if (loading) {
+    if (loading && !user) {
         return (
             <AdminLayout>
                 <Loader size="lg" className="h-full" />
@@ -41,22 +60,19 @@ export default function UserDetails() {
         );
     }
 
-    if (error || !data?.user) {
+    if (error || !user) {
         return (
             <AdminLayout>
                 <div className="flex items-center justify-center h-full">
-                    <p className="text-destructive">Error loading user details</p>
+                    <p className="text-destructive">Error loading user details: {typeof error === 'string' ? error : 'Not found'}</p>
                 </div>
             </AdminLayout>
         );
     }
 
-    const user = data.user;
-    const stats = data.stats;
-
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <PageAnimation className="space-y-6">
                 <div className="flex items-center gap-4">
                     <Button variant="outline" size="icon" onClick={() => navigate('/users')}>
                         <ArrowLeft className="h-4 w-4" />
@@ -68,16 +84,26 @@ export default function UserDetails() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <Card className="lg:col-span-2">
+                    <Card className="lg:col-span-2 shadow-sm">
                         <CardHeader>
                             <CardTitle>User Information</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="flex items-center gap-4">
                                 <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
-                                    <span className="text-2xl font-bold">
-                                        {user.name.charAt(0).toUpperCase()}
-                                    </span>
+                                    <div className="flex items-center justify-center rounded-full bg-gray-200 overflow-hidden text-gray-700 w-full h-full">
+                                        {user.profilePhoto ? (
+                                            <img
+                                                className='rounded-full h-full w-full object-cover'
+                                                src={user.profilePhoto}
+                                                alt="User Profile"
+                                            />
+                                        ) : (
+                                            <span className="text-xl font-bold uppercase">
+                                                {user.name?.charAt(0)}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div>
                                     <h2 className="text-2xl font-bold">{user.name}</h2>
@@ -114,7 +140,7 @@ export default function UserDetails() {
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card className="shadow-sm">
                         <CardHeader>
                             <CardTitle>Statistics</CardTitle>
                         </CardHeader>
@@ -135,7 +161,7 @@ export default function UserDetails() {
                     </Card>
                 </div>
 
-                <Card>
+                <Card className="shadow-sm">
                     <CardHeader>
                         <CardTitle>Moderation Actions</CardTitle>
                     </CardHeader>
@@ -148,7 +174,7 @@ export default function UserDetails() {
                                         title: 'Warn User',
                                         description: 'This will send a warning to the user.',
                                         confirmText: 'Warn',
-                                        onConfirm: () => executeAction(() => userService.warnUser(id, 'Admin warning')),
+                                        onConfirm: () => executeAction(() => warnUser({ id, reason: 'Admin warning' })),
                                         variant: 'default',
                                     })
                                 }
@@ -166,7 +192,7 @@ export default function UserDetails() {
                                         title: 'Block User',
                                         description: 'This will temporarily block the user from accessing the platform.',
                                         confirmText: 'Block',
-                                        onConfirm: () => executeAction(() => userService.blockUser(id, 'Admin block')),
+                                        onConfirm: () => executeAction(() => blockUser({ id, reason: 'Admin block' })),
                                         variant: 'destructive',
                                     })
                                 }
@@ -184,7 +210,7 @@ export default function UserDetails() {
                                         title: 'Ban User Permanently',
                                         description: 'This will permanently ban the user. This action is severe.',
                                         confirmText: 'Ban Permanently',
-                                        onConfirm: () => executeAction(() => userService.banUser(id, 'Admin ban')),
+                                        onConfirm: () => executeAction(() => banUser({ id, reason: 'Admin ban' })),
                                         variant: 'destructive',
                                     })
                                 }
@@ -202,7 +228,7 @@ export default function UserDetails() {
                                         title: 'Unblock User',
                                         description: 'This will restore the user\'s access.',
                                         confirmText: 'Unblock',
-                                        onConfirm: () => executeAction(() => userService.unblockUser(id)),
+                                        onConfirm: () => executeAction(() => unblockUser(id)),
                                         variant: 'default',
                                     })
                                 }
@@ -213,7 +239,7 @@ export default function UserDetails() {
                         )}
                     </CardContent>
                 </Card>
-            </div>
+            </PageAnimation>
 
             {confirmDialog && (
                 <ConfirmDialog

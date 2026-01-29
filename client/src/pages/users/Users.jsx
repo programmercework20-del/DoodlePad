@@ -1,28 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
+import { Search } from 'lucide-react';
+
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useFetch } from '@/hooks/useFetch';
-import { userService } from '@/services/user.service';
 import Loader from '@/components/common/Loader';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import PageAnimation from '@/components/common/PageAnimation';
+
+import { fetchUsers } from '@/store/slices/userSlice';
 
 export default function Users() {
+    const dispatch = useDispatch();
+    const { users, pagination, loading, error } = useSelector((state) => state.users);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
 
-    const { data, loading, error, refetch } = useFetch(
-        () => userService.getAllUsers({ search: searchQuery, status: statusFilter, page }),
-        [searchQuery, statusFilter, page]
-    );
+    // Fetch users when params change
+    useEffect(() => {
+        dispatch(fetchUsers({ search: searchQuery, status: statusFilter, page }));
+    }, [dispatch, searchQuery, statusFilter, page]);
 
     const handleSearch = (e) => {
         e.preventDefault();
         setPage(1);
-        refetch();
+        dispatch(fetchUsers({ search: searchQuery, status: statusFilter, page: 1 }));
     };
 
     const getStatusBadge = (status) => {
@@ -38,7 +44,7 @@ export default function Users() {
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <PageAnimation className="space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
                     <p className="text-gray-500 mt-1">Monitor and manage all users</p>
@@ -63,35 +69,35 @@ export default function Users() {
                         <Button
                             variant={statusFilter === '' ? 'default' : 'outline'}
                             size="sm"
-                            onClick={() => setStatusFilter('')}
+                            onClick={() => { setStatusFilter(''); setPage(1); }}
                         >
                             All
                         </Button>
                         <Button
                             variant={statusFilter === 'active' ? 'default' : 'outline'}
                             size="sm"
-                            onClick={() => setStatusFilter('active')}
+                            onClick={() => { setStatusFilter('active'); setPage(1); }}
                         >
                             Active
                         </Button>
                         <Button
                             variant={statusFilter === 'warned' ? 'default' : 'outline'}
                             size="sm"
-                            onClick={() => setStatusFilter('warned')}
+                            onClick={() => { setStatusFilter('warned'); setPage(1); }}
                         >
                             Warned
                         </Button>
                         <Button
                             variant={statusFilter === 'blocked' ? 'default' : 'outline'}
                             size="sm"
-                            onClick={() => setStatusFilter('blocked')}
+                            onClick={() => { setStatusFilter('blocked'); setPage(1); }}
                         >
                             Blocked
                         </Button>
                         <Button
                             variant={statusFilter === 'banned' ? 'default' : 'outline'}
                             size="sm"
-                            onClick={() => setStatusFilter('banned')}
+                            onClick={() => { setStatusFilter('banned'); setPage(1); }}
                         >
                             Banned
                         </Button>
@@ -102,13 +108,13 @@ export default function Users() {
 
                 {error && (
                     <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
-                        Error loading users
+                        Error loading users: {typeof error === 'string' ? error : 'Unknown error'}
                     </div>
                 )}
 
-                {!loading && data?.users && (
+                {!loading && users && (
                     <>
-                        <div className="bg-white rounded-lg border overflow-hidden">
+                        <div className="bg-white rounded-lg border overflow-hidden transition-all duration-300 hover:shadow-md">
                             <table className="w-full">
                                 <thead className="bg-gray-50 border-b">
                                     <tr>
@@ -120,14 +126,24 @@ export default function Users() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {data.users.map((user) => (
-                                        <tr key={user.id} className="hover:bg-gray-50">
+                                    {users.map((user) => (
+                                        <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center">
                                                     <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                                        <span className="text-sm font-medium">
-                                                            {user.name.charAt(0).toUpperCase()}
-                                                        </span>
+                                                        <div className="flex items-center justify-center rounded-full bg-gray-200 overflow-hidden text-gray-700 w-full h-full">
+                                                            {user.profilePhoto ? (
+                                                                <img
+                                                                    className='w-full h-full object-cover rounded-full'
+                                                                    src={user.profilePhoto}
+                                                                    alt="User Profile"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-sm font-bold uppercase">
+                                                                    {user.name?.charAt(0)}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     <div className="ml-3">
                                                         <p className="font-medium">{user.name}</p>
@@ -151,10 +167,10 @@ export default function Users() {
                             </table>
                         </div>
 
-                        {data.pagination && (
-                            <div className="flex items-center justify-between">
+                        {pagination && (
+                            <div className="flex items-center justify-between mt-4">
                                 <p className="text-sm text-gray-500">
-                                    Showing {data.users.length} of {data.pagination.total} users
+                                    Showing {users.length} of {pagination.total} users
                                 </p>
                                 <div className="flex gap-2">
                                     <Button
@@ -169,7 +185,7 @@ export default function Users() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setPage(page + 1)}
-                                        disabled={page === data.pagination.pages}
+                                        disabled={page === pagination?.pages}
                                     >
                                         Next
                                     </Button>
@@ -178,7 +194,7 @@ export default function Users() {
                         )}
                     </>
                 )}
-            </div>
+            </PageAnimation>
         </AdminLayout>
     );
 }

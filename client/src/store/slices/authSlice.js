@@ -21,7 +21,11 @@ export const verifyAuth = createAsyncThunk(
             const response = await authService.verify();
             return response.data;
         } catch (error) {
-            return rejectWithValue(error.response?.data?.message || 'Verification failed');
+            // Pass status code to handle logout logic
+            return rejectWithValue({
+                message: error.response?.data?.message || 'Verification failed',
+                status: error.response?.status
+            });
         }
     }
 );
@@ -105,13 +109,23 @@ const authSlice = createSlice({
                 state.admin = action.payload.data;
                 // Verify assumes token is valid, so we don't need to update it unless it changed
             })
-            .addCase(verifyAuth.rejected, (state) => {
+            .addCase(verifyAuth.rejected, (state, action) => {
                 state.loading = false;
-                state.isAuthenticated = false;
-                state.admin = null;
-                state.token = null;
-                localStorage.removeItem('token');
-                localStorage.removeItem('admin');
+
+                // Only logout if explicit auth error (401/403)
+                // If it's a network error or server error (500), keep the session for retry
+                if (action.payload?.status === 401 || action.payload?.status === 403) {
+                    state.isAuthenticated = false;
+                    state.admin = null;
+                    state.token = null;
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('admin');
+                } else {
+                    // Start in error state but don't wipe data
+                    // This prevents logout on refresh if server is down
+                    console.warn("Verify Auth Failed (Server Issue?), keeping session.", action.payload);
+                    state.error = action.payload?.message || "Session verification failed";
+                }
             })
             // Logout
             .addCase(logoutAdmin.fulfilled, (state) => {

@@ -1,24 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+    fetchMessages,
+    flagMessage,
+    deleteMessage
+} from '@/store/slices/messageSlice';
+
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useFetch } from '@/hooks/useFetch';
-import { messageService } from '@/services/message.service';
 import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, Trash2, Flag, Lock } from 'lucide-react';
+import PageAnimation from '@/components/common/PageAnimation';
 
 export default function Messages() {
+    const dispatch = useDispatch();
+    const { messages, pagination, loading, error } = useSelector((state) => state.messages);
+
     const [page, setPage] = useState(1);
 
-    const { data, loading, refetch } = useFetch(
-        () => messageService.getReportedMessages({ page }),
-        [page]
-    );
+    useEffect(() => {
+        dispatch(fetchMessages({ page }));
+    }, [dispatch, page]);
 
     const handleFlagMessage = async (id) => {
         try {
-            await messageService.flagMessage(id);
-            refetch();
+            await dispatch(flagMessage(id)).unwrap();
         } catch (err) {
             console.error('Error flagging message:', err);
         }
@@ -26,8 +33,7 @@ export default function Messages() {
 
     const handleDeleteMessage = async (id) => {
         try {
-            await messageService.deleteMessage(id);
-            refetch();
+            await dispatch(deleteMessage(id)).unwrap();
         } catch (err) {
             console.error('Error deleting message:', err);
         }
@@ -35,7 +41,7 @@ export default function Messages() {
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <PageAnimation className="space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Message Monitoring</h1>
                     <p className="text-gray-500 mt-1">Review reported messages (Privacy Focused)</p>
@@ -54,9 +60,9 @@ export default function Messages() {
 
                 {loading && <Loader size="lg" className="py-12" />}
 
-                {!loading && data?.messages && (
+                {!loading && messages && (
                     <>
-                        <div className="bg-white rounded-lg border overflow-hidden">
+                        <div className="bg-white rounded-lg border overflow-hidden transition-all duration-300 hover:shadow-md">
                             <table className="w-full">
                                 <thead className="bg-gray-50 border-b">
                                     <tr>
@@ -68,8 +74,8 @@ export default function Messages() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {data.messages.map((message) => (
-                                        <tr key={message.id} className="hover:bg-gray-50">
+                                    {messages.map((message) => (
+                                        <tr key={message.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div>
                                                     <p className="font-medium text-sm">{message.sender?.name}</p>
@@ -101,7 +107,7 @@ export default function Messages() {
                                             </td>
                                         </tr>
                                     ))}
-                                    {data.messages.length === 0 && (
+                                    {messages.length === 0 && (
                                         <tr>
                                             <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                                                 No reported messages found.
@@ -112,10 +118,10 @@ export default function Messages() {
                             </table>
                         </div>
 
-                        {data.pagination && (
-                            <div className="flex items-center justify-between">
+                        {pagination && (
+                            <div className="flex items-center justify-between mt-4">
                                 <p className="text-sm text-gray-500">
-                                    Showing {data.messages.length} of {data.pagination.total} messages
+                                    Showing {messages.length} of {pagination.total} messages
                                 </p>
                                 <div className="flex gap-2">
                                     <Button
@@ -130,7 +136,7 @@ export default function Messages() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setPage(page + 1)}
-                                        disabled={page === data.pagination.pages}
+                                        disabled={page === pagination.pages}
                                     >
                                         Next
                                     </Button>
@@ -139,7 +145,7 @@ export default function Messages() {
                         )}
                     </>
                 )}
-            </div>
+            </PageAnimation>
         </AdminLayout>
     );
 }

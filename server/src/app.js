@@ -19,23 +19,7 @@ import analyticsRoutes from './routes/analytics.routes.js';
 
 const app = express();
 
-// Security Middleware
-app.use(helmet()); // Set security headers
-app.use(hpp()); // Prevent HTTP Parameter Pollution
-app.use(compression()); // Compress response bodies
-
-// Rate Limiting
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
-    message: {
-        success: false,
-        message: "Too many requests from this IP, please try again later."
-    }
-});
-app.use('/api', limiter);
-
-// Middleware
+// Middleware - CORS must be first
 app.use(
     cors({
         origin: config.clientUrl,
@@ -44,6 +28,22 @@ app.use(
         allowedHeaders: ['Content-Type', 'Authorization']
     })
 );
+
+// Security Middleware
+app.use(helmet()); // Set security headers
+app.use(hpp()); // Prevent HTTP Parameter Pollution
+app.use(compression()); // Compress response bodies
+
+// Rate Limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // Limit each IP to 1000 requests per windowMs (Increased for Admin Panel)
+    message: {
+        success: false,
+        message: "Too many requests from this IP, please try again later."
+    }
+});
+app.use('/api', limiter);
 
 app.use(express.json({ limit: '10kb' })); // Body limit is 10kb
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));

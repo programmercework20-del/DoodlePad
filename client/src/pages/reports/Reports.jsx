@@ -1,28 +1,36 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+    fetchReports,
+    updateReportStatus
+} from '@/store/slices/reportSlice';
+
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useFetch } from '@/hooks/useFetch';
-import { reportService } from '@/services/report.service';
 import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import PageAnimation from '@/components/common/PageAnimation';
 
 export default function Reports() {
+    const dispatch = useDispatch();
+    const { reports, pagination, loading, error } = useSelector((state) => state.reports);
+
     const [statusFilter, setStatusFilter] = useState('pending');
     const [priorityFilter, setPriorityFilter] = useState('');
     const [page, setPage] = useState(1);
     const [confirmDialog, setConfirmDialog] = useState(null);
 
-    const { data, loading, refetch } = useFetch(
-        () => reportService.getAllReports({ status: statusFilter, priority: priorityFilter, page }),
-        [statusFilter, priorityFilter, page]
-    );
+    useEffect(() => {
+        dispatch(fetchReports({ status: statusFilter, priority: priorityFilter, page }));
+    }, [dispatch, statusFilter, priorityFilter, page]);
 
     const handleUpdateStatus = async (id, status) => {
         try {
-            await reportService.updateStatus(id, status);
-            refetch();
+            await dispatch(updateReportStatus({ id, status })).unwrap();
             setConfirmDialog(null);
+            // No need to manual refetch if optimistic update or re-fetch logic is not critical immediately 
+            // (or if thunk updates state). My reportSlice updates state locally on fulfill.
         } catch (err) {
             console.error('Error updating status:', err);
         }
@@ -49,7 +57,7 @@ export default function Reports() {
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <PageAnimation className="space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Reports Management</h1>
                     <p className="text-gray-500 mt-1">Review and handle user reports</p>
@@ -63,7 +71,7 @@ export default function Reports() {
                                 key={status}
                                 variant={statusFilter === status ? 'default' : 'outline'}
                                 size="sm"
-                                onClick={() => setStatusFilter(status)}
+                                onClick={() => { setStatusFilter(status); setPage(1); }}
                             >
                                 {status}
                             </Button>
@@ -77,7 +85,7 @@ export default function Reports() {
                                 key={priority}
                                 variant={priorityFilter === priority ? 'default' : 'outline'}
                                 size="sm"
-                                onClick={() => setPriorityFilter(priority)}
+                                onClick={() => { setPriorityFilter(priority); setPage(1); }}
                             >
                                 {priority || 'All'}
                             </Button>
@@ -87,9 +95,15 @@ export default function Reports() {
 
                 {loading && <Loader size="lg" className="py-12" />}
 
-                {!loading && data?.reports && (
+                {error && (
+                    <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
+                        Error loading reports: {typeof error === 'string' ? error : 'Unknown error'}
+                    </div>
+                )}
+
+                {!loading && reports && (
                     <>
-                        <div className="bg-white rounded-lg border overflow-hidden">
+                        <div className="bg-white rounded-lg border overflow-hidden transition-all duration-300 hover:shadow-md">
                             <table className="w-full">
                                 <thead className="bg-gray-50 border-b">
                                     <tr>
@@ -102,8 +116,8 @@ export default function Reports() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {data.reports.map((report) => (
-                                        <tr key={report.id} className="hover:bg-gray-50">
+                                    {reports.map((report) => (
+                                        <tr key={report.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 text-sm">{report.reporter?.name}</td>
                                             <td className="px-6 py-4">
                                                 <Badge variant="outline">{report.targetType}</Badge>
@@ -155,10 +169,10 @@ export default function Reports() {
                             </table>
                         </div>
 
-                        {data.pagination && (
-                            <div className="flex items-center justify-between">
+                        {pagination && (
+                            <div className="flex items-center justify-between mt-4">
                                 <p className="text-sm text-gray-500">
-                                    Showing {data.reports.length} of {data.pagination.total} reports
+                                    Showing {reports.length} of {pagination.total} reports
                                 </p>
                                 <div className="flex gap-2">
                                     <Button
@@ -173,7 +187,7 @@ export default function Reports() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setPage(page + 1)}
-                                        disabled={page === data.pagination.pages}
+                                        disabled={page === pagination.pages}
                                     >
                                         Next
                                     </Button>
@@ -182,15 +196,15 @@ export default function Reports() {
                         )}
                     </>
                 )}
-            </div>
 
-            {confirmDialog && (
-                <ConfirmDialog
-                    open={!!confirmDialog}
-                    onOpenChange={(open) => !open && setConfirmDialog(null)}
-                    {...confirmDialog}
-                />
-            )}
+                {confirmDialog && (
+                    <ConfirmDialog
+                        open={!!confirmDialog}
+                        onOpenChange={(open) => !open && setConfirmDialog(null)}
+                        {...confirmDialog}
+                    />
+                )}
+            </PageAnimation>
         </AdminLayout>
     );
 }

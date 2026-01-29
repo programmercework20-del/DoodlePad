@@ -1,42 +1,61 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { useFetch } from '@/hooks/useFetch';
-import { analyticsService } from '@/services/analytics.service';
+import { useSelector, useDispatch } from 'react-redux';
+import { fetchDashboardStats } from '@/store/slices/analyticsSlice';
+
 import AdminLayout from '@/components/layout/AdminLayout';
 import StatCard from '@/components/cards/StatCard';
 import Loader from '@/components/common/Loader';
-import { Users, FileText, Flag, Radio } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import PageAnimation from '@/components/common/PageAnimation';
+
+import { Users, FileText, Flag, Radio, RefreshCcw } from 'lucide-react';
 import gsap from 'gsap';
 
+const formatNumber = (num) => Number(num || 0).toLocaleString();
+
 export default function Dashboard() {
-    const { isAuthenticated, loading: authLoading } = useSelector((state) => state.auth);
+    const dispatch = useDispatch();
     const navigate = useNavigate();
 
-    const { data: stats, loading, error } = useFetch(
-        () => analyticsService.getDashboardStats(),
-        []
-    );
+    // Redux Selectors
+    const { isAuthenticated, loading: authLoading } = useSelector((state) => state.auth);
+    const { stats, loading: statsLoading, error } = useSelector((state) => state.analytics);
 
+    /* 🔐 Auth Guard */
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
-            navigate('/login');
+            navigate('/login', { replace: true });
         }
-    }, [isAuthenticated, authLoading, navigate]);
+    }, [authLoading, isAuthenticated, navigate]);
 
+    /* 📩 Fetch Data */
+    useEffect(() => {
+        if (isAuthenticated) {
+            dispatch(fetchDashboardStats());
+        }
+    }, [dispatch, isAuthenticated]);
+
+    /* 🎬 GSAP Animation */
     useEffect(() => {
         if (stats) {
-            gsap.from('.stat-card', {
-                y: 40,
-                opacity: 0,
-                stagger: 0.1,
-                duration: 0.6,
-                ease: 'power3.out',
+            const ctx = gsap.context(() => {
+                gsap.from('.stat-card', {
+                    y: 30,
+                    opacity: 0,
+                    stagger: 0.12,
+                    duration: 0.6,
+                    ease: 'power3.out',
+                });
             });
+            return () => ctx.revert();
         }
     }, [stats]);
 
-    if (authLoading || loading) {
+    const isLoading = authLoading || (statsLoading && !stats); // Only show loader if no stats yet
+
+    /* 🚫 Loading */
+    if (isLoading) {
         return (
             <AdminLayout>
                 <Loader size="lg" className="h-full" />
@@ -44,11 +63,18 @@ export default function Dashboard() {
         );
     }
 
-    if (error) {
+    /* ❌ Error */
+    if (error && !stats) {
         return (
             <AdminLayout>
-                <div className="flex items-center justify-center h-full">
-                    <p className="text-destructive">Error loading dashboard data</p>
+                <div className="flex flex-col items-center justify-center h-full gap-4">
+                    <p className="text-destructive font-medium">
+                        Failed to load dashboard data: {typeof error === 'string' ? error : 'Unknown error'}
+                    </p>
+                    <Button variant="outline" onClick={() => dispatch(fetchDashboardStats())}>
+                        <RefreshCcw className="w-4 h-4 mr-2" />
+                        Retry
+                    </Button>
                 </div>
             </AdminLayout>
         );
@@ -56,89 +82,116 @@ export default function Dashboard() {
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-                    <p className="text-gray-500 mt-1">Monitor and manage your platform</p>
+            <PageAnimation className="space-y-6 animate-in fade-in duration-500">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+                        <p className="text-gray-500 mt-1">
+                            Monitor and manage your platform
+                        </p>
+                    </div>
+
+                    <Button variant="outline" size="sm" onClick={() => dispatch(fetchDashboardStats())}>
+                        <RefreshCcw className="w-4 h-4 mr-2" />
+                        Refresh
+                    </Button>
                 </div>
 
+                {/* Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatCard
                         className="stat-card"
                         title="Total Users"
-                        value={stats?.users?.total?.toLocaleString() || '0'}
+                        value={formatNumber(stats?.users?.total)}
                         icon={Users}
                         trend="up"
                         trendValue={`+${stats?.users?.newToday || 0} today`}
                     />
+
                     <StatCard
                         className="stat-card"
                         title="Total Posts"
-                        value={stats?.posts?.total?.toLocaleString() || '0'}
+                        value={formatNumber(stats?.posts?.total)}
                         icon={FileText}
                     />
+
                     <StatCard
                         className="stat-card"
                         title="Pending Reports"
-                        value={stats?.reports?.pending?.toLocaleString() || '0'}
+                        value={formatNumber(stats?.reports?.pending)}
                         icon={Flag}
                         trend="up"
                         trendValue={`${stats?.reports?.highPriority || 0} high priority`}
                     />
+
                     <StatCard
                         className="stat-card"
                         title="Active Lives"
-                        value={stats?.live?.active?.toLocaleString() || '0'}
+                        value={formatNumber(stats?.live?.active)}
                         icon={Radio}
                     />
                 </div>
 
+                {/* Details */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* User Status */}
                     <div className="bg-white rounded-lg border p-6">
                         <h3 className="text-lg font-semibold mb-4">User Status</h3>
+
                         <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Active Users</span>
-                                <span className="font-semibold">{stats?.users?.active || 0}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Warned Users</span>
-                                <span className="font-semibold text-yellow-600">{stats?.users?.warned || 0}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Blocked Users</span>
-                                <span className="font-semibold text-orange-600">{stats?.users?.blocked || 0}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Banned Users</span>
-                                <span className="font-semibold text-red-600">{stats?.users?.banned || 0}</span>
-                            </div>
+                            <StatusRow label="Active Users" value={stats?.users?.active} />
+                            <StatusRow
+                                label="Warned Users"
+                                value={stats?.users?.warned}
+                                color="text-yellow-600"
+                            />
+                            <StatusRow
+                                label="Blocked Users"
+                                value={stats?.users?.blocked}
+                                color="text-orange-600"
+                            />
+                            <StatusRow
+                                label="Banned Users"
+                                value={stats?.users?.banned}
+                                color="text-red-600"
+                            />
                         </div>
                     </div>
 
+                    {/* Content Overview */}
                     <div className="bg-white rounded-lg border p-6">
                         <h3 className="text-lg font-semibold mb-4">Content Overview</h3>
+
                         <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Active Posts</span>
-                                <span className="font-semibold">{stats?.posts?.active || 0}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Hidden Posts</span>
-                                <span className="font-semibold text-orange-600">{stats?.posts?.hidden || 0}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Deleted Posts</span>
-                                <span className="font-semibold text-red-600">{stats?.posts?.deleted || 0}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Total Lives</span>
-                                <span className="font-semibold">{stats?.live?.total || 0}</span>
-                            </div>
+                            <StatusRow label="Active Posts" value={stats?.posts?.active} />
+                            <StatusRow
+                                label="Hidden Posts"
+                                value={stats?.posts?.hidden}
+                                color="text-orange-600"
+                            />
+                            <StatusRow
+                                label="Deleted Posts"
+                                value={stats?.posts?.deleted}
+                                color="text-red-600"
+                            />
+                            <StatusRow label="Total Lives" value={stats?.live?.total} />
                         </div>
                     </div>
                 </div>
-            </div>
+            </PageAnimation>
         </AdminLayout>
+    );
+}
+
+/* 🔁 Reusable row */
+function StatusRow({ label, value, color = '' }) {
+    return (
+        <div className="flex justify-between items-center">
+            <span className="text-sm text-gray-600">{label}</span>
+            <span className={`font-semibold ${color}`}>
+                {Number(value || 0).toLocaleString()}
+            </span>
+        </div>
     );
 }

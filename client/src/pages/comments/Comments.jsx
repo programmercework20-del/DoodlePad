@@ -1,27 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+    fetchComments,
+    hideComment,
+    deleteComment
+} from '@/store/slices/commentSlice';
+
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useFetch } from '@/hooks/useFetch';
-import { commentService } from '@/services/comment.service';
 import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { Trash2, EyeOff } from 'lucide-react';
+import PageAnimation from '@/components/common/PageAnimation';
 
 export default function Comments() {
+    const dispatch = useDispatch();
+    const { comments, pagination, loading, error } = useSelector((state) => state.comments);
+
     const [statusFilter, setStatusFilter] = useState('active');
     const [page, setPage] = useState(1);
     const [confirmDialog, setConfirmDialog] = useState(null);
 
-    const { data, loading, refetch } = useFetch(
-        () => commentService.getAllComments({ status: statusFilter, page }),
-        [statusFilter, page]
-    );
+    useEffect(() => {
+        dispatch(fetchComments({ status: statusFilter, page }));
+    }, [dispatch, statusFilter, page]);
 
     const handleHideComment = async (id) => {
         try {
-            await commentService.hideComment(id);
-            refetch();
+            await dispatch(hideComment(id)).unwrap();
         } catch (err) {
             console.error('Error hiding comment:', err);
         }
@@ -29,8 +36,7 @@ export default function Comments() {
 
     const handleDeleteComment = async (id) => {
         try {
-            await commentService.deleteComment(id);
-            refetch();
+            await dispatch(deleteComment(id)).unwrap();
             setConfirmDialog(null);
         } catch (err) {
             console.error('Error deleting comment:', err);
@@ -48,7 +54,7 @@ export default function Comments() {
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <PageAnimation className="space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Comment Moderation</h1>
                     <p className="text-gray-500 mt-1">Manage and moderate user comments</p>
@@ -62,7 +68,7 @@ export default function Comments() {
                                 key={status}
                                 variant={statusFilter === status ? 'default' : 'outline'}
                                 size="sm"
-                                onClick={() => setStatusFilter(status)}
+                                onClick={() => { setStatusFilter(status); setPage(1); }}
                             >
                                 {status}
                             </Button>
@@ -72,9 +78,15 @@ export default function Comments() {
 
                 {loading && <Loader size="lg" className="py-12" />}
 
-                {!loading && data?.comments && (
+                {error && (
+                    <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
+                        Error loading comments: {typeof error === 'string' ? error : 'Unknown error'}
+                    </div>
+                )}
+
+                {!loading && comments && (
                     <>
-                        <div className="bg-white rounded-lg border overflow-hidden">
+                        <div className="bg-white rounded-lg border overflow-hidden transition-all duration-300 hover:shadow-md">
                             <table className="w-full">
                                 <thead className="bg-gray-50 border-b">
                                     <tr>
@@ -86,8 +98,8 @@ export default function Comments() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {data.comments.map((comment) => (
-                                        <tr key={comment.id} className="hover:bg-gray-50">
+                                    {comments.map((comment) => (
+                                        <tr key={comment.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">
                                                     {comment.author?.profilePhoto && (
@@ -127,7 +139,7 @@ export default function Comments() {
                                             </td>
                                         </tr>
                                     ))}
-                                    {data.comments.length === 0 && (
+                                    {comments.length === 0 && (
                                         <tr>
                                             <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                                                 No comments found with status "{statusFilter}"
@@ -138,10 +150,10 @@ export default function Comments() {
                             </table>
                         </div>
 
-                        {data.pagination && (
-                            <div className="flex items-center justify-between">
+                        {pagination && (
+                            <div className="flex items-center justify-between mt-4">
                                 <p className="text-sm text-gray-500">
-                                    Showing {data.comments.length} of {data.pagination.total} comments
+                                    Showing {comments.length} of {pagination.total} comments
                                 </p>
                                 <div className="flex gap-2">
                                     <Button
@@ -156,7 +168,7 @@ export default function Comments() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setPage(page + 1)}
-                                        disabled={page === data.pagination.pages}
+                                        disabled={page === pagination.pages}
                                     >
                                         Next
                                     </Button>
@@ -165,7 +177,7 @@ export default function Comments() {
                         )}
                     </>
                 )}
-            </div>
+            </PageAnimation>
 
             {confirmDialog && (
                 <ConfirmDialog
