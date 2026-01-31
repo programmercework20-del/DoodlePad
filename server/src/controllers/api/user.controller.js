@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+// import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../../models/User.js";
 
@@ -101,6 +102,13 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid password" });
     }
 
+    if (user.status !== "active") {
+  return res.status(403).json({
+    message: "Account is blocked or banned"
+  });
+}
+
+
     const token = jwt.sign(
       { id: user.id },
       process.env.JWT_SECRET,
@@ -124,3 +132,68 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Login failed" });
   }
 };
+
+
+export const changePassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    console.log("data mila:", req.body);
+
+    const user = await User.findByPk(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 🔥 CORRECT bcrypt compare
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Old password incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await user.update({ password: hashedPassword });
+
+    res.json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ message: "Failed to change password" });
+  }
+};
+
+
+
+//update profile 
+export const updateMyProfile = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const {
+      name,
+      profilePhoto,
+      bio,
+      dateOfBirth,
+      gender
+    } = req.body;
+
+    await user.update({
+      name,
+      profilePhoto,
+      bio,
+      dateOfBirth,
+      gender
+    });
+
+    res.json({ message: "Profile updated successfully" });
+
+  } catch (error) {
+    console.error("UPDATE PROFILE ERROR:", error);
+    res.status(500).json({ message: "Profile update failed" });
+  }
+};
+
