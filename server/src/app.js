@@ -179,6 +179,10 @@ app.get("/health", (req, res) => {
     });
 });
 
+//static serve 
+app.use("/uploads", express.static("uploads"));
+
+
 // ✅ API routes
 app.use("/api", apiRoutes);
 app.use("/api/admin", adminRoutes);
