@@ -3,51 +3,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../../models/User.js";
 
-// export const signup = async (req, res) => {
-//   try {
-//     const { email, username, name, password } = req.body;
-
-//     const existingUser = await User.findOne({ where: { email } });
-//     if (existingUser) {
-//       return res.status(400).json({ message: "Email already exists" });
-//     }
-
-//     const hashedPassword = await bcrypt.hash(password, 10);
-
-//     const user = await User.create({
-//       email,
-//       username,
-//       name,
-//       password: hashedPassword
-//     });
-
-//     return res.status(201).json({
-//       message: "Signup successful",
-//       user: {
-//         id: user.id,
-//         email: user.email,
-//         username: user.username
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: "Signup failed" });
-//   }
-// };
-
 export const signup = async (req, res) => {
   try {
-    const {
-      email,
-      username,
-      name,
-      password,
-      profilePhoto,
-      bio,
-      dateOfBirth,
-      gender
-    } = req.body;
+    const { email, username, name, password } = req.body;
 
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
@@ -60,11 +18,7 @@ export const signup = async (req, res) => {
       email,
       username,
       name,
-      password: hashedPassword,
-      profilePhoto,
-      bio,
-      dateOfBirth,
-      gender
+      password: hashedPassword
     });
 
     return res.status(201).json({
@@ -72,12 +26,7 @@ export const signup = async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        username: user.username,
-        name: user.name,
-        profilePhoto: user.profilePhoto,
-        bio: user.bio,
-        dateOfBirth: user.dateOfBirth,
-        gender: user.gender
+        username: user.username
       }
     });
 
@@ -86,8 +35,7 @@ export const signup = async (req, res) => {
     res.status(500).json({ message: "Signup failed" });
   }
 };
-
-
+ 
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -197,3 +145,26 @@ export const updateMyProfile = async (req, res) => {
   }
 };
 
+// GET MY PROFILE (for update form)
+export const getMyProfile = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: [
+        "name",
+        "profilePhoto",
+        "bio",
+        "dateOfBirth",
+        "gender"
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error("GET PROFILE ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch profile" });
+  }
+};
