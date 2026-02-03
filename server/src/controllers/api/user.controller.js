@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import User from "../../models/User.js";
+import { User, Follower } from "../../models/index.js";
+
 
 // export const signup = async (req, res) => {
 //   try {
@@ -124,3 +125,147 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Login failed" });
   }
 };
+
+// Follow Unfollow Methods
+
+export const followUser = async (req, res) => {
+  try {
+    const followerId = req.user.id;      // logged-in user
+    const followingId = req.params.id;   // profile user
+    console.log("data mila ", req.user.id, req.params.id)
+    if (followerId === followingId) {
+      return res.status(400).json({ message: "You cannot follow yourself" });
+    }
+
+    const alreadyFollowing = await Follower.findOne({
+      where: { follower_id: followerId, following_id: followingId }
+    });
+
+    if (alreadyFollowing) {
+      return res.status(400).json({ message: "Already following this user" });
+    }
+
+    await Follower.create({
+      follower_id: followerId,
+      following_id: followingId
+    });
+
+    res.status(201).json({ message: "User followed successfully" });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+//unfollow user
+export const unfollowUser = async (req, res) => {
+  try {
+    const followerId = req.user.id;
+    const followingId = req.params.id;
+
+    const deleted = await Follower.destroy({
+      where: {
+        follower_id: followerId,
+        following_id: followingId
+      }
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ message: "You are not following this user" });
+    }
+
+    res.json({ message: "User unfollowed successfully" });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+//get follower list
+export const getFollowers = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const followers = await Follower.findAll({
+      where: { following_id: userId },
+      include: [{
+        model: User,
+        as: "follower",
+        attributes: ["id", "username", "profilePhoto"]
+      }]
+    });
+
+    res.json(followers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
+//get following list
+export const getFollowing = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const following = await Follower.findAll({
+      where: { follower_id: userId },
+      include: [{
+        model: User,
+        as: "following",
+        attributes: ["id", "username", "profilePhoto"]
+      }]
+    });
+
+    res.json(following);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
+
+// follow counts 
+export const getFollowCounts = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const followersCount = await Follower.count({
+      where: { following_id: userId }
+    });
+
+    const followingCount = await Follower.count({
+      where: { follower_id: userId }
+    });
+
+    res.json({
+      followers: followersCount,
+      following: followingCount
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getFollowStatus = async(req, res) => {
+  try{
+    const loggedInUserId = req.user.id; // from your auth middleware
+    const targetUserId = req.params.id; //the you are viewing
+
+    const followRecord = await Follower.findOne({
+      where: {
+        follower_id: loggedInUserId,
+        following_id: targetUserId
+      },
+    });
+
+
+    // If followRecord exists, isFollowing is true. If null, it's false.
+
+    res.json({isFollowing: !!followRecord})
+  }catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+

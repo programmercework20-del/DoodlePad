@@ -8,6 +8,8 @@ import Comment from './Comment.js';
 import Report from './Report.js';
 import Live from './Live.js';
 import Message from './Message.js';
+import Follower from "./Follower.js";
+
 
 // Define associations
 
@@ -43,6 +45,33 @@ Message.belongsTo(User, { foreignKey: "receiverId", as: "receiver" });
 Admin.hasMany(Report, { foreignKey: "reviewedBy", as: "reviewedReports" });
 Admin.hasMany(Live, { foreignKey: "terminatedBy", as: "terminatedLives" });
 
+//follower assciations 
+
+
+User.belongsToMany(User, {
+  through: Follower,
+  as: "followers",
+  foreignKey: "following_id",
+  otherKey: "follower_id"
+});
+
+User.belongsToMany(User, {
+  through: Follower,
+  as: "following",
+  foreignKey: "follower_id",
+  otherKey: "following_id"
+});
+
+Follower.belongsTo(User, {
+  foreignKey: "follower_id",
+  as: "follower"
+});
+
+Follower.belongsTo(User, {
+  foreignKey: "following_id",
+  as: "following"
+});
+
 export {
     sequelize,
     Admin,
@@ -51,5 +80,6 @@ export {
     Comment,
     Report,
     Live,
-    Message
+    Message,
+    Follower
 };
