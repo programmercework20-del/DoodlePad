@@ -1,6 +1,6 @@
 import express from "express";
 import { signup, login } from "../controllers/api/user.controller.js";
-import { createPost } from "../controllers/api/post.controller.js";
+import { createPost, deletePost } from "../controllers/api/post.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
 import {
@@ -21,12 +21,18 @@ router.post("/signup", signup);
 router.post("/login", login);
 
 /* ================= POST APIs (USER) ================= */
-// Add new post (image, video, audio, text, doodle)
+// Add new post (image, video, audio, text, doodle) and delete post
 router.post(
   "/posts",
-  protect,
+  protect,  
   upload.single("media"),   // form-data: key = media
   createPost
+);
+
+router.delete(
+  "/posts/:id",
+  protect,
+  deletePost
 );
 
 /* ================= TEST ================= */
