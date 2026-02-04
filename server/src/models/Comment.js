@@ -23,10 +23,19 @@ const Comment = sequelize.define("Comment", {
             key: "id"
         }
     },
-    type: {
-        type: DataTypes.ENUM("text", "emoji", "image", "audio", "doodle"),
-        defaultValue: "text"
-    },
+  type: {
+  type: DataTypes.ENUM(
+    "text",
+    "emoji",
+    "image",
+    "audio",
+    "video",
+    "doodle",
+    "gif"
+  ),
+  defaultValue: "text"
+},
+
     content: {
         type: DataTypes.TEXT,
         allowNull: true

@@ -8,48 +8,55 @@ import Comment from './Comment.js';
 import Report from './Report.js';
 import Live from './Live.js';
 import Message from './Message.js';
+import CommentLike from './CommentLike.js';
 
-// Define associations
-
-// User associations
+/* ================= USER RELATIONS ================= */
 User.hasMany(Post, { foreignKey: "userId", as: "posts" });
 User.hasMany(Comment, { foreignKey: "userId", as: "comments" });
+User.hasMany(CommentLike, { foreignKey: "userId", as: "commentLikes" });
+
 User.hasMany(Live, { foreignKey: "hostId", as: "liveStreams" });
 User.hasMany(Message, { foreignKey: "senderId", as: "sentMessages" });
 User.hasMany(Message, { foreignKey: "receiverId", as: "receivedMessages" });
 User.hasMany(Report, { foreignKey: "reporterId", as: "reportsMade" });
 
-// Post associations
+/* ================= POST RELATIONS ================= */
 Post.belongsTo(User, { foreignKey: "userId", as: "author" });
 Post.hasMany(Comment, { foreignKey: "postId", as: "comments" });
 
-// Comment associations
+/* ================= COMMENT RELATIONS ================= */
 Comment.belongsTo(Post, { foreignKey: "postId", as: "post" });
-Comment.belongsTo(User, { foreignKey: "userId", as: "author" });
+Comment.belongsTo(User, { foreignKey: "userId", as: "user" });
+Comment.hasMany(CommentLike, { foreignKey: "commentId", as: "likes" });
 
-// Report associations
+/* ================= COMMENT LIKE RELATIONS ================= */
+CommentLike.belongsTo(Comment, { foreignKey: "commentId", as: "comment" });
+CommentLike.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+/* ================= REPORT RELATIONS ================= */
 Report.belongsTo(User, { foreignKey: "reporterId", as: "reporter" });
 Report.belongsTo(Admin, { foreignKey: "reviewedBy", as: "reviewer" });
 
-// Live associations
+/* ================= LIVE RELATIONS ================= */
 Live.belongsTo(User, { foreignKey: "hostId", as: "host" });
 Live.belongsTo(Admin, { foreignKey: "terminatedBy", as: "terminator" });
 
-// Message associations
+/* ================= MESSAGE RELATIONS ================= */
 Message.belongsTo(User, { foreignKey: "senderId", as: "sender" });
 Message.belongsTo(User, { foreignKey: "receiverId", as: "receiver" });
 
-// Admin associations
+/* ================= ADMIN RELATIONS ================= */
 Admin.hasMany(Report, { foreignKey: "reviewedBy", as: "reviewedReports" });
 Admin.hasMany(Live, { foreignKey: "terminatedBy", as: "terminatedLives" });
 
 export {
-    sequelize,
-    Admin,
-    User,
-    Post,
-    Comment,
-    Report,
-    Live,
-    Message
+  sequelize,
+  Admin,
+  User,
+  Post,
+  Comment,
+  CommentLike,
+  Report,
+  Live,
+  Message
 };
