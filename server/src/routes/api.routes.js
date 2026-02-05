@@ -11,6 +11,7 @@ import {
 } from "../controllers/api/comment.controller.js";
 import { createReport } from "../controllers/api/report.controller.js";
 import { toggleLikePost } from "../controllers/api/postLike.controller.js";
+import { sharePost } from "../controllers/api/share.controller.js";
 
 
 
@@ -65,10 +66,13 @@ router.post(
 );
 
 // like and unlike 
-
-// likes routes 
-
 router.post("/:id/like", protect, toggleLikePost);
+
+// share rountes 
+router.post("/:id/share", protect, sharePost);
+
+
+
 
 router.post("/reports", protect, createReport);
 export default router;

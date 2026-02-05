@@ -11,6 +11,7 @@ import Message from './Message.js';
 import Follower from "./Follower.js";
 import CommentLike from './CommentLike.js';
 import PostLike from "./PostLike.js";
+import Share from "./Share.js";
 
 
 /* ================= USER RELATIONS ================= */
@@ -92,6 +93,17 @@ PostLike.belongsTo(User, { foreignKey: "userId", as: "user" });
 
 
 
+/* ===== SHARE RELATIONS ===== */
+User.hasMany(Share, { foreignKey: "userId", as: "shares" });
+Post.hasMany(Share, { foreignKey: "postId", as: "shares" });
+
+Share.belongsTo(User, { foreignKey: "userId", as: "sharedBy" });
+Share.belongsTo(User, { foreignKey: "targetUserId", as: "sharedTo" });
+Share.belongsTo(Post, { foreignKey: "postId", as: "post" });
+
+
+
+
 export {
   sequelize,
   Admin,
@@ -103,5 +115,6 @@ export {
   Live,
   Message,
   Follower,
-  PostLike
+  PostLike,
+  Share
 };

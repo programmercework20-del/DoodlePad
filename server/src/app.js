@@ -201,7 +201,7 @@ app.use((req, res) => {
         success: false,
         message: "Route not found"
     });
-});
+}); 
 
 // Global error handler
 app.use((err, req, res, next) => {
