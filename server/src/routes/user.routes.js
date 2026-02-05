@@ -2,6 +2,8 @@ import express from 'express';
 import * as userController from '../controllers/api/user.controller.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import { protect } from "../middlewares/auth.middleware.js";
+import { getUserPosts } from "../controllers/api/post.controller.js";
+
 
 const router = express.Router();
 // router.use(adminAuth);
@@ -26,5 +28,10 @@ router.get("/:id/followrecord",protect,  userController.getFollowStatus);
 router.get("/:id/following", userController.getFollowing);
 
 router.get("/:id/follow-counts", userController.getFollowCounts);
+
+
+// rountes for posts 
+router.get("/:id/posts", getUserPosts);
+
 
 export default router;

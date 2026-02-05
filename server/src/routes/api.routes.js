@@ -1,6 +1,6 @@
 import express from "express";
 import { signup, login } from "../controllers/api/user.controller.js";
-import { createPost, deletePost } from "../controllers/api/post.controller.js";
+import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
 import {
@@ -10,6 +10,7 @@ import {
   likeComment
 } from "../controllers/api/comment.controller.js";
 import { createReport } from "../controllers/api/report.controller.js";
+import { toggleLikePost } from "../controllers/api/postLike.controller.js";
 
 
 
@@ -35,6 +36,12 @@ router.delete(
   deletePost
 );
 
+router.get(
+  "users/:id/posts",
+  
+  getUserPosts
+);
+
 /* ================= TEST ================= */
 router.get("/", (req, res) => {
   res.json({ success: true, message: "API routes working" });
@@ -56,6 +63,12 @@ router.post(
   protect,
   likeComment
 );
+
+// like and unlike 
+
+// likes routes 
+
+router.post("/:id/like", protect, toggleLikePost);
 
 router.post("/reports", protect, createReport);
 export default router;

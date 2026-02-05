@@ -1,4 +1,6 @@
 import Post from "../../models/Post.js";
+import User from "../../models/User.js";
+import Comment from "../../models/Comment.js";
 
 export const createPost = async (req, res) => {
     console.log("data mila:", req.body)
@@ -100,3 +102,42 @@ export const deletePost = async (req, res) => {
     });
   }
 }
+
+export const getUserPosts = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const posts = await Post.findAll({
+      where: {
+        userId: id,
+        status: "active"
+      },
+      include: [
+        {
+          model: User,
+          as: "author",
+          attributes: ["id", "username", "profilePhoto"]
+        },
+        {
+          model: Comment,
+          as: "comments",
+          attributes: ["id", "content", "createdAt"]
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+
+    return res.json({
+      success: true,
+      count: posts.length,
+      posts
+    });
+
+  } catch (error) {
+    console.error("Get user posts error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user posts"
+    });
+  }
+};

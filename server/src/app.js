@@ -194,6 +194,7 @@ app.use("/api/live", liveRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
+
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({

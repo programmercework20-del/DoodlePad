@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { User, Follower } from "../../models/index.js";
 
 
+
 // export const signup = async (req, res) => {
 //   try {
 //     const { email, username, name, password } = req.body;

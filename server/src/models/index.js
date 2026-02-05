@@ -9,6 +9,8 @@ import Report from './Report.js';
 import Live from './Live.js';
 import Message from './Message.js';
 import Follower from "./Follower.js";
+import CommentLike from './CommentLike.js';
+import PostLike from "./PostLike.js";
 
 
 /* ================= USER RELATIONS ================= */
@@ -22,7 +24,10 @@ User.hasMany(Message, { foreignKey: "receiverId", as: "receivedMessages" });
 User.hasMany(Report, { foreignKey: "reporterId", as: "reportsMade" });
 
 /* ================= POST RELATIONS ================= */
-Post.belongsTo(User, { foreignKey: "userId", as: "author" });
+Post.belongsTo(User, {
+  foreignKey: "userId",
+  as: "author"
+});
 Post.hasMany(Comment, { foreignKey: "postId", as: "comments" });
 
 /* ================= COMMENT RELATIONS ================= */
@@ -77,6 +82,16 @@ Follower.belongsTo(User, {
   as: "following"
 });
 
+/* POST LIKE RELATIONS */
+Post.hasMany(PostLike, { foreignKey: "postId", as: "likes" });
+User.hasMany(PostLike, { foreignKey: "userId", as: "likedPosts" });
+
+PostLike.belongsTo(Post, { foreignKey: "postId", as: "post" });
+PostLike.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+
+
+
 export {
   sequelize,
   Admin,
@@ -86,5 +101,7 @@ export {
   CommentLike,
   Report,
   Live,
-  Message
+  Message,
+  Follower,
+  PostLike
 };
