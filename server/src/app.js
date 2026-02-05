@@ -8,6 +8,9 @@ import rateLimit from "express-rate-limit";
 import compression from "compression";
 import hpp from "hpp";
 import config from "./config/env.js";
+import cron from "node-cron";
+import { archiveExpiredStories } from "./jobs/storyArchive.job.js";
+
 
 // Routes
 import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
@@ -113,5 +116,11 @@ app.use((err, req, res, next) => {
     ...(config.nodeEnv === "development" && { stack: err.stack }),
   });
 });
+
+// cron schedule for the story
+cron.schedule("*/10 * * * *", async () => {
+  await archiveExpiredStories();
+});
+
 
 export default app;

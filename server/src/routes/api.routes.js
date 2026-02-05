@@ -1,6 +1,8 @@
 import express from "express";
 import { signup, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
 import userAuth from "../middlewares/userAuth.js";
+import storyRoutes from "./story.routes.js";
+
 
 
 const router = express.Router();
@@ -11,6 +13,7 @@ router.post("/login", login);
 router.put("/users/change-password", userAuth, changePassword);
 router.patch("/users/update-profile", userAuth, updateMyProfile);
 router.get("/users/my-profile", userAuth, getMyProfile);
+router.use("/stories", storyRoutes);
 
 
 

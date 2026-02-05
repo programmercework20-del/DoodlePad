@@ -1,5 +1,7 @@
-import { Post, User, Comment } from '../models/index.js';
+import { Post, User, Comment,} from '../models/index.js';
 import { Op } from 'sequelize';
+import Post from "../models/Post.js";
+
 
 // Get all posts with filters
 export const getAllPosts = async (req, res) => {

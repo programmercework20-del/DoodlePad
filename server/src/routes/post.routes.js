@@ -2,6 +2,7 @@ import express from 'express';
 import * as postController from '../controllers/post.controller.js';
 import adminAuth from '../middlewares/adminAuth.js';
 
+
 const router = express.Router();
 router.use(adminAuth);
 
