@@ -1,5 +1,4 @@
 import express from "express";
-import { signup, login } from "../controllers/api/user.controller.js";
 import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
@@ -14,6 +13,10 @@ import { toggleLikePost } from "../controllers/api/postLike.controller.js";
 import { sharePost } from "../controllers/api/share.controller.js";
 
 
+import { signup, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
+import userAuth from "../middlewares/userAuth.js";
+import storyRoutes from "./story.routes.js";
+
 
 
 const router = express.Router();
@@ -21,6 +24,12 @@ const router = express.Router();
 /* ================= AUTH APIs ================= */
 router.post("/signup", signup);
 router.post("/login", login);
+router.put("/users/change-password", userAuth, changePassword);
+router.patch("/users/update-profile", userAuth, updateMyProfile);
+router.get("/users/my-profile", userAuth, getMyProfile);
+router.use("/stories", storyRoutes);
+
+
 
 /* ================= POST APIs (USER) ================= */
 // Add new post (image, video, audio, text, doodle) and delete post
