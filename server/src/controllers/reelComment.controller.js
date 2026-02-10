@@ -94,11 +94,15 @@ export const likeReelComment = async (req,res)=>{
     const userId = req.user.id;
     const { commentId } = req.params;
 
-    const existing = await ReelCommentLike.findOne({
-      where:{ reelCommentId:commentId, userId }
-    });
-
     const comment = await ReelComment.findByPk(commentId);
+    if(!comment){
+      return res.status(404).json({message:"Comment not found"});
+    }
+
+    // 🔥 FIXED COLUMN NAME HERE
+    const existing = await ReelCommentLike.findOne({
+      where:{ commentId: commentId, userId }
+    });
 
     if(existing){
       await existing.destroy();
@@ -106,8 +110,9 @@ export const likeReelComment = async (req,res)=>{
       return res.json({message:"Comment unliked"});
     }
 
+    // 🔥 FIXED COLUMN NAME HERE ALSO
     await ReelCommentLike.create({
-      reelCommentId:commentId,
+      commentId: commentId,
       userId
     });
 
@@ -116,6 +121,8 @@ export const likeReelComment = async (req,res)=>{
     res.json({message:"Comment liked"});
 
   }catch(err){
-    res.status(500).json({message:"Failed"});
+    console.error(err);
+    res.status(500).json({message:"Like failed"});
   }
 };
+

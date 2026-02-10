@@ -15,6 +15,7 @@ import { signup,logout, login, changePassword, updateMyProfile, getMyProfile } f
 import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
 import { toggleReelLike } from "../controllers/api/reelLike.controller.js";
+import { shareReel } from "../controllers/api/reelShare.controller.js";
 
 
 
@@ -89,6 +90,7 @@ router.post("/:id/share", protect, sharePost);
 // reel 
 router.post("/reels/:reelId/like", protect, toggleReelLike);
 
+router.post("/reels/:id/share", protect, shareReel);
 
 
 

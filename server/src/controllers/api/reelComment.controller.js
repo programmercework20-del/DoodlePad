@@ -111,9 +111,11 @@ export const likeReelComment = async (req, res) => {
     const { commentId } = req.params;
 
     const comment = await ReelComment.findByPk(commentId);
-    if (!comment)
+    if (!comment) {
       return res.status(404).json({ success:false, message:"Comment not found" });
+    }
 
+    // ⭐ IMPORTANT: use commentId (NOT reelCommentId)
     const existing = await ReelCommentLike.findOne({
       where: { commentId, userId }
     });
@@ -124,12 +126,18 @@ export const likeReelComment = async (req, res) => {
       return res.json({ success:true, message:"Comment unliked" });
     }
 
-    await ReelCommentLike.create({ commentId, userId });
+    await ReelCommentLike.create({
+      commentId,
+      userId
+    });
+
     await comment.increment("likesCount");
 
     res.json({ success:true, message:"Comment liked" });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ success:false, message:"Like failed" });
   }
 };
+

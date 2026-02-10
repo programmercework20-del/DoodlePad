@@ -17,4 +17,3 @@ router.delete("/comments/:commentId", protect, ctrl.deleteReelComment);
 router.post("/comments/:commentId/like", protect, ctrl.likeReelComment);
 
 export default router;
-``
