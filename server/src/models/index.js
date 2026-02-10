@@ -12,6 +12,11 @@ import Follower from "./Follower.js";
 import CommentLike from './CommentLike.js';
 import PostLike from "./PostLike.js";
 import Share from "./Share.js";
+import Reel from "./Reel.js";
+import ReelComment from "./ReelComment.js";
+import ReelCommentLike from "./ReelCommentLike.js";
+
+import ReelLike from "./ReelLike.js";
 
 
 /* ================= USER RELATIONS ================= */
@@ -102,6 +107,31 @@ Share.belongsTo(User, { foreignKey: "targetUserId", as: "sharedTo" });
 Share.belongsTo(Post, { foreignKey: "postId", as: "post" });
 
 
+/* USER ↔ REEL */
+User.hasMany(Reel, { foreignKey: "userId", as: "reels" });
+Reel.belongsTo(User, { foreignKey: "userId", as: "author" });
+
+
+
+Reel.hasMany(ReelLike, { foreignKey: "reelId", as: "likes" });
+ReelLike.belongsTo(Reel, { foreignKey: "reelId" });
+
+User.hasMany(ReelLike, { foreignKey: "userId" });
+
+/* REEL RELATIONS */
+Reel.hasMany(ReelComment, { foreignKey: "reelId", as: "comments" });
+ReelComment.belongsTo(Reel, { foreignKey: "reelId", as: "reel" });
+
+ReelComment.belongsTo(User, { foreignKey: "userId", as: "user" });
+User.hasMany(ReelComment, { foreignKey: "userId", as: "reelComments" });
+
+ReelComment.hasMany(ReelCommentLike, { foreignKey: "reelCommentId", as: "likes" });
+ReelCommentLike.belongsTo(ReelComment, { foreignKey: "reelCommentId" });
+
+
+
+
+
 
 
 export {
@@ -116,5 +146,7 @@ export {
   Message,
   Follower,
   PostLike,
-  Share
+  Share,
+  ReelComment,
+  ReelCommentLike
 };

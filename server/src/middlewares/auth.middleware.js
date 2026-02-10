@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import TokenBlacklist from "../models/TokenBlacklist.js";
 
 export const protect = async (req, res, next) => {
   try {
@@ -10,6 +11,12 @@ export const protect = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+
+     // ⭐ CHECK BLACKLIST FIRST
+    const blacklisted = await TokenBlacklist.findOne({ where: { token } });
+    if (blacklisted) {
+      return res.status(401).json({ message: "Token expired. Please login again" });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

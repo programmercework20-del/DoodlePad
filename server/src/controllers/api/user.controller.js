@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 // import bcrypt from "bcrypt";
+import TokenBlacklist from "../../models/TokenBlacklist.js";
 import jwt from "jsonwebtoken";
 import { User, Follower } from "../../models/index.js";
 
@@ -80,6 +81,30 @@ export const login = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Login failed" });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader.split(" ")[1];
+
+    // decode token to get expiry
+    const decoded = jwt.decode(token);
+
+    await TokenBlacklist.create({
+      token,
+      expiresAt: new Date(decoded.exp * 1000)
+    });
+
+    res.json({
+      success: true,
+      message: "Logout successful"
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Logout failed" });
   }
 };
 
