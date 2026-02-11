@@ -17,6 +17,7 @@ import messageRoutes from "./routes/message.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import reelRoutes from "./routes/reel.routes.js";
 import searchRoutes from "./routes/search.routes.js";
+import feedRoutes from "./routes/feed.routes.js";
 // Routes
 import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
 import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
@@ -101,6 +102,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
