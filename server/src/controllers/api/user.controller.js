@@ -6,6 +6,7 @@ import { User, Follower } from "../../models/index.js";
 
 
 export const signup = async (req, res) => {
+  console.log("Signup data received:", req.body);
   try {
     const { email, username, name, password } = req.body;
 
@@ -34,6 +35,7 @@ export const signup = async (req, res) => {
         message: "Username already exists"
       });
     }
+  
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -121,10 +123,10 @@ export const login = async (req, res) => {
     }
 
     if (user.status !== "active") {
-  return res.status(403).json({
-    message: "Account is blocked or banned"
-  });
-}
+      return res.status(403).json({
+        message: "Account is blocked or banned"
+      });
+    }
 
 
     const token = jwt.sign(
@@ -296,8 +298,8 @@ export const getFollowCounts = async (req, res) => {
   }
 };
 
-export const getFollowStatus = async(req, res) => {
-  try{
+export const getFollowStatus = async (req, res) => {
+  try {
     const loggedInUserId = req.user.id; // from your auth middleware
     const targetUserId = req.params.id; //the you are viewing
 
@@ -311,8 +313,8 @@ export const getFollowStatus = async(req, res) => {
 
     // If followRecord exists, isFollowing is true. If null, it's false.
 
-    res.json({isFollowing: !!followRecord})
-  }catch (error) {
+    res.json({ isFollowing: !!followRecord })
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
@@ -358,20 +360,36 @@ export const updateMyProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const {
-      name,
-      profilePhoto,
-      bio,
-      dateOfBirth,
-      gender
-    } = req.body;
+    const { name, bio, dateOfBirth, gender, username } = req.body;
+
+    // 🔥 Username uniqueness check (for update case)
+    if (username && username !== user.username) {
+      const existingUsername = await User.findOne({
+        where: { username }
+      });
+
+      if (existingUsername) {
+        return res.status(400).json({
+          message: "Username already taken"
+        });
+      }
+    }
+
+    // 🔥 Profile photo logic
+    console.log("BODY", req.body);
+    console.log("FILE", req.file);
+    console.log("USER ID", req.user.id);
+    const profilePhoto = req.file
+      ? `/uploads/stories/${req.file.filename}`
+      : user.profilePhoto;
 
     await user.update({
       name,
-      profilePhoto,
+      username,
       bio,
       dateOfBirth,
-      gender
+      gender,
+      profilePhoto
     });
 
     res.json({ message: "Profile updated successfully" });
@@ -382,12 +400,14 @@ export const updateMyProfile = async (req, res) => {
   }
 };
 
+
 // GET MY PROFILE (for update form)
 export const getMyProfile = async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id, {
       attributes: [
         "name",
+        "username",
         "profilePhoto",
         "bio",
         "dateOfBirth",

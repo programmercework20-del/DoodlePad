@@ -1,5 +1,4 @@
 import express from "express";
-import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
 import {
@@ -10,6 +9,11 @@ import {
 } from "../controllers/api/comment.controller.js";
 import { createReport } from "../controllers/api/report.controller.js";
 import { toggleLikePost } from "../controllers/api/postLike.controller.js";
+import { signup, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
+import userAuth from "../middlewares/userAuth.js";
+import storyRoutes from "./story.routes.js";
+import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
+import { sharePost } from "../controllers/api/share.controller.js";
 import { sharePost } from "../controllers/api/share.controller.js";
 import { signup,logout, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
 import userAuth from "../middlewares/userAuth.js";
@@ -26,7 +30,7 @@ router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", protect, logout);
 router.put("/users/change-password", userAuth, changePassword);
-router.patch("/users/update-profile", userAuth, updateMyProfile);
+router.put("/users/update-profile", userAuth, upload.single("profilePhoto"), updateMyProfile);
 router.get("/users/my-profile", userAuth, getMyProfile);
 router.use("/stories", storyRoutes);
 
