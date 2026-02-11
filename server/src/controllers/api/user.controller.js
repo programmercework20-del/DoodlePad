@@ -6,7 +6,6 @@ import { User, Follower } from "../../models/index.js";
 
 
 export const signup = async (req, res) => {
-  console.log("Signup data received:", req.body);
   try {
     const { email, username, name, password } = req.body;
 
@@ -35,7 +34,6 @@ export const signup = async (req, res) => {
         message: "Username already exists"
       });
     }
-  
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
