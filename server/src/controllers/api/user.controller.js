@@ -75,38 +75,6 @@ export const signup = async (req, res) => {
 };
 
 
-// export const signup = async (req, res) => {
-//   try {
-//     const { email, username, name, password } = req.body;
-
-//     const existingUser = await User.findOne({ where: { email } });
-//     if (existingUser) {
-//       return res.status(400).json({ message: "Email already exists" });
-//     }
-
-//     const hashedPassword = await bcrypt.hash(password, 10);
-
-//     const user = await User.create({
-//       email,
-//       username,
-//       name,
-//       password: hashedPassword
-//     });
-
-//     return res.status(201).json({
-//       message: "Signup successful",
-//       user: {
-//         id: user.id,
-//         email: user.email,
-//         username: user.username
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: "Signup failed" });
-//   }
-// };
  
 export const login = async (req, res) => {
   try {

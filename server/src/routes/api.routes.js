@@ -14,7 +14,6 @@ import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
 import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
 import { sharePost } from "../controllers/api/share.controller.js";
-import { signup,logout, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
 import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
 import { toggleReelLike } from "../controllers/api/reelLike.controller.js";
