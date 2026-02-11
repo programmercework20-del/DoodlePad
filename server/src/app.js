@@ -10,10 +10,6 @@ import cron from "node-cron";
 import { archiveExpiredStories } from "./jobs/storyArchive.job.js";
 
 
-// Routes
-import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
-import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
-
 import userRoutes from "./routes/user.routes.js";
 import commentRoutes from "./routes/comment.routes.js";
 import postRoutes from "./routes/post.routes.js";
