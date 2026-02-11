@@ -25,10 +25,10 @@ const User = sequelize.define("User", {
         allowNull: false
     },
     password: {
-    type: DataTypes.STRING,
-    allowNull: false
-}
-,
+        type: DataTypes.STRING,
+        allowNull: false
+    }
+    ,
     profilePhoto: {
         type: DataTypes.STRING,
         allowNull: true
@@ -72,7 +72,12 @@ const User = sequelize.define("User", {
     lastActiveAt: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW
+    },
+    isVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     }
+
 }, {
     tableName: "users",
     timestamps: true

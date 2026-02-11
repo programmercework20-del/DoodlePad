@@ -15,15 +15,14 @@ import {
 
 
 const router = express.Router();
-router.use(adminAuth);
 
-router.get("/", getAllUsers);
-router.get("/:id", getUserById);
-router.post("/:id/warn", warnUser);
-router.post("/:id/block", blockUser);
-router.post("/:id/ban", banUser);
-router.post("/:id/unblock", unblockUser);
-router.patch("/:id/restrict", restrictFeatures);
+router.get("/",adminAuth, getAllUsers);
+router.get("/:id",adminAuth, getUserById);
+router.post("/:id/warn",adminAuth, warnUser);
+router.post("/:id/block",adminAuth, blockUser);
+router.post("/:id/ban",adminAuth, banUser);
+router.post("/:id/unblock",adminAuth, unblockUser);
+router.patch("/:id/restrict",adminAuth, restrictFeatures);
 
 // rountes for follower 
 
@@ -41,6 +40,7 @@ router.get("/:id/follow-counts", userController.getFollowCounts);
 
 // rountes for posts 
 router.get("/:id/posts", getUserPosts);
+
 
 
 export default router;

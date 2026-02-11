@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 // import bcrypt from "bcrypt";
+import TokenBlacklist from "../../models/TokenBlacklist.js";
 import jwt from "jsonwebtoken";
 import { User, Follower } from "../../models/index.js";
-
 
 
 export const signup = async (req, res) => {
@@ -10,14 +10,32 @@ export const signup = async (req, res) => {
   try {
     const { email, username, name, password } = req.body;
 
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ message: "Email already exists" });
+    // Basic validation
+    if (!email || !username || !name || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required"
+      });
     }
+
+    // Check existing email
+    const existingEmail = await User.findOne({ where: { email } });
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already exists"
+      });
+    }
+
+    // Check existing username
     const existingUsername = await User.findOne({ where: { username } });
     if (existingUsername) {
-      return res.status(400).json({ message: "Username already taken" });
+      return res.status(400).json({
+        success: false,
+        message: "Username already exists"
+      });
     }
+  
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -29,6 +47,7 @@ export const signup = async (req, res) => {
     });
 
     return res.status(201).json({
+      success: true,
       message: "Signup successful",
       user: {
         id: user.id,
@@ -38,11 +57,57 @@ export const signup = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Signup failed" });
+
+    // Handle unique constraint from DB (extra safety)
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(400).json({
+        success: false,
+        message: "Email or Username already exists"
+      });
+    }
+
+    console.error("Signup Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Signup failed"
+    });
   }
 };
 
+
+// export const signup = async (req, res) => {
+//   try {
+//     const { email, username, name, password } = req.body;
+
+//     const existingUser = await User.findOne({ where: { email } });
+//     if (existingUser) {
+//       return res.status(400).json({ message: "Email already exists" });
+//     }
+
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     const user = await User.create({
+//       email,
+//       username,
+//       name,
+//       password: hashedPassword
+//     });
+
+//     return res.status(201).json({
+//       message: "Signup successful",
+//       user: {
+//         id: user.id,
+//         email: user.email,
+//         username: user.username
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Signup failed" });
+//   }
+// };
+ 
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -88,6 +153,29 @@ export const login = async (req, res) => {
   }
 };
 
+export const logout = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader.split(" ")[1];
+
+    // decode token to get expiry
+    const decoded = jwt.decode(token);
+
+    await TokenBlacklist.create({
+      token,
+      expiresAt: new Date(decoded.exp * 1000)
+    });
+
+    res.json({
+      success: true,
+      message: "Logout successful"
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Logout failed" });
+  }
+};
 
 // Follow Unfollow Methods
 

@@ -21,9 +21,16 @@ import reportRoutes from "./routes/report.routes.js";
 import liveRoutes from "./routes/live.routes.js";
 import messageRoutes from "./routes/message.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
+import reelRoutes from "./routes/reel.routes.js";
+import searchRoutes from "./routes/search.routes.js";
+import feedRoutes from "./routes/feed.routes.js";
+// Routes
+import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
+import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
 
 // Middlewares
 import adminAuth from "./middlewares/adminAuth.js";
+import ReelComment from "./models/ReelComment.js";
 
 const app = express();
 
@@ -97,9 +104,12 @@ app.use("/uploads", express.static("uploads"));
 app.use("/api", apiRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/reels", reelRoutes);
+app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
@@ -111,6 +121,9 @@ app.use("/api/analytics", analyticsRoutes);
    ROUTES (IMPORTANT PART)
 ========================= */
 
+  // // 🔓 APK / MOBILE USER APIs
+  // // signup, login, profile, change-password
+  // app.use("/api", apiRoutes);
 // 🔓 APK / MOBILE USER APIs
 // signup, login, profile, change-password
 app.use("/api", apiRoutes);
@@ -141,8 +154,8 @@ app.use((req, res) => {
 app.use("/api", apiRoutes);
 app.use("/uploads", express.static("uploads"));
 
-// 🔐 ADMIN PANEL APIs (protected)
-app.use("/api/admin", adminAuth, adminRoutes);
+  // // 🔐 ADMIN PANEL APIs (protected)
+  // app.use("/api/admin", adminAuth, adminRoutes);
 
 
 /* =========================

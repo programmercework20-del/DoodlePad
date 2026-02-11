@@ -14,6 +14,12 @@ import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
 import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
 import { sharePost } from "../controllers/api/share.controller.js";
+import { sharePost } from "../controllers/api/share.controller.js";
+import { signup,logout, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
+import userAuth from "../middlewares/userAuth.js";
+import storyRoutes from "./story.routes.js";
+import { toggleReelLike } from "../controllers/api/reelLike.controller.js";
+import { shareReel } from "../controllers/api/reelShare.controller.js";
 
 
 
@@ -22,10 +28,16 @@ const router = express.Router();
 /* ================= AUTH APIs ================= */
 router.post("/signup", signup);
 router.post("/login", login);
+router.post("/logout", protect, logout);
 router.put("/users/change-password", userAuth, changePassword);
 router.put("/users/update-profile", userAuth, upload.single("profilePhoto"), updateMyProfile);
 router.get("/users/my-profile", userAuth, getMyProfile);
 router.use("/stories", storyRoutes);
+
+
+
+
+
 
 
 
@@ -79,7 +91,13 @@ router.post("/:id/like", protect, toggleLikePost);
 router.post("/:id/share", protect, sharePost);
 
 
+// reel 
+router.post("/reels/:reelId/like", protect, toggleReelLike);
+
+router.post("/reels/:id/share", protect, shareReel);
 
 
-router.post("/reports", protect, createReport);
+
+
+router.post("/reports", userAuth, createReport);
 export default router;
