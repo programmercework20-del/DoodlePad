@@ -1,5 +1,4 @@
 import express from "express";
-import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
 import {
@@ -13,7 +12,8 @@ import { toggleLikePost } from "../controllers/api/postLike.controller.js";
 import { signup, login, changePassword, updateMyProfile, getMyProfile } from "../controllers/api/user.controller.js";
 import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
-
+import { createPost, deletePost, getUserPosts } from "../controllers/api/post.controller.js";
+import { sharePost } from "../controllers/api/share.controller.js";
 
 
 
@@ -23,7 +23,7 @@ const router = express.Router();
 router.post("/signup", signup);
 router.post("/login", login);
 router.put("/users/change-password", userAuth, changePassword);
-router.patch("/users/update-profile", userAuth, updateMyProfile);
+router.put("/users/update-profile", userAuth, upload.single("profilePhoto"), updateMyProfile);
 router.get("/users/my-profile", userAuth, getMyProfile);
 router.use("/stories", storyRoutes);
 
@@ -73,10 +73,13 @@ router.post(
 );
 
 // like and unlike 
-
-// likes routes 
-
 router.post("/:id/like", protect, toggleLikePost);
+
+// share rountes 
+router.post("/:id/share", protect, sharePost);
+
+
+
 
 router.post("/reports", protect, createReport);
 export default router;

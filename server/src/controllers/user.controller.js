@@ -270,3 +270,4 @@ export const restrictFeatures = async (req, res) => {
         });
     } 
 };
+    

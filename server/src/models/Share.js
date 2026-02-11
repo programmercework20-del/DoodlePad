@@ -17,7 +17,7 @@ const Share = sequelize.define("Share", {
   },
   targetUserId: {
     type: DataTypes.UUID,
-    allowNull: true   // only for DM share
+    allowNull: true   // only when share in DM
   },
   type: {
     type: DataTypes.ENUM("dm","story","external"),
