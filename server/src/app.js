@@ -18,11 +18,11 @@ import analyticsRoutes from "./routes/analytics.routes.js";
 import reelRoutes from "./routes/reel.routes.js";
 import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
-// Routes
+// Routes ok
 import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
 import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
 
-// Middlewares
+// Middlewares  
 import adminAuth from "./middlewares/adminAuth.js";
 import ReelComment from "./models/ReelComment.js";
 
