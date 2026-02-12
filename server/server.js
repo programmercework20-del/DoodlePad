@@ -12,12 +12,8 @@ const startServer = async () => {
         await sequelize.authenticate();
         console.log("✅ Database connection established successfully.");
 
-        // Sync database models
-        // Using force: false and logging errors instead of crashing
         try {
             if (config.nodeEnv === "development") {
-                // Try sync without alter first to be safe, or just sync
-                // Note: 'alter: true' can cause issues with some postgres versions/drivers
                 await sequelize.sync();
                 console.log("✅ Database models synchronized.");
             } else {
@@ -28,13 +24,14 @@ const startServer = async () => {
             console.log("⚠️ Continuing server startup anyway...");
         }
 
-        // Start server
-        app.listen(PORT, () => {
+        // 🔥 IMPORTANT FIX HERE
+        app.listen(PORT, "0.0.0.0", () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`🌍 Environment: ${config.nodeEnv}`);
             console.log(`📡 API available at http://localhost:${PORT}`);
             console.log(`💊 Health check: http://localhost:${PORT}/health`);
         });
+
     } catch (error) {
         console.error("❌ Unable to start server:", error);
         process.exit(1);
