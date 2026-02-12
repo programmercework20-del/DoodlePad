@@ -7,8 +7,10 @@ import Follower from "../../models/Follower.js";
 export const getReelsFeed = async (req,res)=>{
   try{
     const userId = req.user.id;
+    const limit = parseInt(req.query.limit) || 10;
+    const cursor = req.query.cursor; // 🔥 cursor comes from frontend
 
-    // 1️⃣ Get following list
+    /* 1️⃣ Get following list */
     const following = await Follower.findAll({
       where:{ follower_id:userId },
       attributes:["following_id"]
@@ -16,9 +18,18 @@ export const getReelsFeed = async (req,res)=>{
 
     const followingIds = following.map(f=>f.following_id);
 
-    // 2️⃣ Fetch reels with ranking score
+    /* 2️⃣ Cursor condition (INFINITE SCROLL MAGIC) */
+    const cursorCondition = cursor
+      ? { createdAt: { [Op.lt]: new Date(cursor) } }
+      : {};
+
+    /* 3️⃣ Fetch reels with FULL ranking + pagination */
     const reels = await Reel.findAll({
-      where:{ status:"active" },
+      where:{
+        status:"active",
+        ...cursorCondition
+      },
+
       include:[
         {
           model:User,
@@ -35,25 +46,18 @@ export const getReelsFeed = async (req,res)=>{
 
       attributes:{
         include:[
-          // 🔥 WATCH TIME SCORE
           [literal(`COALESCE("ReelViews"."watchTime",0) * 5`),"watchScore"],
-
-          // 🔥 REWATCH SCORE
           [literal(`COALESCE("ReelViews"."rewatchCount",0) * 4`),"rewatchScore"],
-
-          // 🔥 ENGAGEMENT SCORE
           [literal(`"Reel"."likesCount" * 3`),"likeScore"],
           [literal(`"Reel"."commentsCount" * 2`),"commentScore"],
           [literal(`"Reel"."viewsCount"`),"viewScore"],
 
-          // 🔥 FOLLOWING BONUS
           [literal(`
             CASE 
               WHEN "Reel"."userId" IN (${followingIds.length ? `'${followingIds.join("','")}'` : "NULL"})
               THEN 30 ELSE 0 END
           `),"followingScore"],
 
-          // 🔥 RECENCY BONUS (new reels boosted)
           [literal(`
             CASE
               WHEN "Reel"."createdAt" > NOW() - INTERVAL '1 day' THEN 20
@@ -61,7 +65,6 @@ export const getReelsFeed = async (req,res)=>{
               ELSE 0 END
           `),"recencyScore"],
 
-          // 🔥 FINAL TOTAL SCORE
           [literal(`
             (
               COALESCE("ReelViews"."watchTime",0) * 5 +
@@ -82,12 +85,20 @@ export const getReelsFeed = async (req,res)=>{
       },
 
       order:[[literal(`score`),"DESC"]],
-      limit:10
+      limit
     });
 
+    /* 4️⃣ CREATE NEXT CURSOR */
+    const nextCursor = reels.length > 0
+      ? reels[reels.length - 1].createdAt
+      : null;
+
+    /* 5️⃣ FINAL RESPONSE */
     res.json({
       success:true,
-      reels
+      reels,
+      nextCursor,
+      hasMore: reels.length === limit
     });
 
   }catch(err){
