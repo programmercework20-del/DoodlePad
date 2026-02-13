@@ -179,32 +179,38 @@ export const logout = async (req, res) => {
 
 export const followUser = async (req, res) => {
   try {
-    const followerId = req.user.id;      // logged-in user
-    const followingId = req.params.id;   // profile user
-    console.log("data mila ", req.user.id, req.params.id)
+    const followerId = req.user.id;
+    const followingId = req.params.id;
+
+    console.log("data mila ", followerId, followingId);
+
     if (followerId === followingId) {
       return res.status(400).json({ message: "You cannot follow yourself" });
     }
 
+    // ✅ USE camelCase here
     const alreadyFollowing = await Follower.findOne({
-      where: { follower_id: followerId, following_id: followingId }
+      where: { followerId, followingId }
     });
 
     if (alreadyFollowing) {
       return res.status(400).json({ message: "Already following this user" });
     }
 
+    // ✅ USE camelCase here
     await Follower.create({
-      follower_id: followerId,
-      following_id: followingId
+      followerId,
+      followingId
     });
 
     res.status(201).json({ message: "User followed successfully" });
 
   } catch (error) {
+    console.error("Follow error:", error);
     res.status(500).json({ error: error.message });
   }
 };
+
 
 //unfollow user
 export const unfollowUser = async (req, res) => {

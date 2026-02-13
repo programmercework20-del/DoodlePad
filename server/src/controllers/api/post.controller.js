@@ -1,9 +1,11 @@
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import Comment from "../../models/Comment.js";
+import { processHashtags } from "../../utils/hashtag.util.js";
+
 
 export const createPost = async (req, res) => {
-    console.log("data mila:", req.body)
+  console.log("data mila:", req.body)
   try {
     const userId = req.user.id;
     const { type, caption, content } = req.body;
@@ -42,6 +44,11 @@ export const createPost = async (req, res) => {
       mediaUrl
     });
 
+    await processHashtags({
+      caption: post.caption,
+      postId: post.id
+    });
+
     return res.status(201).json({
       success: true,
       message: "Post created successfully",
@@ -62,7 +69,7 @@ export const deletePost = async (req, res) => {
     // 1. Find Post
     const post = await Post.findByPk(postId);
 
-    if(!post){
+    if (!post) {
       return res.status(404).json({
         success: false,
         message: "Post not found"
@@ -71,7 +78,7 @@ export const deletePost = async (req, res) => {
 
     // 2.check ownership
 
-    if(post.userId !== userId){
+    if (post.userId !== userId) {
       return res.json(403).json({
         success: false,
         message: "you are not allowed to delete this post"
@@ -80,22 +87,22 @@ export const deletePost = async (req, res) => {
 
     // 2. Already deleted?
 
-    if(post.userId === "deleted"){
+    if (post.userId === "deleted") {
       return res.json(400).json({
         success: false,
         message: "post already deleted"
       });
     }
 
-    await post.update({status: "deleted"});
+    await post.update({ status: "deleted" });
 
     return res.json({
       success: true,
       message: "Post deleted successfully"
     });
-    
+
   } catch (error) {
-     console.error("Delete post error:", error);
+    console.error("Delete post error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to delete post"

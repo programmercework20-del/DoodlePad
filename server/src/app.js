@@ -20,6 +20,7 @@ import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
 import reelViewRoutes from "./routes/reelView.routes.js";
 import reelsFeedRoutes from "./routes/reelsFeed.routes.js";
+import exploreRoutes from "./routes/explore.routes.js";
 
 // Routes
 import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
@@ -105,6 +106,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/reels-feed", reelsFeedRoutes);
+app.use("/api/explore", exploreRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/reels/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
