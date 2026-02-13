@@ -2,9 +2,13 @@ import { Op } from "sequelize";
 import { User, Follower } from "../../models/index.js";
 import Post from "../../models/Post.js";
 import Reel from "../../models/Reel.js";
+import { calculateFeedScore } from "../../utils/feedRanking.js";
+
 
 export const getFeed = async (req, res) => {
     try {
+        const limit = parseInt(req.query.limit) || 10;
+        const cursor = req.query.cursor;
         const userId = req.user.id;
 
         // 1️⃣ Get following list
@@ -19,33 +23,44 @@ export const getFeed = async (req, res) => {
         // include own posts also
         followingIds.push(userId);
 
+        const dateFilter = cursor
+            ? { createdAt: { [Op.lt]: new Date(cursor) } }
+            : {};
+
+
         // 2️⃣ Fetch POSTS
         const posts = await Post.findAll({
             where: {
                 userId: { [Op.in]: followingIds },
-                status: "active"
+                status: "active",
+                ...dateFilter
             },
             include: [{
                 model: User,
                 as: "author",   // ⭐ FIXED
                 attributes: ["id", "username", "profilePhoto"]
-            }]
-
+            }],
+            order: [["createdAt", "DESC"]],
+            limit
         });
 
         // 3️⃣ Fetch REELS
         const reels = await Reel.findAll({
             where: {
                 userId: { [Op.in]: followingIds },
-                status: "active"
+                status: "active",
+                ...dateFilter
             },
             include: [{
                 model: User,
                 as: "author",   // ⭐ FIXED
                 attributes: ["id", "username", "profilePhoto"]
-            }]
-
+            }],
+            order: [["createdAt", "DESC"]],
+            limit
         });
+
+
 
         // 4️⃣ Normalize POSTS
         const formattedPosts = posts.map(post => ({
@@ -56,7 +71,7 @@ export const getFeed = async (req, res) => {
             likesCount: post.likesCount,
             commentsCount: post.commentsCount,
             createdAt: post.createdAt,
-            user: post.user
+            user: post.author
         }));
 
         // 5️⃣ Normalize REELS
@@ -68,16 +83,46 @@ export const getFeed = async (req, res) => {
             likesCount: reel.likesCount,
             commentsCount: reel.commentsCount,
             createdAt: reel.createdAt,
-            user: reel.user
+            user: reel.author
         }));
 
         // 6️⃣ Merge + Sort
-        const feed = [...formattedPosts, ...formattedReels]
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        let feed = [...formattedPosts, ...formattedReels];
+
+        // 🔥 Calculate score for each item
+        feed = feed.map(item => {
+
+            let relationshipBoost = 0;
+
+            // boost people you follow
+            if (item.user && followingIds.includes(item.user.id)) {
+                relationshipBoost = 10;
+            }
+
+
+            const score = calculateFeedScore(item) + relationshipBoost;
+
+            return { ...item, score };
+        });
+
+
+        // 🔥 Sort by score (NOT date anymore)
+        feed.sort((a, b) => b.score - a.score);
+
+        // remove score before sending to frontend
+        feed = feed.slice(0, limit).map(({ score, ...rest }) => rest);
+
+
+
+        const nextCursor = feed.length
+            ? feed[feed.length - 1].createdAt
+            : null;
+
 
         res.json({
             success: true,
-            feed
+            feed,
+            nextCursor
         });
 
     } catch (err) {

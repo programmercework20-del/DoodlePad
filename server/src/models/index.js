@@ -17,6 +17,7 @@ import ReelComment from "./ReelComment.js";
 import ReelCommentLike from "./ReelCommentLike.js";
 import ReelShare from './ReelShare.js';
 import ReelLike from "./ReelLike.js";
+import ReelView from "./ReelView.js";
 
 
 /* ================= USER RELATIONS ================= */
@@ -144,6 +145,11 @@ ReelShare.belongsTo(User, { foreignKey: "userId", as: "sharedBy" });
 ReelShare.belongsTo(User, { foreignKey: "targetUserId", as: "sharedTo" });
 ReelShare.belongsTo(Reel, { foreignKey: "reelId", as: "reel" });
 
+Reel.hasMany(ReelView, { foreignKey: "reelId", as: "views" });
+ReelView.belongsTo(Reel, { foreignKey: "reelId" });
+
+User.hasMany(ReelView, { foreignKey: "userId", as: "watchedReels" });
+ReelView.belongsTo(User, { foreignKey: "userId" });
 
 
 
