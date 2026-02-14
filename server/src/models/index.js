@@ -64,19 +64,23 @@ Admin.hasMany(Live, { foreignKey: "terminatedBy", as: "terminatedLives" });
 
 //follower assciations 
 
+// ================= FOLLOW RELATION =================
 
-User.belongsToMany(User, {
-  through: Follower,
-  as: "Followers",
-  foreignKey: "followingId",
-  otherKey: "followerId"
-});
+// IMPORTANT: access model from sequelize.models
+const { User, Follower } = sequelize.models;
 
 User.belongsToMany(User, {
   through: Follower,
   as: "Following",
   foreignKey: "followerId",
   otherKey: "followingId"
+});
+
+User.belongsToMany(User, {
+  through: Follower,
+  as: "Followers",
+  foreignKey: "followingId",
+  otherKey: "followerId"
 });
 
 
