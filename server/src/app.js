@@ -108,7 +108,7 @@ app.use("/api/reels", reelRoutes, reelViewRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
-app.use("/api/reels-feed", reelsFeedRoutes);
+app.use("/api/reels/feed", reelsFeedRoutes);
 app.use("/api/explore", exploreRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/reels/feed", feedRoutes);
