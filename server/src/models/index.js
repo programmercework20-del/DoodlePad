@@ -67,17 +67,18 @@ Admin.hasMany(Live, { foreignKey: "terminatedBy", as: "terminatedLives" });
 
 User.belongsToMany(User, {
   through: Follower,
-  as: "followers",
-  foreignKey: "following_id",
-  otherKey: "follower_id"
+  as: "Followers",
+  foreignKey: "followingId",
+  otherKey: "followerId"
 });
 
 User.belongsToMany(User, {
   through: Follower,
-  as: "following",
-  foreignKey: "follower_id",
-  otherKey: "following_id"
+  as: "Following",
+  foreignKey: "followerId",
+  otherKey: "followingId"
 });
+
 
 Follower.belongsTo(User, {
   foreignKey: "follower_id",
