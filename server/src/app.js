@@ -27,6 +27,9 @@ import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
 // Middlewares  
 import adminAuth from "./middlewares/adminAuth.js";
 import ReelComment from "./models/ReelComment.js";
+import path from "path";
+import { fileURLToPath } from "url";
+
 
 const app = express();
 
@@ -93,7 +96,11 @@ app.get("/health", (req, res) => {
 
 
 //static serve 
-app.use("/uploads", express.static("uploads"));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 
 
 // ✅ API routes

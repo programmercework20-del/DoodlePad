@@ -1,17 +1,20 @@
+// 
+
 import Story from "../../models/Story.js";
 import StoryArchive from "../../models/StoryArchive.js";
 import StoryHighlight from "../../models/StoryHighlight.js";
 import StoryHighlightItem from "../../models/StoryHighlightItem.js";
 import { Op } from "sequelize";
 import StoryView from "../../models/StoryView.js";
-import user from "../../models/User.js";
+import User from "../../models/User.js";
+import CloseFriend from "../../models/CloseFriend.js"; // ✅ NEW IMPORT
+import Follower from "../../models/Follower.js";
+
 
 /* CREATE STORY */
 export const createStory = async (req, res) => {
-
-  // console.log("CREATE STORY BODY:", req.body);
   try {
-    const { contentType, textContent } = req.body;
+    const { contentType, textContent, privacy } = req.body;
 
     if (contentType !== "text" && !req.file) {
       return res.status(400).json({ message: "Media file required" });
@@ -26,6 +29,7 @@ export const createStory = async (req, res) => {
       contentType,
       mediaUrl,
       textContent,
+      privacy: privacy || "public", // ✅ DEFAULT PUBLIC
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
     });
 
@@ -37,9 +41,12 @@ export const createStory = async (req, res) => {
 };
 
 
-/* GET ACTIVE STORIES */
+/* GET ACTIVE STORIES (WITH PRIVACY CHECK) */
 export const getStories = async (req, res) => {
   try {
+    const viewerId = req.user.id;
+
+    // 1️⃣ Fetch active stories
     const stories = await Story.findAll({
       where: {
         expiresAt: { [Op.gt]: new Date() }
@@ -47,18 +54,73 @@ export const getStories = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    const storyIds = stories.map(s => s.id);
+    // 2️⃣ Viewer ke close friends
+    const closeFriends = await CloseFriend.findAll({
+      where: { userId: viewerId },
+      attributes: ["friendId"]
+    });
+
+    const closeFriendIds = closeFriends.map(cf => cf.friendId);
+
+    // 3️⃣ Privacy filter (MAIN LOGIC)
+    const allowedStories = [];
+
+    for (const story of stories) {
+
+      // owner always allowed
+      if (story.userId === viewerId) {
+        allowedStories.push(story);
+        continue;
+      }
+
+      // 🔥 CHECK ACCOUNT PRIVATE
+      const storyOwner = await User.findByPk(story.userId);
+
+      if (storyOwner?.is_private) {
+
+        const isFollower = await Follower.findOne({
+          where: {
+            follower_id: viewerId,
+            following_id: story.userId,
+            status: "accepted"
+          }
+        });
+
+        if (!isFollower) {
+          continue; // ❌ skip this story
+        }
+      }
+
+      // public story
+      if (story.privacy === "public") {
+        allowedStories.push(story);
+        continue;
+      }
+
+      // close friends
+      if (
+        story.privacy === "close_friends" &&
+        closeFriendIds.includes(story.userId)
+      ) {
+        allowedStories.push(story);
+        continue;
+      }
+    }
+
+
+    // 4️⃣ Seen logic (unchanged)
+    const storyIds = allowedStories.map(s => s.id);
 
     const views = await StoryView.findAll({
       where: {
         storyId: storyIds,
-        viewerId: req.user.id
+        viewerId
       }
     });
 
     const viewedSet = new Set(views.map(v => v.storyId));
 
-    const result = stories.map(story => ({
+    const result = allowedStories.map(story => ({
       ...story.toJSON(),
       isSeen: viewedSet.has(story.id)
     }));
@@ -71,18 +133,17 @@ export const getStories = async (req, res) => {
 };
 
 
-
-
 /* CREATE HIGHLIGHT */
 export const createHighlight = async (req, res) => {
- const highlight = await StoryHighlight.create({
-  userId: req.user.id,
-  title: req.body.title,
-  coverImage: req.body.coverImage
-});
+  const highlight = await StoryHighlight.create({
+    userId: req.user.id,
+    title: req.body.title,
+    coverImage: req.body.coverImage
+  });
 
   res.status(201).json(highlight);
 };
+
 
 /* ADD STORY TO HIGHLIGHT */
 export const addToHighlight = async (req, res) => {
@@ -106,6 +167,8 @@ export const addToHighlight = async (req, res) => {
 
   res.json(item);
 };
+
+
 /* GET MY ARCHIVED STORIES */
 export const getMyArchive = async (req, res) => {
   try {
@@ -123,6 +186,8 @@ export const getMyArchive = async (req, res) => {
   }
 };
 
+
+/* GET STORY VIEWS */
 export const getStoryViews = async (req, res) => {
   try {
     const { storyId } = req.params;
@@ -144,16 +209,3 @@ export const getStoryViews = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch viewers" });
   }
 };
-
-
-// const viewed = await StoryView.findOne({
-//   where: {
-//     storyId: story.id,
-//     viewerId: req.user.id
-//   }
-// });
-
-// return {
-//   ...story.toJSON(),
-//   isSeen: !!viewed
-// };

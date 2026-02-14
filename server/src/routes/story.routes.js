@@ -9,6 +9,14 @@ import {
 } from "../controllers/api/story.controller.js";
 import upload from "../middlewares/upload.js";
 import {markStorySeen, getStoryViews} from "../controllers/api/storyView.controller.js";
+import { reactToStory, getStoryReactions }  from "../controllers/api/StoryReaction.controller.js";
+import { replyToStory } from "../controllers/api/storyReply.controller.js";
+import { toggleStoryLike } from "../controllers/api/storyLike.controller.js";
+import {
+  generateStoryShare,
+  getSharedStory
+} from "../controllers/api/storyShare.controller.js";
+
 
 
 const router = express.Router();
@@ -22,5 +30,14 @@ router.get("/", userAuth, getMyArchive);
 
 router.post("/highlights", userAuth, createHighlight);
 router.post("/highlights/:id/add", userAuth, addToHighlight);
+
+router.post("/:id/react", userAuth, reactToStory);
+router.get("/:id/reactions", userAuth, getStoryReactions);
+
+router.post("/:id/reply", userAuth, replyToStory);
+
+router.post("/:id/like", userAuth, toggleStoryLike);
+
+
 
 export default router;

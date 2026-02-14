@@ -34,6 +34,8 @@ from "../controllers/api/reelShare.controller.js";
 
 import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
+import closeFriendRoutes from "./closeFriend.routes.js";
+
 
 const router = express.Router();
 
@@ -44,15 +46,14 @@ router.post("/login", login);
 router.post("/logout", protect, logout);
 
 router.put("/users/change-password", userAuth, changePassword);
-router.put(
-  "/users/update-profile",
-  userAuth,
-  upload.single("profilePhoto"),
+router.put("/users/update-profile", userAuth, upload.single("profilePhoto"),
   updateMyProfile
 );
 
 router.get("/users/my-profile", userAuth, getMyProfile);
 router.use("/stories", storyRoutes);
+router.use("/close-friends", closeFriendRoutes);
+
 
 
 /* ================= POST APIs ================= */

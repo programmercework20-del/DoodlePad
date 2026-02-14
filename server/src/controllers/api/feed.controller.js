@@ -9,9 +9,13 @@ export const getFeed = async (req, res) => {
 
         // 1️⃣ Get following list
         const following = await Follower.findAll({
-            where: { followerId: userId },
+            where: {
+                followerId: userId,
+                status: "accepted"   // 🔥 ONLY ACCEPTED FOLLOWERS
+            },
             attributes: ["followingId"]
         });
+
 
         // convert to array of ids
         const followingIds = following.map(f => f.followingId);

@@ -12,6 +12,12 @@ import {
     unblockUser,
     restrictFeatures
 } from '../controllers/user.controller.js';
+import { togglePrivateAccount } from "../controllers/api/user.controller.js";
+import userAuth from "../middlewares/userAuth.js";
+import { respondFollowRequest } from "../controllers/api/user.controller.js";
+
+
+
 
 
 const router = express.Router();
@@ -41,6 +47,10 @@ router.get("/:id/follow-counts", userController.getFollowCounts);
 // rountes for posts 
 router.get("/:id/posts", getUserPosts);
 
+// route for toggling private account
+router.patch("/toggle-private", userAuth, togglePrivateAccount);
+
+router.post("/follow/respond", userAuth, respondFollowRequest);
 
 
 export default router;

@@ -149,30 +149,68 @@ export const followUser = async (req, res) => {
   try {
     const followerId = req.user.id;      // logged-in user
     const followingId = req.params.id;   // profile user
-    console.log("data mila ", req.user.id, req.params.id)
+
+    console.log("data mila ", followerId, followingId);
+
     if (followerId === followingId) {
       return res.status(400).json({ message: "You cannot follow yourself" });
     }
 
+    // 🔹 Check if target user exists
+    const targetUser = await User.findByPk(followingId);
+
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 🔹 Check if already following OR request already sent
     const alreadyFollowing = await Follower.findOne({
       where: { follower_id: followerId, following_id: followingId }
     });
 
     if (alreadyFollowing) {
-      return res.status(400).json({ message: "Already following this user" });
+      if (alreadyFollowing.status === "pending") {
+        return res.status(400).json({ message: "Follow request already sent" });
+      }
+      if (alreadyFollowing.status === "accepted") {
+        return res.status(400).json({ message: "Already following this user" });
+      }
     }
 
-    await Follower.create({
-      follower_id: followerId,
-      following_id: followingId
-    });
+    // 🔥 PRIVATE ACCOUNT LOGIC
+    if (targetUser.is_private) {
 
-    res.status(201).json({ message: "User followed successfully" });
+      await Follower.create({
+        follower_id: followerId,
+        following_id: followingId,
+        status: "pending"
+      });
+
+      return res.status(200).json({
+        message: "Follow request sent",
+        status: "pending"
+      });
+
+    } else {
+
+      await Follower.create({
+        follower_id: followerId,
+        following_id: followingId,
+        status: "accepted"
+      });
+
+      return res.status(201).json({
+        message: "User followed successfully",
+        status: "accepted"
+      });
+    }
 
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: error.message });
   }
 };
+
 
 //unfollow user
 export const unfollowUser = async (req, res) => {
@@ -389,5 +427,66 @@ export const getMyProfile = async (req, res) => {
   } catch (error) {
     console.error("GET PROFILE ERROR:", error);
     res.status(500).json({ message: "Failed to fetch profile" });
+  }
+};
+
+// function for pricvate account toggle
+export const togglePrivateAccount = async (req, res) => {
+  try {
+    const userId = req.user.id; // assuming auth middleware sets req.user
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.is_private = !user.is_private;
+    await user.save();
+
+    return res.status(200).json({
+      message: `Account is now ${user.is_private ? "Private" : "Public"}`,
+      is_private: user.is_private,
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+export const respondFollowRequest = async (req, res) => {
+  try {
+    const { followerId, action } = req.body; 
+    // action = "accept" OR "reject"
+
+    const request = await Follower.findOne({
+      where: {
+        follower_id: followerId,
+        following_id: req.user.id,
+        status: "pending"
+      }
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: "Request not found" });
+    }
+
+    if (action === "accept") {
+      request.status = "accepted";
+      await request.save();
+
+      return res.status(200).json({ message: "Follow request accepted" });
+    }
+
+    if (action === "reject") {
+      await request.destroy();
+      return res.status(200).json({ message: "Follow request rejected" });
+    }
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
 };

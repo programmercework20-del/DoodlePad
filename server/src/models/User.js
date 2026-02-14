@@ -76,7 +76,12 @@ const User = sequelize.define("User", {
     isVerified: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
-    }
+    },
+    is_private: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+    },
+
 
 }, {
     tableName: "users",
