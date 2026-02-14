@@ -4,10 +4,12 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
-import hpp from "hpp";
+import hpp from "hpp";  
 import config from "./config/env.js";
 import cron from "node-cron";
 import { archiveExpiredStories } from "./jobs/storyArchive.job.js";
+
+
 import userRoutes from "./routes/user.routes.js";
 import commentRoutes from "./routes/comment.routes.js";
 import postRoutes from "./routes/post.routes.js";
@@ -22,11 +24,11 @@ import reelViewRoutes from "./routes/reelView.routes.js";
 import reelsFeedRoutes from "./routes/reelsFeed.routes.js";
 import exploreRoutes from "./routes/explore.routes.js";
 
-// Routes
+
 import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
 import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
 
-// Middlewares
+// Middlewares  
 import adminAuth from "./middlewares/adminAuth.js";
 import ReelComment from "./models/ReelComment.js";
 
@@ -93,6 +95,7 @@ app.get("/health", (req, res) => {
   });
 });
 
+
 //static serve 
 app.use("/uploads", express.static("uploads"));
 
@@ -114,8 +117,31 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
 
+
 // 404 handler
+/* =========================
+   ROUTES (IMPORTANT PART)
+========================= */
+
+  // // 🔓 APK / MOBILE USER APIs
+  // // signup, login, profile, change-password
+  // app.use("/api", apiRoutes);
+// 🔓 APK / MOBILE USER APIs
+// signup, login, profile, change-password
+app.use("/api", apiRoutes);
+
+// 🔐 ADMIN PANEL APIs (protected)
+app.use("/api/admin", adminAuth, adminRoutes);
+
+
+/* =========================
+   ERROR HANDLING
+========================= */
+
+// 404
+
 app.use((req, res) => {
+
     res.status(404).json({
         success: false,
         message: "Route not found"
@@ -125,9 +151,10 @@ app.use((req, res) => {
    ROUTES (IMPORTANT PART)
 ========================= */
 
-  // // 🔓 APK / MOBILE USER APIs
-  // // signup, login, profile, change-password
-  // app.use("/api", apiRoutes);
+// 🔓 APK / MOBILE USER APIs
+// signup, login, profile, change-password
+app.use("/api", apiRoutes);
+app.use("/uploads", express.static("uploads"));
 
   // // 🔐 ADMIN PANEL APIs (protected)
   // app.use("/api/admin", adminAuth, adminRoutes);

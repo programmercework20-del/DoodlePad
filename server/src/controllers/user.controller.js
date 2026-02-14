@@ -268,6 +268,6 @@ export const restrictFeatures = async (req, res) => {
             success: false,
             message: "Server error"
         });
-    }
+    } 
 };
     

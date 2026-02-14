@@ -8,17 +8,17 @@ import {
   addToHighlight
 } from "../controllers/api/story.controller.js";
 import upload from "../middlewares/upload.js";
+import {markStorySeen, getStoryViews} from "../controllers/api/storyView.controller.js";
+
 
 const router = express.Router();
+router.post("/", userAuth,  upload.single("mediaUrl"), createStory);  // 👈 IMPORTANT // createStory
+router.get("/archive", userAuth, getMyArchive); // Get my archived stories  
+router.post("/seen", userAuth, markStorySeen);
+router.get("/:storyId/views", userAuth, getStoryViews); 
 
-router.post(
-  "/",
-  userAuth,
-  upload.single("mediaUrl"),   // 👈 IMPORTANT
-  createStory
-);
 router.get("/", userAuth, getStories);
-router.get("/archive", userAuth, getMyArchive);
+router.get("/", userAuth, getMyArchive);
 
 router.post("/highlights", userAuth, createHighlight);
 router.post("/highlights/:id/add", userAuth, addToHighlight);
