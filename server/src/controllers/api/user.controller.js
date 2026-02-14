@@ -181,8 +181,8 @@ export const followUser = async (req, res) => {
     if (targetUser.is_private) {
 
       await Follower.create({
-        follower_id: followerId,
-        following_id: followingId,
+        followerId: followerId,
+        followingId: followingId,
         status: "pending"
       });
 
@@ -194,8 +194,8 @@ export const followUser = async (req, res) => {
     } else {
 
       await Follower.create({
-        follower_id: followerId,
-        following_id: followingId,
+        followerId: followerId,
+        followingId: followingId,
         status: "accepted"
       });
 

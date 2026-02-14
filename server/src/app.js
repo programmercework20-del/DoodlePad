@@ -8,6 +8,10 @@ import hpp from "hpp";
 import config from "./config/env.js";
 import cron from "node-cron";
 import { archiveExpiredStories } from "./jobs/storyArchive.job.js";
+import reelViewRoutes from "./routes/reelView.routes.js";
+import reelsFeedRoutes from "./routes/reelsFeed.routes.js";
+import exploreRoutes from "./routes/explore.routes.js";
+
 
 
 import userRoutes from "./routes/user.routes.js";
@@ -20,7 +24,7 @@ import analyticsRoutes from "./routes/analytics.routes.js";
 import reelRoutes from "./routes/reel.routes.js";
 import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
-// Routes ok
+// Routes
 import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
 import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
 
@@ -107,12 +111,14 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/api", apiRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/reels", reelRoutes);
+app.use("/api/reels", reelRoutes, reelViewRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
+app.use("/api/reels-feed", reelsFeedRoutes);
+app.use("/api/explore", exploreRoutes);
 app.use("/api/reports", reportRoutes);
-app.use("/api/feed", feedRoutes);
+app.use("/api/reels/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);

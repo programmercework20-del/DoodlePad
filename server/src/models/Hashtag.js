@@ -11,6 +11,11 @@ const Hashtag = sequelize.define("Hashtag", {
   name:{
     type:DataTypes.STRING,
     unique:true
+  },
+
+  postsCount:{
+    type:DataTypes.INTEGER,
+    defaultValue:0
   }
 
 },{

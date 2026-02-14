@@ -8,24 +8,27 @@ const Follower = sequelize.define("Follower", {
     primaryKey: true
   },
 
-  // 👇 camelCase in code
   followerId: {
     type: DataTypes.UUID,
     allowNull: false,
-    field: "follower_id"   // 👈 maps to DB
+    field: "follower_id"   // 🔥 map DB column
   },
 
   followingId: {
     type: DataTypes.UUID,
     allowNull: false,
-    field: "following_id"  // 👈 maps to DB
+    field: "following_id"  // 🔥 map DB column
   },
+    status: {
+    type: DataTypes.STRING,
+    defaultValue: "accepted"
+  }
 
-}, {
-  tableName: "followers",
-  timestamps: true,
-  createdAt: "created_at",
-  updatedAt: false
+},{
+  tableName:"followers",
+  timestamps:true,
+  createdAt:"created_at",
+  updatedAt:false
 });
 
 export default Follower;

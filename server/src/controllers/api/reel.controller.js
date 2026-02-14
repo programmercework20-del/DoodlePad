@@ -1,5 +1,6 @@
 import Reel from "../../models/Reel.js";
 import { getVideoDuration } from "../../utils/getVideoDuration.js";
+import { processHashtags } from "../../utils/hashtag.util.js";
 
 export const createReel = async (req, res) => {
     try {
@@ -34,7 +35,17 @@ export const createReel = async (req, res) => {
             userId,
             videoUrl: `/uploads/${req.file.filename}`,
             caption,
-            duration
+            duration: 30,
+            viewsCount: 0,
+            likesCount: 0,
+            commentsCount: 0,
+            sharesCount: 0,
+            status: "active"
+        });
+
+        await processHashtags({
+            caption,
+            reelId: reel.id
         });
 
         return res.status(201).json({
