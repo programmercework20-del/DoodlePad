@@ -1,7 +1,7 @@
 import express from "express";
 import { protect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
-
+import { getUserProfile } from "../controllers/api/profile.controller.js";
 import {
   addComment,
   getPostComments,
@@ -74,6 +74,9 @@ router.get(
   "/users/:id/posts",
   getUserPosts
 );
+
+/* ================= USER PROFILE ================= */
+router.get("/profile/:id", protect, getUserProfile);
 
 
 /* ================= COMMENTS ================= */
