@@ -26,7 +26,7 @@ export const getFeedPosts = async (req, res) => {
         {
           model: User,
           as: "author",
-          attributes: ["id", "username", "profilePhoto"]
+          attributes: ["id", "name", "username", "profilePhoto"]
         },
         {
           model: Comment,
@@ -36,8 +36,8 @@ export const getFeedPosts = async (req, res) => {
           include: [
             {
               model: User,
-              as: "author",
-              attributes: ["id", "username"]
+              as: "user",
+              attributes: ["id", "name", "username"]
             }
           ]
         }

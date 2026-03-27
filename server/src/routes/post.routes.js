@@ -7,8 +7,8 @@ import { protect } from '../middlewares/auth.middleware.js';
 const router = express.Router();
 // router.use(adminAuth);
 
-router.get("/", postController.getFeedPosts);
-router.get("/:id", postController.getPostById);
+router.get("/",protect, postController.getFeedPosts);
+router.get("/:id",protect, postController.getPostById);
 router.post("/:id/hide",adminAuth, postController.hidePost);
 router.delete("/:id",adminAuth, postController.deletePost);
 router.post("/:id/mark-sensitive",adminAuth, postController.markSensitive);

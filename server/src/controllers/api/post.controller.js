@@ -76,7 +76,6 @@ export const deletePost = async (req, res) => {
     const userId = req.user.id;
     const postId = req.params.id;
 
-    // 1. Find Post
     const post = await Post.findByPk(postId);
 
     if (!post) {
@@ -86,21 +85,19 @@ export const deletePost = async (req, res) => {
       });
     }
 
-    // 2.check ownership
-
+    // ✅ Ownership check
     if (post.userId !== userId) {
-      return res.json(403).json({
+      return res.status(403).json({
         success: false,
-        message: "you are not allowed to delete this post"
+        message: "You are not allowed to delete this post"
       });
     }
 
-    // 2. Already deleted?
-
-    if (post.userId === "deleted") {
-      return res.json(400).json({
+    // ✅ Already deleted check
+    if (post.status === "deleted") {
+      return res.status(400).json({
         success: false,
-        message: "post already deleted"
+        message: "Post already deleted"
       });
     }
 
@@ -118,7 +115,7 @@ export const deletePost = async (req, res) => {
       message: "Failed to delete post"
     });
   }
-}
+};
 
 export const getUserPosts = async (req, res) => {
   try {
