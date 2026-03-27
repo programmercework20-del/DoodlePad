@@ -1,6 +1,7 @@
 import express from "express";
 import { protect } from "../middlewares/auth.middleware.js";
 import upload from "../middlewares/upload.js";
+import * as postController from '../controllers/post.controller.js';
 import { getUserProfile } from "../controllers/api/profile.controller.js";
 import {
   addComment,
@@ -70,6 +71,7 @@ router.use("/stories", storyRoutes);
 router.post("/posts", protect, upload.array("media", 5), createPost);
 router.delete("/posts/:id", protect, deletePost);
 router.get("/users/:id/posts", getUserPosts);
+router.get("/posts",protect, postController.getFeedPosts);
 
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
