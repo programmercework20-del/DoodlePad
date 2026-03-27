@@ -1,30 +1,40 @@
-import { DataTypes } from "sequelize";
+import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/db.js";
 
-const Follower = sequelize.define("Follower", {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
-  },
+class Follower extends Model {}
 
-  followerId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    field: "follower_id"   // 🔥 map DB column
-  },
+Follower.init(
+  {
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4,
+    },
 
-  followingId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    field: "following_id"  // 🔥 map DB column
+    followerId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: "followerId",
+    },
+
+    followingId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: "followingId",
+    },
+
+    createdAt: {
+      type: DataTypes.DATE,
+      field: "createdAt",
+    },
+  },
+  {
+    sequelize,
+    modelName: "Follower",
+    tableName: "followers",
+    timestamps: true,
+    updatedAt: false,
   }
-
-},{
-  tableName:"followers",
-  timestamps:true,
-  createdAt:"created_at",
-  updatedAt:false
-});
+);
 
 export default Follower;

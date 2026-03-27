@@ -9,7 +9,7 @@ const User = sequelize.define("User", {
     },
     email: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
         unique: true,
         validate: {
             isEmail: true
@@ -17,16 +17,16 @@ const User = sequelize.define("User", {
     },
     username: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
         unique: true
     },
     name: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: true
     },
     password: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: true
     }
     ,
     profilePhoto: {
@@ -76,6 +76,37 @@ const User = sequelize.define("User", {
     isVerified: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
+    },
+
+    phone: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true
+    },
+
+    isPhoneVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+
+    phoneOtp: {
+        type: DataTypes.STRING
+    },
+
+    phoneOtpExpires: {
+        type: DataTypes.DATE
+    },
+
+    emailVerificationToken: {
+        type: DataTypes.STRING
+    },
+
+    resetPasswordToken: {
+        type: DataTypes.STRING
+    },
+
+    resetPasswordExpires: {
+        type: DataTypes.DATE
     }
 
 }, {

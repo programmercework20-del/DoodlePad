@@ -1,7 +1,7 @@
 import express from "express";
 import { protect } from "../middlewares/auth.middleware.js";
-import { upload } from "../middlewares/upload.middleware.js";
-
+import upload from "../middlewares/upload.js";
+import { getUserProfile } from "../controllers/api/profile.controller.js";
 import {
   addComment,
   getPostComments,
@@ -15,10 +15,16 @@ import { toggleLikePost } from "../controllers/api/postLike.controller.js";
 import {
   signup,
   login,
+  sendOtp,
+  verifyOtp,
+  verifyEmail,
+  sendEmailVerification,
+  forgotPassword,
   logout,
   changePassword,
   updateMyProfile,
-  getMyProfile
+  getMyProfile,
+  resetPassword
 } from "../controllers/api/user.controller.js";
 
 import { createPost, deletePost, getUserPosts } 
@@ -26,11 +32,6 @@ from "../controllers/api/post.controller.js";
 
 import { sharePost } from "../controllers/api/share.controller.js";
 
-import { toggleReelLike } 
-from "../controllers/api/reelLike.controller.js";
-
-import { shareReel } 
-from "../controllers/api/reelShare.controller.js";
 
 import userAuth from "../middlewares/userAuth.js";
 import storyRoutes from "./story.routes.js";
@@ -42,6 +43,15 @@ const router = express.Router();
 router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", protect, logout);
+router.post("/send-otp", sendOtp);
+router.post("/verify-otp", verifyOtp);
+
+router.post("/send-email-verification", protect, sendEmailVerification);
+router.get("/verify-email/:token", verifyEmail);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
+
+router.post("/forgot-password", forgotPassword);
 
 router.put("/users/change-password", userAuth, changePassword);
 router.put(
@@ -57,63 +67,16 @@ router.use("/stories", storyRoutes);
 
 /* ================= POST APIs ================= */
 
-router.post(
-  "/posts",
-  protect,
-  upload.single("media"),
-  createPost
-);
+router.post("/posts", protect, upload.array("media", 5), createPost);
+router.delete("/posts/:id", protect, deletePost);
+router.get("/users/:id/posts", getUserPosts);
 
-router.delete(
-  "/posts/:id",
-  protect,
-  deletePost
-);
-
-router.get(
-  "/users/:id/posts",
-  getUserPosts
-);
-
-
-/* ================= COMMENTS ================= */
-
-router.post(
-  "/posts/:postId/comments",
-  protect,
-  upload.single("media"),
-  addComment
-);
-
+router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
 
-router.delete(
-  "/comments/:commentId",
-  protect,
-  deleteComment
-);
+router.post("/posts/:id/like", protect, toggleLikePost);
+router.post("/posts/:id/share", protect, sharePost);
 
-router.post(
-  "/comments/:commentId/like",
-  protect,
-  likeComment
-);
-
-
-/* ================= POST LIKE ================= */
-
-router.post("/:id/like", protect, toggleLikePost);
-
-
-/* ================= POST SHARE ================= */
-
-router.post("/:id/share", protect, sharePost);
-
-
-/* ================= REEL ================= */
-
-router.post("/reels/:reelId/like", protect, toggleReelLike);
-router.post("/reels/:id/share", protect, shareReel);
 
 
 /* ================= REPORT ================= */

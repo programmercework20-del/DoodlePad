@@ -3,82 +3,218 @@ import bcrypt from "bcryptjs";
 import TokenBlacklist from "../../models/TokenBlacklist.js";
 import jwt from "jsonwebtoken";
 import { User, Follower } from "../../models/index.js";
+import { Op } from "sequelize";
+import crypto from "crypto";
+import { sendEmail } from "../../utils/sendEmail.js";
 
 
 export const signup = async (req, res) => {
   try {
-    const { email, username, name, password } = req.body;
+    const { email, username, firstName, lastName, password, bio } = req.body;
 
-    // Basic validation
-    if (!email || !username || !name || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required"
-      });
+    if (!email || !username || !firstName || !lastName || !password) {
+      return res.status(400).json({ message: "All fields required" });
     }
 
-    // Check existing email
-    const existingEmail = await User.findOne({ where: { email } });
-    if (existingEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "Email already exists"
-      });
-    }
+    const existingUser = await User.findOne({
+      where: {
+        [Op.or]: [{ email }, { username }]
+      }
+    });
 
-    // Check existing username
-    const existingUsername = await User.findOne({ where: { username } });
-    if (existingUsername) {
+    if (existingUser) {
       return res.status(400).json({
-        success: false,
-        message: "Username already exists"
+        message: "Email or username already exists"
       });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const token = crypto.randomBytes(32).toString("hex");
+
     const user = await User.create({
       email,
       username,
-      name,
-      password: hashedPassword
+      name: `${firstName} ${lastName}`,
+      password: hashedPassword,
+      bio,
+      emailVerificationToken: token
     });
 
+    // ✅ FINAL FIXED URL
+    const url = `http://localhost:5000/api/verify-email/${token}`;
+
+    console.log("🔥 FINAL SIGNUP URL:", url);
+
+    await sendEmail(
+      email,
+      "Verify your account",
+      `<h3>Click to verify</h3><a href="${url}">${url}</a>`
+    );
+
     return res.status(201).json({
-      success: true,
-      message: "Signup successful",
+      message: "Signup successful. Please verify your email."
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Signup failed" });
+  }
+};
+
+export const sendEmailVerification = async (req, res) => {
+  const user = req.user;
+
+  const token = crypto.randomBytes(32).toString("hex");
+
+  await user.update({ emailVerificationToken: token });
+
+  const url = `http://localhost:5000/api/verify-email/${token}`;
+
+  console.log("🔥 Verification URL:", url);
+
+  await sendEmail(
+    user.email,
+    "Verify your account",
+    `<h3>Click to verify</h3><a href="${url}">${url}</a>`
+  );
+
+  res.json({ message: "Verification email sent" });
+};
+
+export const verifyEmail = async (req, res) => {
+  const { token } = req.params;
+
+  const user = await User.findOne({
+    where: { emailVerificationToken: token }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid token" });
+  }
+
+  await user.update({
+    isVerified: true,
+    emailVerificationToken: null
+  });
+
+  res.json({ message: "Email verified successfully" });
+};
+
+export const sendOtp = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number required" });
+    }
+
+    // generate 4 digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    let user = await User.findOne({ where: { phone } });
+
+    if (!user) {
+      user = await User.create({ phone });
+    }
+
+    await user.update({
+      phoneOtp: otp,
+      phoneOtpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
+    });
+
+    // 🔥 DEV MODE (console)
+    console.log(`📱 OTP for ${phone}: ${otp}`);
+
+    return res.json({
+      message: "OTP sent successfully",
+      otp // remove in production ❗
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to send OTP" });
+  }
+};
+
+export const verifyOtp = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+
+    const user = await User.findOne({ where: { phone } });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (
+      user.phoneOtp !== otp ||
+      user.phoneOtpExpires < new Date()
+    ) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    await user.update({
+      isPhoneVerified: true,
+      phoneOtp: null,
+      phoneOtpExpires: null
+    });
+
+    // 🔥 LOGIN (JWT)
+    const token = jwt.sign(
+      { id: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    return res.json({
+      message: "Phone verified successfully",
+      token,
       user: {
         id: user.id,
-        email: user.email,
-        username: user.username
+        phone: user.phone
       }
     });
 
   } catch (error) {
-
-    // Handle unique constraint from DB (extra safety)
-    if (error.name === "SequelizeUniqueConstraintError") {
-      return res.status(400).json({
-        success: false,
-        message: "Email or Username already exists"
-      });
-    }
-
-    console.error("Signup Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Signup failed"
-    });
+    console.error(error);
+    res.status(500).json({ message: "OTP verification failed" });
   }
 };
 
+export const updatePhone = async (req, res) => {
+  const { phone } = req.body;
 
- 
+  const user = req.user;
+
+  await user.update({
+    phone,
+    isPhoneVerified: false
+  });
+
+  res.json({ message: "Phone updated, verify again" });
+};
+
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
+    // identifier = email OR username
 
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: identifier },
+          { username: identifier }
+        ]
+      }
+    });
+
+    if (user.email === identifier && !user.isVerified) {
+      return res.status(403).json({
+        message: "Please verify your email first"
+      });
+    }
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -89,11 +225,8 @@ export const login = async (req, res) => {
     }
 
     if (user.status !== "active") {
-      return res.status(403).json({
-        message: "Account is blocked or banned"
-      });
+      return res.status(403).json({ message: "Account blocked" });
     }
-
 
     const token = jwt.sign(
       { id: user.id },
@@ -101,21 +234,96 @@ export const login = async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    await user.update({ lastActiveAt: new Date() });
-
     return res.json({
       message: "Login successful",
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username
-      }
+      token
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: "Login failed" });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ where: { email } });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 🔥 generate token
+    const token = crypto.randomBytes(32).toString("hex");
+
+    await user.update({
+      resetPasswordToken: token,
+      resetPasswordExpires: new Date(Date.now() + 10 * 60 * 1000) // 10 min
+    });
+
+    // 🔥 reset link
+    const url = `http://localhost:5000/api/reset-password/${token}`;
+
+    console.log("🔐 Reset URL:", url);
+
+    await sendEmail(
+      email,
+      "Reset your password",
+      `<h3>Reset Password</h3><a href="${url}">${url}</a>`
+    );
+
+    return res.json({
+      message: "Password reset email sent"
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Login failed" });
+    res.status(500).json({ message: "Failed to send reset email" });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
+    }
+
+    const user = await User.findOne({
+      where: {
+        resetPasswordToken: token,
+        resetPasswordExpires: {
+          [Op.gt]: new Date()
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await user.update({
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpires: null
+    });
+
+    return res.json({
+      message: "Password reset successful"
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Password reset failed" });
   }
 };
 

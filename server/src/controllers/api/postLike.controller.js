@@ -28,7 +28,7 @@ export const toggleLikePost = async (req, res) => {
       return res.json({
         success: true,
         action: "unliked",
-        message: "Post unliked"
+        likesCount: post.likesCount - 1
       });
     }
 
@@ -39,7 +39,7 @@ export const toggleLikePost = async (req, res) => {
     return res.json({
       success: true,
       action: "liked",
-      message: "Post liked"
+      likesCount: post.likesCount + 1
     });
 
   } catch (error) {

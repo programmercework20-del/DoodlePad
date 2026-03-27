@@ -26,13 +26,20 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowed = ["image", "video", "audio"];
-  const type = file.mimetype.split("/")[0];
+  console.log("FILE:", file.originalname, file.mimetype);
 
-  if (allowed.includes(type)) {
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  const allowedExtensions = [
+    ".jpg", ".jpeg", ".png", ".webp",
+    ".mp4", ".mp3", ".wav"
+  ];
+
+  // ✅ ONLY CHECK EXTENSION (ignore mimetype completely)
+  if (allowedExtensions.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error("Unsupported file type"), false);
+    cb(new Error("Invalid file type"), false);
   }
 };
 

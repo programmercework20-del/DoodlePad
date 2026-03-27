@@ -23,8 +23,8 @@ const Post = sequelize.define("Post", {
         type: DataTypes.TEXT,
         allowNull: true
     },
-    mediaUrl: {
-        type: DataTypes.STRING,
+    mediaUrls: {
+        type: DataTypes.ARRAY(DataTypes.STRING), // multiple images/videos
         allowNull: true
     },
     caption: {
@@ -54,6 +54,14 @@ const Post = sequelize.define("Post", {
     commentsEnabled: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    isSaved: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    expiresAt: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
 }, {
     tableName: "posts",

@@ -5,59 +5,69 @@ import { processHashtags } from "../../utils/hashtag.util.js";
 
 
 export const createPost = async (req, res) => {
-  console.log("data mila:", req.body)
   try {
     const userId = req.user.id;
-    const { type, caption, content } = req.body;
+    const { type, caption, content, isSaved } = req.body;
 
-    let mediaUrl = null;
+    const cleanType = type?.trim().toLowerCase();
 
-    if (req.file) {
-      mediaUrl = `/uploads/${req.file.filename}`;
+    let mediaUrls = [];
+
+    if (req.files && req.files.length > 0) {
+      mediaUrls = req.files.map(file => `/uploads/stories/${file.filename}`);
     }
 
-    // Validation
     const allowedTypes = ["image", "video", "audio", "doodle", "text", "live"];
-    if (!allowedTypes.includes(type)) {
-      return res.status(400).json({ success: false, message: "Invalid post type" });
-    }
 
-    if (["image", "video", "audio", "doodle"].includes(type) && !mediaUrl) {
+    if (!allowedTypes.includes(cleanType)) {
       return res.status(400).json({
         success: false,
-        message: "File is required for this post type"
+        message: "Invalid post type"
       });
     }
 
-    if (type === "text" && !content) {
+    if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "content is required for text post"
+        message: "File is required"
       });
+    }
+
+    if (cleanType === "text" && !content) {
+      return res.status(400).json({
+        success: false,
+        message: "Content required"
+      });
+    }
+
+    let expiresAt = null;
+
+    if (!isSaved) {
+      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     }
 
     const post = await Post.create({
       userId,
-      type,
+      type: cleanType,
       content,
       caption,
-      mediaUrl
-    });
-
-    await processHashtags({
-      caption: post.caption,
-      postId: post.id
+      mediaUrls,
+      isSaved: isSaved || false,
+      expiresAt
     });
 
     return res.status(201).json({
       success: true,
-      message: "Post created successfully",
+      message: "Post created",
       post
     });
 
   } catch (error) {
-    console.error("Create post error:", error);
-    res.status(500).json({ success: false, message: "Failed to create post" });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create post"
+    });
   }
 };
 
