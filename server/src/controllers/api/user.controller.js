@@ -662,3 +662,35 @@ export const changePassword = async (req, res) => {
   }
 };
 
+export const togglePrivacy = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const { isPrivate } = req.body;
+
+    if (isPrivate === undefined) {
+  return res.status(400).json({ message: "isPrivate is required" });
+}
+
+const isPrivateBool = isPrivate === true || isPrivate === "true";
+
+   await user.update({ isPrivate: isPrivateBool });
+
+    return res.json({
+      success: true,
+      message: isPrivate
+        ? "Account switched to private"
+        : "Account switched to public",
+      isPrivate: user.isPrivate
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to update privacy" });
+  }
+};
+

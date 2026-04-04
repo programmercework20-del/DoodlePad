@@ -28,7 +28,8 @@ import {
   resetPassword, 
   getFollowRequests,
   acceptFollowRequest,
-  rejectFollowRequest
+  rejectFollowRequest,
+  togglePrivacy
 } from "../controllers/api/user.controller.js";
 
 import { createPost, deletePost, getUserPosts, getArchivedPosts, restoreArchivedPost, archivePost } 
@@ -65,6 +66,12 @@ router.post("/requests/:id/reject", protect, rejectFollowRequest);
 router.post("/forgot-password", forgotPassword);
 
 router.put("/users/change-password", userAuth, changePassword);
+
+
+/* ================= PRIVACY ================= */
+
+router.patch("/users/privacy", userAuth, togglePrivacy);
+
 
 /* ================= PROFILE APIs ================= */
 

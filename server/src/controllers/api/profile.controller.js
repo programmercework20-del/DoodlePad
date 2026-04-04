@@ -42,51 +42,62 @@ export const getUserProfile = async (req, res) => {
       where: { userId: profileUserId }
     });
 
-    // 🔥 FOLLOW CHECK
-    let isFollowing = false;
+    // 🔥 FOLLOW CHECK (FIXED)
+    let follow = null;
 
     if (viewerId) {
-      const follow = await Follower.findOne({
+      follow = await Follower.findOne({
         where: {
           followerId: viewerId,
           followingId: profileUserId
         }
       });
-
-      isFollowing = !!follow;
     }
 
-    // 🔥 DOODLE VISIBILITY LOGIC
+    const isFollowing = follow?.status === "accepted";
+
+    // 🔥 PRIVATE ACCOUNT LOGIC (NEW)
+    let canViewFullProfile = true;
+
+    if (user.isPrivate && viewerId !== profileUserId) {
+      if (!isFollowing) {
+        canViewFullProfile = false;
+      }
+    }
+
+    // 🔥 DOODLE VISIBILITY (FIXED)
     let showDoodle = false;
 
     if (viewerId === profileUserId) {
       showDoodle = true;
     } else {
-      const isFriend = await Follower.findOne({
-        where: {
-          followerId: viewerId,
-          followingId: profileUserId
-        }
-      });
-
-      showDoodle = !!isFriend;
+      showDoodle = isFollowing;
     }
 
-    const posts = await Post.findAll({
-      where: { userId: profileUserId },
-      order: [["createdAt", "DESC"]]
-    });
+    // 🔥 POSTS (FIXED)
+    let posts = [];
+
+    if (canViewFullProfile) {
+      posts = await Post.findAll({
+        where: { userId: profileUserId },
+        order: [["createdAt", "DESC"]]
+      });
+    }
 
     return res.json({
       success: true,
       profile: {
         user,
-        stats: {
-          followers: followersCount,
-          following: followingCount,
-          posts: postsCount
-        },
+        stats: canViewFullProfile
+          ? {
+              followers: followersCount,
+              following: followingCount,
+              posts: postsCount
+            }
+          : null,
         isFollowing,
+        isPrivate: user.isPrivate,
+        canViewFullProfile,
         showDoodle,
         posts
       }
