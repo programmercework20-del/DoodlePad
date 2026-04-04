@@ -22,10 +22,7 @@ const SearchHistory = sequelize.define(
   },
   {
     tableName: "search_history",
-
     // 🔥 THIS IS THE FIX
-    createdAt: "createdat",
-    updatedAt: "updatedat",
     timestamps: true
   }
 );

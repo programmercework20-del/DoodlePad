@@ -17,7 +17,7 @@ import {
 const router = express.Router();
 
 router.get("/",adminAuth, getAllUsers);
-router.get("/:id",adminAuth, getUserById);
+router.get("/admin/:id", adminAuth, getUserById);
 router.post("/:id/warn",adminAuth, warnUser);
 router.post("/:id/block",adminAuth, blockUser);
 router.post("/:id/ban",adminAuth, banUser);

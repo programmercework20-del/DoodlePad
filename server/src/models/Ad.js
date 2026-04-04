@@ -1,18 +1,22 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../config/db.js";
 
-const StoryHighlight = sequelize.define("StoryHighlight", {
+const Ad = sequelize.define("Ad", {
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
-  userId: DataTypes.UUID,
   title: DataTypes.STRING,
-  coverImage: DataTypes.TEXT
+  imageUrl: DataTypes.STRING,
+  redirectUrl: DataTypes.STRING,
+  status: {
+    type: DataTypes.ENUM("active", "inactive"),
+    defaultValue: "active"
+  }
 }, {
-  tableName: "story_highlights",
+  tableName: "ads",
   timestamps: true
 });
 
-export default StoryHighlight;
+export default Ad;

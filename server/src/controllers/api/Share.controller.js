@@ -1,20 +1,25 @@
 import Share from "../../models/Share.js";
+import Post from "../../models/Post.js";
 
 export const sharePost = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { targetUserId } = req.body;
+    const { targetUserId, type } = req.body;
     const postId = req.params.id;
+
+    const post = await Post.findByPk(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
 
     await Share.create({
       postId,
       userId,
-      targetUserId,
-      type: "dm"
+      targetUserId: targetUserId || null,
+      type: type || "external"
     });
 
-    // increment counter
-    await Post.increment("sharesCount", { where: { id: postId } });
+    await post.increment("sharesCount");
 
     res.json({
       success: true,
@@ -22,10 +27,7 @@ export const sharePost = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Share error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to share post"
-    });
+    console.error(error);
+    res.status(500).json({ message: "Share failed" });
   }
 };

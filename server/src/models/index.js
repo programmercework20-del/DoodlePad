@@ -47,15 +47,102 @@ User.hasMany(Report, { foreignKey: "reporterId", as: "reportsMade" });
 // =====================================================
 // ================= POST SYSTEM =========================
 // =====================================================
-Post.belongsTo(User, { foreignKey: "userId", as: "author" });
-Post.hasMany(Comment, { foreignKey: "postId", as: "comments" });
+// ================= USER ↔ POST =================
+Post.belongsTo(User, {
+  foreignKey: "userId",
+  as: "author"
+});
 
-Comment.belongsTo(Post, { foreignKey: "postId", as: "post" });
-Comment.belongsTo(User, { foreignKey: "userId", as: "user" });
-Comment.hasMany(CommentLike, { foreignKey: "commentId", as: "likes" });
+// ================= POST ↔ COMMENT =================
+Post.hasMany(Comment, {
+  foreignKey: "postId",
+  as: "comments"
+});
 
-CommentLike.belongsTo(Comment, { foreignKey: "commentId", as: "comment" });
-CommentLike.belongsTo(User, { foreignKey: "userId", as: "user" });
+Comment.belongsTo(Post, {
+  foreignKey: "postId",
+  as: "post"   // ✅ keep ONLY ONE
+});
+
+// ================= COMMENT ↔ USER =================
+Comment.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user"
+});
+
+// ================= COMMENT SELF (REPLIES) =================
+Comment.hasMany(Comment, {
+  foreignKey: "parentId",
+  as: "replies"
+});
+
+Comment.belongsTo(Comment, {
+  foreignKey: "parentId",
+  as: "parent"
+});
+
+// ================= COMMENT LIKE =================
+Comment.hasMany(CommentLike, {
+  foreignKey: "commentId",
+  as: "likes"
+});
+
+CommentLike.belongsTo(Comment, {
+  foreignKey: "commentId",
+  as: "comment"
+});
+
+CommentLike.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user"
+});
+
+// ================= POST LIKE =================
+Post.hasMany(PostLike, {
+  foreignKey: "postId",
+  as: "postLikes"
+});
+
+PostLike.belongsTo(Post, {
+  foreignKey: "postId",
+  as: "post"   // ✅ safe now (unique usage)
+});
+
+PostLike.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user"
+});
+
+User.hasMany(PostLike, {
+  foreignKey: "userId",
+  as: "likedPosts"
+});
+
+// ================= SHARE =================
+Post.hasMany(Share, {
+  foreignKey: "postId",
+  as: "shares"
+});
+
+User.hasMany(Share, {
+  foreignKey: "userId",
+  as: "shares"
+});
+
+Share.belongsTo(Post, {
+  foreignKey: "postId",
+  as: "sharedPost"   // ✅ FIXED (NOT "post")
+});
+
+Share.belongsTo(User, {
+  foreignKey: "userId",
+  as: "sharedBy"
+});
+
+Share.belongsTo(User, {
+  foreignKey: "targetUserId",
+  as: "sharedTo"
+});
 
 
 // =====================================================
@@ -75,24 +162,7 @@ Message.belongsTo(User, { foreignKey: "senderId", as: "sender" });
 Message.belongsTo(User, { foreignKey: "receiverId", as: "receiver" });
 
 
-// =====================================================
-// ================= POST LIKE ==========================
-// =====================================================
-Post.hasMany(PostLike, { foreignKey: "postId", as: "likes" });
-User.hasMany(PostLike, { foreignKey: "userId", as: "likedPosts" });
-PostLike.belongsTo(Post, { foreignKey: "postId", as: "post" });
-PostLike.belongsTo(User, { foreignKey: "userId", as: "user" });
 
-
-// =====================================================
-// ================= SHARE ==============================
-// =====================================================
-User.hasMany(Share, { foreignKey: "userId", as: "shares" });
-Post.hasMany(Share, { foreignKey: "postId", as: "shares" });
-
-Share.belongsTo(User, { foreignKey: "userId", as: "sharedBy" });
-Share.belongsTo(User, { foreignKey: "targetUserId", as: "sharedTo" });
-Share.belongsTo(Post, { foreignKey: "postId", as: "post" });
 
 
 

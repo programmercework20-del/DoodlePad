@@ -22,19 +22,26 @@ const Comment = sequelize.define("Comment", {
             model: "users",
             key: "id"
         }
-    },
-  type: {
-  type: DataTypes.ENUM(
-    "text",
-    "emoji",
-    "image",
-    "audio",
-    "video",
-    "doodle",
-    "gif"
-  ),
-  defaultValue: "text"
+    },parentId: {
+  type: DataTypes.UUID,
+  allowNull: true,
+  references: {
+    model: "comments",
+    key: "id"
+  }
 },
+    type: {
+        type: DataTypes.ENUM(
+            "text",
+            "emoji",
+            "image",
+            "audio",
+            "video",
+            "doodle",
+            "gif"
+        ),
+        defaultValue: "text"
+    },
 
     content: {
         type: DataTypes.TEXT,
@@ -49,6 +56,10 @@ const Comment = sequelize.define("Comment", {
         defaultValue: "active"
     },
     reportCount: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    likesCount: {
         type: DataTypes.INTEGER,
         defaultValue: 0
     }

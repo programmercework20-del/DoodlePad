@@ -1,5 +1,6 @@
 import { User, Post, Comment, Report, Live } from '../models/index.js';
 import { Op } from 'sequelize';
+import { handleGoogleLogin } from "../services/auth.service.js";
 
 // Get all users with filters
 export const getAllUsers = async (req, res) => {
@@ -269,5 +270,33 @@ export const restrictFeatures = async (req, res) => {
             message: "Server error"
         });
     } 
+};
+
+
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({
+        message: "Google token required"
+      });
+    }
+
+    const result = await handleGoogleLogin(idToken);
+
+    return res.json({
+      message: "Google login successful",
+      ...result
+    });
+
+  } catch (error) {
+    console.error("Google Auth Error:", error);
+
+    return res.status(500).json({
+      message: error.message || "Google login failed"
+    });
+  }
 };
     

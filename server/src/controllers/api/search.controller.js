@@ -83,7 +83,7 @@ export const globalSearch = async (req, res) => {
 export const getRecentSearches = async (req, res) => {
   const searches = await SearchHistory.findAll({
     where: { userId: req.user.id },
-    order: [["updatedat", "DESC"]], // 🔥 fixed column name
+    order: [["updatedAt", "DESC"]], // 🔥 fixed column name
     limit: 10
   });
 
@@ -93,6 +93,39 @@ export const getRecentSearches = async (req, res) => {
   });
 };
 
+export const deleteSingleSearch = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const searchId = req.params.id;
+
+    // 🔒 delete only if it belongs to that user
+    const deleted = await SearchHistory.destroy({
+      where: {
+        id: searchId,
+        userId
+      }
+    });
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Search not found"
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Search removed successfully"
+    });
+
+  } catch (error) {
+    console.error("Delete single search error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete search"
+    });
+  }
+};
 
 export const clearSearchHistory = async (req, res) => {
   await SearchHistory.destroy({

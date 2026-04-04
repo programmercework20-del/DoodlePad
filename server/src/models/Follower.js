@@ -1,5 +1,6 @@
 import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/db.js";
+import User from "./User.js";
 
 class Follower extends Model {}
 
@@ -14,19 +15,17 @@ Follower.init(
     followerId: {
       type: DataTypes.UUID,
       allowNull: false,
-      field: "followerId",
     },
 
     followingId: {
       type: DataTypes.UUID,
       allowNull: false,
-      field: "followingId",
     },
 
-    createdAt: {
-      type: DataTypes.DATE,
-      field: "createdAt",
-    },
+    status: {
+      type: DataTypes.ENUM("pending", "accepted", "rejected"),
+      defaultValue: "pending"
+    }
   },
   {
     sequelize,
@@ -36,5 +35,16 @@ Follower.init(
     updatedAt: false,
   }
 );
+
+// 🔥 IMPORTANT RELATIONS
+Follower.belongsTo(User, {
+  foreignKey: "followerId",
+  as: "follower"
+});
+
+Follower.belongsTo(User, {
+  foreignKey: "followingId",
+  as: "following"
+});
 
 export default Follower;

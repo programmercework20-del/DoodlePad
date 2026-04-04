@@ -8,9 +8,10 @@ import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
 
 
+
 export const signup = async (req, res) => {
   try {
-    const { email, username, firstName, lastName, password, bio } = req.body;
+    const { email, username, firstName, lastName, password } = req.body;
 
     if (!email || !username || !firstName || !lastName || !password) {
       return res.status(400).json({ message: "All fields required" });
@@ -37,19 +38,17 @@ export const signup = async (req, res) => {
       username,
       name: `${firstName} ${lastName}`,
       password: hashedPassword,
-      bio,
-      emailVerificationToken: token
+      emailVerificationToken: token,
+      emailVerificationExpires: new Date(Date.now() + 10 * 60 * 1000) // ⏱ 10 min
     });
 
-    // ✅ FINAL FIXED URL
-    const url = `http://localhost:5000/api/verify-email/${token}`;
-
-    console.log("🔥 FINAL SIGNUP URL:", url);
+    const url = `https://4sb8r8b7-5000.inc1.devtunnels.ms/api/verify-email/${token}`;
 
     await sendEmail(
       email,
       "Verify your account",
-      `<h3>Click to verify</h3><a href="${url}">${url}</a>`
+      "verify-email",
+      { url }
     );
 
     return res.status(201).json({
@@ -65,40 +64,72 @@ export const signup = async (req, res) => {
 export const sendEmailVerification = async (req, res) => {
   const user = req.user;
 
-  const token = crypto.randomBytes(32).toString("hex");
+  let token = user.emailVerificationToken;
 
-  await user.update({ emailVerificationToken: token });
+  // ✅ generate ONLY if not exists or expired
+  if (!token || user.emailVerificationExpires < new Date()) {
+    token = crypto.randomBytes(32).toString("hex");
 
-  const url = `http://localhost:5000/api/verify-email/${token}`;
+    await user.update({
+      emailVerificationToken: token,
+      emailVerificationExpires: new Date(Date.now() + 10 * 60 * 1000)
+    });
+  }
 
-  console.log("🔥 Verification URL:", url);
+  const url = `https://4sb8r8b7-5000.inc1.devtunnels.ms/api/verify-email/${token}`;
 
   await sendEmail(
     user.email,
     "Verify your account",
-    `<h3>Click to verify</h3><a href="${url}">${url}</a>`
+    "verify-email",
+    { url }
   );
 
   res.json({ message: "Verification email sent" });
 };
 
 export const verifyEmail = async (req, res) => {
-  const { token } = req.params;
+  try {
+    const { token } = req.params;
 
-  const user = await User.findOne({
-    where: { emailVerificationToken: token }
-  });
+    const user = await User.findOne({
+      where: {
+        emailVerificationToken: token,
+        emailVerificationExpires: {
+          [Op.gt]: new Date()
+        }
+      }
+    });
 
-  if (!user) {
-    return res.status(400).json({ message: "Invalid token" });
+    if (!user) {
+      return res.status(400).send("Invalid or expired token");
+    }
+
+    // ✅ already verified check
+    if (user.isVerified) {
+      return res.redirect("doodlepad://home");
+    }
+
+    await user.update({
+      isVerified: true,
+      emailVerificationToken: null,
+      emailVerificationExpires: null
+    });
+
+    const jwtToken = jwt.sign(
+      { id: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    res.redirect(
+      `https://4sb8r8b7-5000.inc1.devtunnels.ms/success.html?token=${jwtToken}`
+    );
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Verification failed");
   }
-
-  await user.update({
-    isVerified: true,
-    emailVerificationToken: null
-  });
-
-  res.json({ message: "Email verified successfully" });
 };
 
 export const sendOtp = async (req, res) => {
@@ -358,31 +389,125 @@ export const followUser = async (req, res) => {
     const followerId = req.user.id;
     const followingId = req.params.id;
 
-    console.log("data mila ", followerId, followingId);
-
     if (followerId === followingId) {
       return res.status(400).json({ message: "You cannot follow yourself" });
     }
 
-    // ✅ USE camelCase here
-    const alreadyFollowing = await Follower.findOne({
+    const targetUser = await User.findByPk(followingId);
+
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const existing = await Follower.findOne({
       where: { followerId, followingId }
     });
 
-    if (alreadyFollowing) {
-      return res.status(400).json({ message: "Already following this user" });
-    }
+    // ✅ FIX STARTS HERE
+    if (existing) {
+      if (existing.status === "pending") {
+        return res.status(400).json({ message: "Request already sent" });
+      }
 
-    // ✅ USE camelCase here
+      if (existing.status === "accepted") {
+        return res.status(400).json({ message: "Already following" });
+      }
+
+      if (existing.status === "rejected") {
+        // 🔥 allow re-request
+        await existing.update({
+          status: targetUser.isPrivate ? "pending" : "accepted"
+        });
+
+        return res.json({
+          message: targetUser.isPrivate
+            ? "Follow request sent again"
+            : "User followed successfully"
+        });
+      }
+    }
+    // ✅ FIX ENDS HERE
+
+    // 🔥 NEW FOLLOW
+    const status = targetUser.isPrivate ? "pending" : "accepted";
+
     await Follower.create({
       followerId,
-      followingId
+      followingId,
+      status
     });
 
-    res.status(201).json({ message: "User followed successfully" });
+    return res.json({
+      message: targetUser.isPrivate
+        ? "Follow request sent"
+        : "User followed successfully"
+    });
 
   } catch (error) {
-    console.error("Follow error:", error);
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const acceptFollowRequest = async (req, res) => {
+  try {
+    const requestId = req.params.id;
+
+    const request = await Follower.findByPk(requestId);
+
+    if (!request) {
+      return res.status(404).json({ message: "Request not found" });
+    }
+
+    request.status = "accepted";
+    await request.save();
+
+    res.json({ message: "Follow request accepted" });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const rejectFollowRequest = async (req, res) => {
+  try {
+    const requestId = req.params.id;
+
+    const request = await Follower.findByPk(requestId);
+
+    if (!request) {
+      return res.status(404).json({ message: "Request not found" });
+    }
+
+    request.status = "rejected";
+    await request.save();
+
+    res.json({ message: "Follow request rejected" });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getFollowRequests = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const requests = await Follower.findAll({
+      where: {
+        followingId: userId,
+        status: "pending"
+      },
+      include: [{
+        model: User,
+        as: "follower",
+        attributes: ["id", "username", "profilePhoto"]
+      }]
+    });
+
+    res.json(requests);
+
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
@@ -396,16 +521,16 @@ export const unfollowUser = async (req, res) => {
 
     const deleted = await Follower.destroy({
       where: {
-        follower_id: followerId,
-        following_id: followingId
+        followerId,
+        followingId
       }
     });
 
     if (!deleted) {
-      return res.status(404).json({ message: "You are not following this user" });
+      return res.status(404).json({ message: "Not following this user" });
     }
 
-    res.json({ message: "User unfollowed successfully" });
+    res.json({ message: "Unfollowed successfully" });
 
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -418,7 +543,10 @@ export const getFollowers = async (req, res) => {
     const userId = req.params.id;
 
     const followers = await Follower.findAll({
-      where: { following_id: userId },
+      where: {
+        followingId: userId,
+        status: "accepted"
+      },
       include: [{
         model: User,
         as: "follower",
@@ -427,11 +555,11 @@ export const getFollowers = async (req, res) => {
     });
 
     res.json(followers);
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
 
 //get following list
 export const getFollowing = async (req, res) => {
@@ -439,7 +567,10 @@ export const getFollowing = async (req, res) => {
     const userId = req.params.id;
 
     const following = await Follower.findAll({
-      where: { follower_id: userId },
+      where: {
+        followerId: userId,
+        status: "accepted"
+      },
       include: [{
         model: User,
         as: "following",
@@ -448,30 +579,32 @@ export const getFollowing = async (req, res) => {
     });
 
     res.json(following);
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
-
 
 // follow counts 
 export const getFollowCounts = async (req, res) => {
   try {
     const userId = req.params.id;
 
-    const followersCount = await Follower.count({
-      where: { following_id: userId }
+    const followers = await Follower.count({
+      where: {
+        followingId: userId,
+        status: "accepted"
+      }
     });
 
-    const followingCount = await Follower.count({
-      where: { follower_id: userId }
+    const following = await Follower.count({
+      where: {
+        followerId: userId,
+        status: "accepted"
+      }
     });
 
-    res.json({
-      followers: followersCount,
-      following: followingCount
-    });
+    res.json({ followers, following });
 
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -480,26 +613,26 @@ export const getFollowCounts = async (req, res) => {
 
 export const getFollowStatus = async (req, res) => {
   try {
-    const loggedInUserId = req.user.id; // from your auth middleware
-    const targetUserId = req.params.id; //the you are viewing
+    const loggedInUserId = req.user.id;
+    const targetUserId = req.params.id;
 
-    const followRecord = await Follower.findOne({
+    const record = await Follower.findOne({
       where: {
-        follower_id: loggedInUserId,
-        following_id: targetUserId
-      },
+        followerId: loggedInUserId,
+        followingId: targetUserId
+      }
     });
 
+    if (!record) {
+      return res.json({ status: "none" });
+    }
 
-    // If followRecord exists, isFollowing is true. If null, it's false.
+    return res.json({ status: record.status });
 
-    res.json({ isFollowing: !!followRecord })
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-};
-
-
+};  
 
 export const changePassword = async (req, res) => {
   try {
@@ -529,79 +662,3 @@ export const changePassword = async (req, res) => {
   }
 };
 
-
-
-//update profile 
-export const updateMyProfile = async (req, res) => {
-  try {
-    const user = await User.findByPk(req.user.id);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const { name, bio, dateOfBirth, gender, username } = req.body;
-
-    // 🔥 Username uniqueness check (for update case)
-    if (username && username !== user.username) {
-      const existingUsername = await User.findOne({
-        where: { username }
-      });
-
-      if (existingUsername) {
-        return res.status(400).json({
-          message: "Username already taken"
-        });
-      }
-    }
-
-    // 🔥 Profile photo logic
-    console.log("BODY", req.body);
-    console.log("FILE", req.file);
-    console.log("USER ID", req.user.id);
-    const profilePhoto = req.file
-      ? `/uploads/stories/${req.file.filename}`
-      : user.profilePhoto;
-
-    await user.update({
-      name,
-      username,
-      bio,
-      dateOfBirth,
-      gender,
-      profilePhoto
-    });
-
-    res.json({ message: "Profile updated successfully" });
-
-  } catch (error) {
-    console.error("UPDATE PROFILE ERROR:", error);
-    res.status(500).json({ message: "Profile update failed" });
-  }
-};
-
-
-// GET MY PROFILE (for update form)
-export const getMyProfile = async (req, res) => {
-  try {
-    const user = await User.findByPk(req.user.id, {
-      attributes: [
-        "name",
-        "username",
-        "profilePhoto",
-        "bio",
-        "dateOfBirth",
-        "gender"
-      ]
-    });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json(user);
-  } catch (error) {
-    console.error("GET PROFILE ERROR:", error);
-    res.status(500).json({ message: "Failed to fetch profile" });
-  }
-};

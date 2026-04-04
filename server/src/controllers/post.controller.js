@@ -98,7 +98,7 @@ export const getPostById = async (req, res) => {
           as: "comments",
           limit: 10,
           order: [["createdAt", "DESC"]],
-          include: [{ model: User, as: "author", attributes: ["id", "name", "username"] }]
+          include: [{ model: User, as: "user", attributes: ["id", "name", "username"] }]
         }
       ]
     });

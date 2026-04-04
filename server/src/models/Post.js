@@ -16,7 +16,7 @@ const Post = sequelize.define("Post", {
         }
     },
     type: {
-        type: DataTypes.ENUM("image", "video", "audio", "doodle", "text", "live"),
+        type: DataTypes.ENUM("image", "video", "audio", "doodle", "text"),
         allowNull: false
     },
     content: {
@@ -32,7 +32,7 @@ const Post = sequelize.define("Post", {
         allowNull: true
     },
     status: {
-        type: DataTypes.ENUM("active", "hidden", "deleted", "sensitive"),
+        type: DataTypes.ENUM("active", "archived", "deleted", "hidden", "sensitive"),
         defaultValue: "active"
     },
     likesCount: {

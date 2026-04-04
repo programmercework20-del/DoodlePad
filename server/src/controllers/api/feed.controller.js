@@ -1,132 +1,105 @@
 import { Op } from "sequelize";
 import { User, Follower } from "../../models/index.js";
 import Post from "../../models/Post.js";
-import Reel from "../../models/Reel.js";
+import Ad from "../../models/Ad.js";
 import { calculateFeedScore } from "../../utils/feedRanking.js";
 
-
 export const getFeed = async (req, res) => {
-    try {
-        const limit = parseInt(req.query.limit) || 10;
-        const cursor = req.query.cursor;
-        const userId = req.user.id;
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const userId = req.user.id;
 
-        // 1️⃣ Get following list
-        const following = await Follower.findAll({
-            where: { followerId: userId },
-            attributes: ["followingId"]
+    // 1️⃣ Get following users
+    const following = await Follower.findAll({
+      where: {
+        followerId: userId,
+        status: "accepted"
+      },
+      attributes: ["followingId"]
+    });
+
+    const followingIds = following.map(f => f.followingId);
+    followingIds.push(userId); // include self
+
+    // 2️⃣ Fetch posts
+    const posts = await Post.findAll({
+      where: {
+        userId: { [Op.in]: followingIds },
+        status: "active",
+        [Op.or]: [
+          { isSaved: true },
+          { expiresAt: { [Op.gt]: new Date() } }
+        ]
+      },
+      include: [{
+        model: User,
+        as: "author",
+        attributes: ["id", "username", "profilePhoto", "isVerified"]
+      }],
+      order: [["createdAt", "DESC"]],
+      limit: limit * 2 // fetch extra for ranking
+    });
+
+    // 3️⃣ Format posts
+    let feed = posts.map(post => ({
+      id: post.id,
+      type: "post",
+      caption: post.caption,
+      mediaUrls: post.mediaUrls,
+      createdAt: post.createdAt,
+      likesCount: post.likesCount,
+      commentsCount: post.commentsCount,
+      sharesCount: post.sharesCount,
+      user: post.author
+    }));
+
+    // 4️⃣ Apply ranking
+    feed = feed.map(item => {
+      const relationshipBoost = followingIds.includes(item.user.id) ? 10 : 0;
+      const score = calculateFeedScore(item) + relationshipBoost;
+
+      return { ...item, score };
+    });
+
+    // 5️⃣ Sort by score
+    feed.sort((a, b) => b.score - a.score);
+
+    // 6️⃣ Remove score
+    feed = feed.slice(0, limit).map(({ score, ...rest }) => rest);
+
+    // 7️⃣ Fetch Ads
+    const ads = await Ad.findAll({
+      where: { status: "active" },
+      limit: Math.ceil(feed.length / 5)
+    });
+
+    // 8️⃣ Mix posts + ads
+    let finalFeed = [];
+    let adIndex = 0;
+
+    for (let i = 0; i < feed.length; i++) {
+      finalFeed.push(feed[i]);
+
+      // every 5 posts insert ad
+      if ((i + 1) % 5 === 0 && ads[adIndex]) {
+        finalFeed.push({
+          type: "ad",
+          id: ads[adIndex].id,
+          title: ads[adIndex].title,
+          imageUrl: ads[adIndex].imageUrl,
+          redirectUrl: ads[adIndex].redirectUrl
         });
-
-        // convert to array of ids
-        const followingIds = following.map(f => f.followingId);
-
-        // include own posts also
-        followingIds.push(userId);
-
-        const dateFilter = cursor
-            ? { createdAt: { [Op.lt]: new Date(cursor) } }
-            : {};
-
-
-        // 2️⃣ Fetch POSTS
-        const posts = await Post.findAll({
-            where: {
-                userId: { [Op.in]: followingIds },
-                status: "active",
-                ...dateFilter
-            },
-            include: [{
-                model: User,
-                as: "author",   // ⭐ FIXED
-                attributes: ["id", "username", "profilePhoto"]
-            }],
-            order: [["createdAt", "DESC"]],
-            limit
-        });
-
-        // 3️⃣ Fetch REELS
-        const reels = await Reel.findAll({
-            where: {
-                userId: { [Op.in]: followingIds },
-                status: "active",
-                ...dateFilter
-            },
-            include: [{
-                model: User,
-                as: "author",   // ⭐ FIXED
-                attributes: ["id", "username", "profilePhoto"]
-            }],
-            order: [["createdAt", "DESC"]],
-            limit
-        });
-
-
-
-        // 4️⃣ Normalize POSTS
-        const formattedPosts = posts.map(post => ({
-            id: post.id,
-            type: "post",
-            caption: post.caption,
-            mediaUrl: post.imageUrl,
-            likesCount: post.likesCount,
-            commentsCount: post.commentsCount,
-            createdAt: post.createdAt,
-            user: post.author
-        }));
-
-        // 5️⃣ Normalize REELS
-        const formattedReels = reels.map(reel => ({
-            id: reel.id,
-            type: "reel",
-            caption: reel.caption,
-            mediaUrl: reel.videoUrl,
-            likesCount: reel.likesCount,
-            commentsCount: reel.commentsCount,
-            createdAt: reel.createdAt,
-            user: reel.author
-        }));
-
-        // 6️⃣ Merge + Sort
-        let feed = [...formattedPosts, ...formattedReels];
-
-        // 🔥 Calculate score for each item
-        feed = feed.map(item => {
-
-            let relationshipBoost = 0;
-
-            // boost people you follow
-            if (item.user && followingIds.includes(item.user.id)) {
-                relationshipBoost = 10;
-            }
-
-
-            const score = calculateFeedScore(item) + relationshipBoost;
-
-            return { ...item, score };
-        });
-
-
-        // 🔥 Sort by score (NOT date anymore)
-        feed.sort((a, b) => b.score - a.score);
-
-        // remove score before sending to frontend
-        feed = feed.slice(0, limit).map(({ score, ...rest }) => rest);
-
-
-
-        const nextCursor = feed.length
-            ? feed[feed.length - 1].createdAt
-            : null;
-
-
-        res.json({
-            success: true,
-            feed,
-            nextCursor
-        });
-
-    } catch (err) {
-        console.error("Feed error:", err);
-        res.status(500).json({ message: "Failed to load feed" });
+        adIndex++;
+      }
     }
+
+    return res.json({
+      success: true,
+      feed: finalFeed
+    });
+
+  } catch (err) {
+    console.error("Feed error:", err);
+    res.status(500).json({ message: "Failed to load feed" });
+  }
 };

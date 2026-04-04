@@ -107,9 +107,37 @@ const User = sequelize.define("User", {
 
     resetPasswordExpires: {
         type: DataTypes.DATE
-    }
+    },
+    doodleImage: {
+  type: DataTypes.STRING,
+  allowNull: true
+},
 
-}, {
+doodleOwnerId: {
+  type: DataTypes.UUID,
+  allowNull: true
+},
+
+isPrivate: {
+  type: DataTypes.BOOLEAN,
+  defaultValue: false
+},
+emailVerificationExpires: {
+  type: DataTypes.DATE
+},
+provider: {
+  type: DataTypes.ENUM("local", "google"),
+  defaultValue: "local"
+},
+
+googleId: {
+  type: DataTypes.STRING,
+  allowNull: true,
+  unique: true
+}
+
+}, 
+{
     tableName: "users",
     timestamps: true
 });

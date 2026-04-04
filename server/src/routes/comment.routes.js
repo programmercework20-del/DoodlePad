@@ -3,10 +3,10 @@ import * as commentController from '../controllers/comment.controller.js';
 import adminAuth from '../middlewares/adminAuth.js';
 
 const router = express.Router();
-router.use(adminAuth);
+// router.use(adminAuth);
 
 router.get("/", commentController.getAllComments);
-router.delete("/:id", commentController.deleteComment);
-router.post("/:id/hide", commentController.hideComment);
+router.delete("/:id",adminAuth, commentController.deleteComment);
+router.post("/:id/hide",adminAuth, commentController.hideComment);
 
 export default router;

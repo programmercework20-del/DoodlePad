@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <body style="text-align:center; margin-top:50px; font-family:Arial;">
+
+    <h2>✅ Email Verified</h2>
+    <p>Click below to open DoodlePad</p>
+
+    <button onclick="openApp()" style="padding:10px 20px; font-size:16px;">
+      Open App
+    </button>
+
+    <script>
+      function openApp() {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get("token");
+
+        window.location.href = `doodlepad://home?token=${token}`;
+      }
+    </script>
+
+  </body>
+</html>

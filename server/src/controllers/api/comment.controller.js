@@ -9,64 +9,59 @@ import CommentLike from "../../models/CommentLike.js";
 export const addComment = async (req, res) => {
   try {
     const userId = req.user.id;
-    const postId = req.params.postId;
-    const { type, content } = req.body;
+    const { postId } = req.params;
+    const { type, content, parentId } = req.body;
+
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
 
     let mediaUrl = null;
     if (req.file) {
-      mediaUrl = `/uploads/${req.file.filename}`;
+      mediaUrl = `${baseUrl}/uploads/${req.file.filename}`;
     }
 
-    // 1. Post check
     const post = await Post.findByPk(postId);
     if (!post) {
-      return res.status(404).json({ success: false, message: "Post not found" });
+      return res.status(404).json({ message: "Post not found" });
     }
 
     if (!post.commentsEnabled) {
-      return res.status(403).json({ success: false, message: "Comments disabled on this post" });
+      return res.status(403).json({ message: "Comments disabled" });
     }
 
-    // 2. Validation
     const allowedTypes = ["text", "emoji", "image", "audio", "video", "doodle", "gif"];
+
     if (!allowedTypes.includes(type)) {
-      return res.status(400).json({ success: false, message: "Invalid comment type" });
+      return res.status(400).json({ message: "Invalid type" });
     }
 
     if (["image", "audio", "video", "doodle", "gif"].includes(type) && !mediaUrl) {
-      return res.status(400).json({
-        success: false,
-        message: "File is required for this comment type"
-      });
+      return res.status(400).json({ message: "File required" });
     }
 
     if ((type === "text" || type === "emoji") && !content) {
-      return res.status(400).json({
-        success: false,
-        message: "content is required for text/emoji comment"
-      });
+      return res.status(400).json({ message: "Content required" });
     }
 
-    // 3. Create
     const comment = await Comment.create({
       postId,
       userId,
       type,
       content,
-      mediaUrl
+      mediaUrl,
+      parentId: parentId || null
     });
 
     await post.increment("commentsCount");
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      message: "Comment added successfully",
+      message: parentId ? "Reply added" : "Comment added",
       comment
     });
 
   } catch (error) {
-    console.error("Add comment error:", error);
-    res.status(500).json({ success: false, message: "Failed to add comment" });
+    console.error(error);
+    res.status(500).json({ message: "Failed to add comment" });
   }
 };
 
@@ -113,48 +108,43 @@ export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
 
-    const post = await Post.findByPk(postId);
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: "Post not found"
-      });
-    }
-
     const comments = await Comment.findAll({
       where: {
         postId,
+        parentId: null, // 🔥 only top-level
         status: "active"
       },
-      attributes: [
-        "id",
-        "content",
-        "mediaUrl",
-        "type",
-        "likesCount",
-        "createdAt"
-      ],
       include: [
         {
           model: User,
           as: "user",
-          attributes: ["id", "username", "name", "profilePhoto"]
+          attributes: ["id", "username", "profilePhoto"]
+        },
+        {
+          model: Comment,
+          as: "replies",
+          where: { status: "active" },
+          required: false,
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "username", "profilePhoto"]
+            }
+          ]
         }
       ],
       order: [["createdAt", "DESC"]]
     });
 
-    return res.json({
+    res.json({
       success: true,
       comments
     });
 
   } catch (error) {
-    console.error("GET COMMENTS ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to get comments"
-    });
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch comments" });
   }
 };
 
@@ -213,52 +203,6 @@ export const deleteComment = async (req, res) => {
   }
 };
 
-// export const likeComment = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { commentId } = req.params;
-
-//     // 1️⃣ Comment exists?
-//     const comment = await Comment.findByPk(commentId);
-//     if (!comment) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Comment not found"
-//       });
-//     }
-
-//     // 2️⃣ Already liked?
-//     const existingLike = await CommentLike.findOne({
-//       where: { commentId, userId }
-//     });
-
-//     if (existingLike) {
-//       // Unlike
-//       await existingLike.destroy();
-//       return res.json({
-//         success: true,
-//         message: "Comment unliked"
-//       });
-//     }
-
-//     // 3️⃣ Like
-//     await CommentLike.create({ commentId, userId });
-
-//     return res.json({
-//       success: true,
-//       message: "Comment liked"
-//     });
-
-//   } catch (error) {
-//     console.error("Like comment error:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to like comment"
-//     });
-//   }
-// };
-
-
 export const likeComment = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -266,27 +210,39 @@ export const likeComment = async (req, res) => {
 
     const comment = await Comment.findByPk(commentId);
     if (!comment) {
-      return res.status(404).json({ success: false, message: "Comment not found" });
+      return res.status(404).json({ message: "Comment not found" });
     }
 
-    const existingLike = await CommentLike.findOne({
+    const existing = await CommentLike.findOne({
       where: { commentId, userId }
     });
 
-    if (existingLike) {
-      // Unlike
-      await existingLike.destroy();
-      await comment.decrement("likesCount");   // 👈 counter --
-      return res.json({ success: true, message: "Comment unliked" });
-    } else {
-      // Like
-      await CommentLike.create({ commentId, userId });
-      await comment.increment("likesCount");   // 👈 counter ++
-      return res.json({ success: true, message: "Comment liked" });
+    if (existing) {
+      await existing.destroy();
+      await comment.decrement("likesCount");
+
+      await comment.reload(); // ✅ FIX
+
+      return res.json({
+        success: true,
+        action: "unliked",
+        likesCount: comment.likesCount
+      });
     }
 
+    await CommentLike.create({ commentId, userId });
+    await comment.increment("likesCount");
+
+    await comment.reload(); // ✅ FIX
+
+    return res.json({
+      success: true,
+      action: "liked",
+      likesCount: comment.likesCount
+    });
+
   } catch (error) {
-    console.error("Like comment error:", error);
-    res.status(500).json({ success: false, message: "Failed to like comment" });
+    console.error(error);
+    res.status(500).json({ message: "Like failed" });
   }
 };

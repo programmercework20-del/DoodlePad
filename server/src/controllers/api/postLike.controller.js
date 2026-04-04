@@ -6,7 +6,6 @@ export const toggleLikePost = async (req, res) => {
     const userId = req.user.id;
     const postId = req.params.id;
 
-    // 1️⃣ Check post exists
     const post = await Post.findByPk(postId);
     if (!post) {
       return res.status(404).json({
@@ -15,31 +14,34 @@ export const toggleLikePost = async (req, res) => {
       });
     }
 
-    // 2️⃣ Check existing like
     const existingLike = await PostLike.findOne({
       where: { postId, userId }
     });
 
-    // 💔 UNLIKE (if already liked)
+    // 💔 UNLIKE
     if (existingLike) {
       await existingLike.destroy();
       await post.decrement("likesCount");
 
+      await post.reload(); // ✅ IMPORTANT FIX
+
       return res.json({
         success: true,
         action: "unliked",
-        likesCount: post.likesCount - 1
+        likesCount: post.likesCount
       });
     }
 
-    // ❤️ LIKE (if not liked)
+    // ❤️ LIKE
     await PostLike.create({ postId, userId });
     await post.increment("likesCount");
+
+    await post.reload(); // ✅ IMPORTANT FIX
 
     return res.json({
       success: true,
       action: "liked",
-      likesCount: post.likesCount + 1
+      likesCount: post.likesCount
     });
 
   } catch (error) {
@@ -49,4 +51,4 @@ export const toggleLikePost = async (req, res) => {
       message: "Failed to toggle like"
     });
   }
-};
+};``
