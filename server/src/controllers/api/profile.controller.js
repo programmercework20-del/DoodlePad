@@ -2,7 +2,7 @@ import User from "../../models/User.js";
 import Post from "../../models/Post.js";
 import Follower from "../../models/Follower.js";
 import DoodleRequest from "../../models/DoodleRequest.js";
-
+import { createNotification } from "../../services/notification.service.js";
 /*
 GET USER PROFILE
 Instagram style profile endpoint
@@ -90,10 +90,10 @@ export const getUserProfile = async (req, res) => {
         user,
         stats: canViewFullProfile
           ? {
-              followers: followersCount,
-              following: followingCount,
-              posts: postsCount
-            }
+            followers: followersCount,
+            following: followingCount,
+            posts: postsCount
+          }
           : null,
         isFollowing,
         isPrivate: user.isPrivate,
@@ -118,7 +118,7 @@ export const updateMyProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    let { name,bio, dateOfBirth, gender, username } = req.body;
+    let { name, bio, dateOfBirth, gender, username } = req.body;
 
     // 🔥 Normalize input (important)
     username = username?.trim();
@@ -141,9 +141,9 @@ export const updateMyProfile = async (req, res) => {
     /* ================= PROFILE PHOTO ================= */
     const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-const profilePhoto = req.file
-  ? `${baseUrl}/uploads/stories/${req.file.filename}`
-  : user.profilePhoto;
+    const profilePhoto = req.file
+      ? `${baseUrl}/uploads/stories/${req.file.filename}`
+      : user.profilePhoto;
 
     /* ================= UPDATE ONLY PROVIDED FIELDS ================= */
     await user.update({
@@ -242,6 +242,14 @@ export const sendDoodleRequest = async (req, res) => {
       status: "pending"
     });
 
+    // 🔥 NOTIFICATION
+    await createNotification({
+      senderId,
+      receiverId,
+      type: "DOODLE_REQUEST",
+      doodleRequestId: request.id
+    });
+
     return res.json({
       success: true,
       message: "Doodle request sent",
@@ -272,7 +280,6 @@ export const acceptDoodleRequest = async (req, res) => {
     // ✅ update request
     await request.update({ status: "accepted" });
 
-    // ✅ update profile doodle
     await User.update(
       {
         doodleImage: request.doodleImage,
@@ -280,6 +287,14 @@ export const acceptDoodleRequest = async (req, res) => {
       },
       { where: { id: userId } }
     );
+
+    // 🔥 NOTIFICATION
+    await createNotification({
+      senderId: userId,
+      receiverId: request.senderId,
+      type: "DOODLE_ACCEPTED",
+      doodleRequestId: request.id
+    });
 
     return res.json({
       success: true,

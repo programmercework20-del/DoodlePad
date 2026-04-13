@@ -2,6 +2,7 @@ import Comment from "../../models/Comment.js";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import CommentLike from "../../models/CommentLike.js";
+import { createNotification } from "../../services/notification.service.js";
 
 
 
@@ -24,24 +25,6 @@ export const addComment = async (req, res) => {
       return res.status(404).json({ message: "Post not found" });
     }
 
-    if (!post.commentsEnabled) {
-      return res.status(403).json({ message: "Comments disabled" });
-    }
-
-    const allowedTypes = ["text", "emoji", "image", "audio", "video", "doodle", "gif"];
-
-    if (!allowedTypes.includes(type)) {
-      return res.status(400).json({ message: "Invalid type" });
-    }
-
-    if (["image", "audio", "video", "doodle", "gif"].includes(type) && !mediaUrl) {
-      return res.status(400).json({ message: "File required" });
-    }
-
-    if ((type === "text" || type === "emoji") && !content) {
-      return res.status(400).json({ message: "Content required" });
-    }
-
     const comment = await Comment.create({
       postId,
       userId,
@@ -52,6 +35,28 @@ export const addComment = async (req, res) => {
     });
 
     await post.increment("commentsCount");
+
+    // 🔥 DETERMINE RECEIVER
+    let receiverId = post.userId;
+
+    if (parentId) {
+      const parentComment = await Comment.findByPk(parentId);
+
+      if (parentComment && parentComment.userId !== userId) {
+        receiverId = parentComment.userId;
+      }
+    }
+
+    // ✅ PREVENT SELF NOTIFICATION
+    if (receiverId !== userId) {
+      await createNotification({
+        senderId: userId,
+        receiverId,
+        type: parentId ? "REPLY_COMMENT" : "COMMENT_POST",
+        postId,
+        commentId: comment.id
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -64,7 +69,6 @@ export const addComment = async (req, res) => {
     res.status(500).json({ message: "Failed to add comment" });
   }
 };
-
 // get comments by postId.
 // export const getPostComments = async (req, res) => {
 //   try {
@@ -151,13 +155,13 @@ export const getPostComments = async (req, res) => {
 
 // Delete a comment
 
-export const deleteComment = async (req, res) => {
+export const deleteOwnComment = async (req, res) => {
   try {
     const userId = req.user.id;
     const { commentId } = req.params;
 
-    // 1️⃣ Comment find karo
     const comment = await Comment.findByPk(commentId);
+
     if (!comment) {
       return res.status(404).json({
         success: false,
@@ -165,37 +169,39 @@ export const deleteComment = async (req, res) => {
       });
     }
 
-    // 2️⃣ Owner check
+    // ✅ Only owner can delete
     if (comment.userId !== userId) {
       return res.status(403).json({
         success: false,
-        message: "You are not allowed to delete this comment"
+        message: "You can only delete your own comment"
       });
     }
 
-    // 3️⃣ Post find karo
-    const post = await Post.findByPk(comment.postId);
-    if (!post) {
-      return res.status(404).json({
+    // ✅ Prevent double delete
+    if (comment.status === "deleted") {
+      return res.status(400).json({
         success: false,
-        message: "Post not found"
+        message: "Comment already deleted"
       });
     }
 
-    // 4️⃣ Soft delete
-    comment.status = "deleted";
-    await comment.save();
+    const post = await Post.findByPk(comment.postId);
 
-    // 5️⃣ Counter update
-    await post.decrement("commentsCount");
+    // ✅ Soft delete
+    await comment.update({ status: "deleted" });
 
-    return res.status(200).json({
+    // ✅ Safe decrement
+    if (post && post.commentsCount > 0) {
+      await post.decrement("commentsCount");
+    }
+
+    return res.json({
       success: true,
       message: "Comment deleted successfully"
     });
 
   } catch (error) {
-    console.error("Delete comment error:", error);
+    console.error("USER DELETE COMMENT ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to delete comment"
@@ -217,11 +223,11 @@ export const likeComment = async (req, res) => {
       where: { commentId, userId }
     });
 
+    // UNLIKE
     if (existing) {
       await existing.destroy();
       await comment.decrement("likesCount");
-
-      await comment.reload(); // ✅ FIX
+      await comment.reload();
 
       return res.json({
         success: true,
@@ -230,10 +236,21 @@ export const likeComment = async (req, res) => {
       });
     }
 
+    // LIKE
     await CommentLike.create({ commentId, userId });
     await comment.increment("likesCount");
+    await comment.reload();
 
-    await comment.reload(); // ✅ FIX
+    // ✅ ONLY ONCE
+    if (comment.userId !== userId) {
+      await createNotification({
+        senderId: userId,
+        receiverId: comment.userId,
+        type: "LIKE_COMMENT",
+        postId: comment.postId,
+        commentId
+      });
+    }
 
     return res.json({
       success: true,

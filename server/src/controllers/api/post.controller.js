@@ -80,16 +80,13 @@ export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    // 🔥 IMPORTANT FIX
+    await markExpiredPosts();
+
     const posts = await Post.findAll({
       where: {
         userId,
-        [Op.or]: [
-          { status: "archived" },
-          {
-            isSaved: false,
-            expiresAt: { [Op.lt]: new Date() }
-          }
-        ]
+        status: "archived"
       },
       order: [["createdAt", "DESC"]]
     });
@@ -109,6 +106,25 @@ export const getArchivedPosts = async (req, res) => {
   }
 };
 
+export const markExpiredPosts = async () => {
+  try {
+    await Post.update(
+      { status: "archived" },
+      {
+        where: {
+          isSaved: false,
+          expiresAt: {
+            [Op.lt]: new Date()
+          },
+          status: "active"
+        }
+      }
+    );
+  } catch (error) {
+    console.error("Expire job error:", error);
+  }
+};
+
 export const getExpiredPosts = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -118,8 +134,8 @@ export const getExpiredPosts = async (req, res) => {
         userId,
         isSaved: false,
         expiresAt: {
-          [Op.lt]: new Date()
-        }
+            [Op.lt]: new Date()
+          }
       },
       order: [["createdAt", "DESC"]]
     });
@@ -273,7 +289,14 @@ export const getUserPosts = async (req, res) => {
     const posts = await Post.findAll({
       where: {
         userId: id,
-        status: "active"
+        status: "active",
+        [Op.or]: [
+          { isSaved: true },
+          {
+            isSaved: false,
+            expiresAt: { [Op.gt]: new Date() } // ✅ NOT expired
+          }
+        ]
       },
       include: [
         {

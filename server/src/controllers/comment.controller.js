@@ -32,23 +32,46 @@ export const getAllComments = async (req, res) => {
     }
 };
 
-export const deleteComment = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const comment = await Comment.findByPk(id);
-        if (!comment) return res.status(404).json({ success: false, message: "Comment not found" });
-        comment.status = "deleted";
-        await comment.save();
-        const post = await Post.findByPk(comment.postId);
-        if (post && post.commentsCount > 0) {
-            post.commentsCount -= 1;
-            await post.save();
-        }
-        res.json({ success: true, message: "Comment deleted successfully" });
-    } catch (error) {
-        console.error("Delete comment error:", error);
-        res.status(500).json({ success: false, message: "Server error" });
+export const adminDeleteComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+
+    const comment = await Comment.findByPk(commentId);
+
+    if (!comment) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found"
+      });
     }
+
+    if (comment.status === "deleted") {
+      return res.status(400).json({
+        success: false,
+        message: "Comment already deleted"
+      });
+    }
+
+    await comment.update({ status: "deleted" });
+
+    const post = await Post.findByPk(comment.postId);
+
+    if (post && post.commentsCount > 0) {
+      await post.decrement("commentsCount");
+    }
+
+    return res.json({
+      success: true,
+      message: "Comment removed by admin"
+    });
+
+  } catch (error) {
+    console.error("ADMIN DELETE COMMENT ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
 };
 
 export const hideComment = async (req, res) => {

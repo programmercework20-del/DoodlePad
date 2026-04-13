@@ -6,7 +6,7 @@ const router = express.Router();
 // router.use(adminAuth);
 
 router.get("/", commentController.getAllComments);
-router.delete("/:id",adminAuth, commentController.deleteComment);
+router.delete("/:id",adminAuth, commentController.adminDeleteComment);
 router.post("/:id/hide",adminAuth, commentController.hideComment);
 
 export default router;

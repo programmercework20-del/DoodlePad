@@ -1,41 +1,41 @@
 import 'dotenv/config';
 import app from './src/app.js';
 import { sequelize } from './src/models/index.js';
+import cron from "node-cron";
 import config from './src/config/env.js';
+import http from "http";
+import { initSocket } from "./src/socket/socket.js";
 
 const PORT = config.port;
+// 🔥 हर 1 घंटे में run होगा
+cron.schedule("0 * * * *", async () => {
+  console.log("⏳ Checking expired posts (every 1 hour)...");
+  await markExpiredPosts();
+});
 
-// Database connection and server startup
+const server = http.createServer(app);
+
+// ✅ Initialize Socket.IO (ONLY HERE)
+initSocket(server);
+
+// START SERVER
 const startServer = async () => {
-    try {
-        // Test database connection
-        await sequelize.authenticate();
-        console.log("✅ Database connection established successfully.");
+  try {
+    await sequelize.authenticate();
+    console.log("✅ DB connected");
 
-        try {
-            if (config.nodeEnv === "development") {
-                await sequelize.sync();
-                console.log("✅ Database models synchronized.");
-            } else {
-                console.log("ℹ️ Production Mode: Skipping auto-sync. Use migrations.");
-            }
-        } catch (syncError) {
-            console.error("⚠️ Database Sync Error (Non-Fatal):", syncError.message);
-            console.log("⚠️ Continuing server startup anyway...");
-        }
-
-        // 🔥 IMPORTANT FIX HERE
-        app.listen(PORT, "0.0.0.0", () => {
-            console.log(`🚀 Server running on port ${PORT}`);
-            console.log(`🌍 Environment: ${config.nodeEnv}`);
-            console.log(`📡 API available at http://localhost:${PORT}`);
-            console.log(`💊 Health check: http://localhost:${PORT}/health`);
-        });
-
-    } catch (error) {
-        console.error("❌ Unable to start server:", error);
-        process.exit(1);
+    if (config.nodeEnv === "development") {
+      await sequelize.sync({alter: true});
     }
+
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on ${PORT}`);
+    });
+
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
 };
 
 startServer();

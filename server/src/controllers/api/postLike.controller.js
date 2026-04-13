@@ -1,5 +1,6 @@
 import Post from "../../models/Post.js";
 import PostLike from "../../models/PostLike.js";
+import { createNotification } from "../../services/notification.service.js";
 
 export const toggleLikePost = async (req, res) => {
   try {
@@ -23,7 +24,7 @@ export const toggleLikePost = async (req, res) => {
       await existingLike.destroy();
       await post.decrement("likesCount");
 
-      await post.reload(); // ✅ IMPORTANT FIX
+      await post.reload();
 
       return res.json({
         success: true,
@@ -36,7 +37,15 @@ export const toggleLikePost = async (req, res) => {
     await PostLike.create({ postId, userId });
     await post.increment("likesCount");
 
-    await post.reload(); // ✅ IMPORTANT FIX
+    await post.reload();
+
+    // 🔥 ADD THIS BLOCK
+    await createNotification({
+      senderId: userId,
+      receiverId: post.userId,
+      type: "LIKE_POST",
+      postId
+    });
 
     return res.json({
       success: true,
@@ -51,4 +60,4 @@ export const toggleLikePost = async (req, res) => {
       message: "Failed to toggle like"
     });
   }
-};``
+};

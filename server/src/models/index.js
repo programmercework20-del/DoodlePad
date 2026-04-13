@@ -12,6 +12,7 @@ import Follower from "./Follower.js";
 import CommentLike from "./CommentLike.js";
 import PostLike from "./PostLike.js";
 import Share from "./Share.js";
+import Notification from "./Notification.js";
 
 
 // =====================================================
@@ -129,11 +130,11 @@ User.hasMany(Share, {
   as: "shares"
 });
 
+// POST → SHARE
 Share.belongsTo(Post, {
   foreignKey: "postId",
-  as: "sharedPost"   // ✅ FIXED (NOT "post")
+  onDelete: "CASCADE"
 });
-
 Share.belongsTo(User, {
   foreignKey: "userId",
   as: "sharedBy"
@@ -154,6 +155,18 @@ Report.belongsTo(Admin, { foreignKey: "reviewedBy", as: "reviewer" });
 Admin.hasMany(Report, { foreignKey: "reviewedBy", as: "reviewedReports" });
 Admin.hasMany(Live, { foreignKey: "terminatedBy", as: "terminatedLives" });
 
+
+
+
+// relations
+Notification.belongsTo(User, { as: "sender", foreignKey: "senderId" });
+Notification.belongsTo(Post, {
+  foreignKey: "postId",
+  onDelete: "CASCADE"
+});
+Notification.belongsTo(Comment, { foreignKey: "commentId" });
+
+User.hasMany(Notification, { foreignKey: "receiverId", as: "notifications" });
 
 // =====================================================
 // ================= MESSAGE ============================
@@ -180,5 +193,6 @@ export {
   Message,
   Follower,
   PostLike,
-  Share
+  Share,
+  Notification
 };

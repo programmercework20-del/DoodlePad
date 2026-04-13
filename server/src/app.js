@@ -18,6 +18,7 @@ import messageRoutes from "./routes/message.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
@@ -105,12 +106,12 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
-app.use("/api/comments", commentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use(express.static("public"));
 
 
@@ -130,6 +131,7 @@ app.use("/api", apiRoutes);
 // 🔐 ADMIN PANEL APIs (protected)
 app.use("/api/admin", adminAuth, adminRoutes);
 
+app.use("/admin/comments", commentRoutes);
 
 
 // app.use("/api/admin/ads", adRoutes);

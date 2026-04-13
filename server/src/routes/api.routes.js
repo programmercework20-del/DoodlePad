@@ -6,7 +6,7 @@ import { getUserProfile, sendDoodleRequest, acceptDoodleRequest,getDoodleRequest
 import {
   addComment,
   getPostComments,
-  deleteComment,
+  deleteOwnComment,
   likeComment
 } from "../controllers/api/comment.controller.js";
 import { googleLogin } from "../controllers/user.controller.js";
@@ -18,18 +18,18 @@ import { toggleLikePost } from "../controllers/api/postLike.controller.js";
 import {
   signup,
   login,
+  sendVerificationOtp,
   sendOtp,
   verifyOtp,
-  verifyEmail,
-  sendEmailVerification,
   forgotPassword,
-  logout,
-  changePassword,
+  verifyResetOtp,
   resetPassword, 
+  logout,
   getFollowRequests,
   acceptFollowRequest,
   rejectFollowRequest,
-  togglePrivacy
+  togglePrivacy,
+  saveFcmToken
 } from "../controllers/api/user.controller.js";
 
 import { createPost, deletePost, getUserPosts, getArchivedPosts, restoreArchivedPost, archivePost } 
@@ -49,28 +49,27 @@ router.post("/google-login", googleLogin);
 /* ================= AUTH APIs ================= */
 
 router.post("/signup", signup);
+router.post("/send-verification-otp", sendVerificationOtp);
+router.post("/verify-otp", verifyOtp);
 router.post("/login", login);
 router.post("/logout", protect, logout);
 router.post("/send-otp", sendOtp);
-router.post("/verify-otp", verifyOtp);
 
-router.post("/send-email-verification", protect, sendEmailVerification);
-router.get("/verify-email/:token", verifyEmail);
 router.post("/forgot-password", forgotPassword);
-router.post("/reset-password/:token", resetPassword);
+router.post("/verify-reset-otp", verifyResetOtp);
+router.post("/reset-password", resetPassword);
 
 router.get("/requests", protect, getFollowRequests);
 router.post("/requests/:id/accept", protect, acceptFollowRequest);
 router.post("/requests/:id/reject", protect, rejectFollowRequest);
 
-router.post("/forgot-password", forgotPassword);
-
-router.put("/users/change-password", userAuth, changePassword);
 
 
 /* ================= PRIVACY ================= */
 
 router.patch("/users/privacy", userAuth, togglePrivacy);
+
+router.post("/save-fcm-token", protect, saveFcmToken);
 
 
 /* ================= PROFILE APIs ================= */
@@ -113,7 +112,11 @@ router.get("/:id",protect, postController.getPostById);
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
 router.post("/comments/:commentId/like",protect, likeComment);
-
+router.delete(
+  "/comments/:commentId",
+  protect,
+  deleteOwnComment
+);
 
 router.post("/posts/:id/like", protect, toggleLikePost);
 router.post("/posts/:id/share", protect, sharePost);

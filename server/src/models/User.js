@@ -134,6 +134,24 @@ googleId: {
   type: DataTypes.STRING,
   allowNull: true,
   unique: true
+},
+fcmToken: {
+  type: DataTypes.STRING,
+  allowNull: true
+},
+otp: {
+  type: DataTypes.STRING
+},
+otpExpires: {
+  type: DataTypes.DATE
+},
+otpAttempts: {
+  type: DataTypes.INTEGER,
+  defaultValue: 0
+},
+otpVerified: {
+  type: DataTypes.BOOLEAN,
+  defaultValue: false
 }
 
 }, 

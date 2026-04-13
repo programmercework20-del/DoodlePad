@@ -12,6 +12,7 @@ import {
     unblockUser,
     restrictFeatures
 } from '../controllers/user.controller.js';
+import userAuth from '../middlewares/userAuth.js';
 
 
 const router = express.Router();
@@ -30,12 +31,22 @@ console.log("followUser =", userController.followUser);
 
 router.post("/:id/follow", protect, userController.followUser);
 router.delete("/:id/unfollow", protect, userController.unfollowUser);
+router.get("/users/follow-requests", userAuth, userController.getFollowRequests);
+
+router.patch("/users/follow-requests/:id/accept", userAuth, userController.acceptFollowRequest);
+
+router.patch("/users/follow-requests/:id/reject", userAuth, userController.rejectFollowRequest);
 
 router.get("/:id/followers", userController.getFollowers);
 router.get("/:id/followrecord",protect,  userController.getFollowStatus);
 router.get("/:id/following", userController.getFollowing);
 
 router.get("/:id/follow-counts", userController.getFollowCounts);
+router.get("/follow-requests", userAuth, userController.getFollowRequests);
+
+router.patch("/follow-requests/:id/accept", userAuth, userController.acceptFollowRequest);
+
+router.patch("/follow-requests/:id/reject", userAuth, userController.rejectFollowRequest);
 
 
 // rountes for posts 

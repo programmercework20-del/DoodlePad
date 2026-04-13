@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 
-export const sendEmail = async (to, subject, type, data) => {
+export const sendEmail = async (to, subject, type, data = {}) => {
   try {
     console.log("📧 Sending email to:", to);
 
@@ -14,82 +14,75 @@ export const sendEmail = async (to, subject, type, data) => {
 
     let html = "";
 
-    // 🔥 TEMPLATE SWITCH
-    if (type === "verify-email") {
+    // ==============================
+    // 🔥 OTP EMAIL TEMPLATE (MAIN)
+    // ==============================
+    if (type === "otp") {
       html = `
-  <!DOCTYPE html>
-  <html>
-  <body style="margin:0; padding:0; background:#f4f4f4; font-family:Arial;">
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0; padding:0; background:#f4f4f4; font-family:Arial;">
 
-    <table width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center">
 
-          <table width="500" cellpadding="0" cellspacing="0" 
-                 style="background:#111; color:#fff; margin-top:40px; padding:30px; border-radius:10px;">
+              <table width="500" cellpadding="0" cellspacing="0" 
+                     style="background:#111; color:#fff; margin-top:40px; padding:30px; border-radius:10px;">
 
-            <tr>
-              <td>
-                <h2 style="margin:0;">Confirm your email</h2>
-              </td>
-            </tr>
+                <tr>
+                  <td>
+                    <h2 style="margin:0;">Verify your account</h2>
+                  </td>
+                </tr>
 
-            <tr>
-              <td style="padding-top:20px;">
-                <p>Thanks for signing up for <b>DoodlePad</b> 🎨</p>
-                <p>Please confirm your email by clicking below:</p>
-              </td>
-            </tr>
+                <tr>
+                  <td style="padding-top:20px;">
+                    <p>Your OTP code is:</p>
+                    <h1 style="letter-spacing:5px;">${data.otp}</h1>
+                    <p>This OTP is valid for 5 minutes.</p>
+                  </td>
+                </tr>
 
-            <tr>
-              <td align="center" style="padding:25px 0;">
-                <a href="${data.url}"
-                  style="
-                    background:#000;
-                    color:#fff;
-                    padding:12px 24px;
-                    text-decoration:none;
-                    border-radius:8px;
-                    display:inline-block;
-                    font-weight:bold;
-                  ">
-                  Verify Email
-                </a>
-                <p style="margin-top:20px; font-size:12px;">
-  If button not working, copy this link:
-</p>
+                <tr>
+                  <td>
+                    <p style="font-size:12px; color:#aaa;">
+                      If you didn’t request this, ignore this email.
+                    </p>
+                  </td>
+                </tr>
 
-<p style="word-break:break-all; color:lightblue;">
-  ${data.url}
-</p>
-              </td>
-              
-            </tr>
+              </table>
 
-            <tr>
-              <td>
-                <p style="font-size:12px; color:#aaa;">
-                  If you didn’t create an account, ignore this email.
-                </p>
-              </td>
-            </tr>
+            </td>
+          </tr>
+        </table>
 
-          </table>
-
-        </td>
-      </tr>
-    </table>
-
-  </body>
-  </html>
-  `;
+      </body>
+      </html>
+      `;
     }
+
+    // ==============================
+    // 🔥 FALLBACK TEMPLATE (IMPORTANT)
+    // ==============================
+    if (!html) {
+      html = `<p>No content available</p>`;
+    }
+
+    // ==============================
+    // 🔥 SEND MAIL
+    // ==============================
     const info = await transporter.sendMail({
-      from: `"DoodlePad Support" <no-reply.doodlepad@gmail.com>`,
+      from: `"DoodlePad Support" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html,
-      text: `Verify your email: ${data?.url || ""}` // 👈 IMPORTANT
+
+      // 👇 VERY IMPORTANT (fix blank mail / spam issue)
+      text: type === "otp"
+        ? `Your OTP is: ${data?.otp}`
+        : "DoodlePad Notification"
     });
 
     console.log("✅ Email sent:", info.response);
