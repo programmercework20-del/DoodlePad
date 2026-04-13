@@ -6,53 +6,65 @@ import { User, Follower } from "../../models/index.js";
 import { Op } from "sequelize";
 import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
+import { createNotification } from "../../services/notification.service.js";
 
 
 
 export const signup = async (req, res) => {
   try {
-    const { email, username, firstName, lastName, password } = req.body;
+    let { fullName, username, password, confirmPassword } = req.body;
 
-    if (!email || !username || !firstName || !lastName || !password) {
-      return res.status(400).json({ message: "All fields required" });
+    // 🔥 Trim inputs (important)
+    fullName = fullName?.trim();
+    username = username?.trim();
+
+    // ===============================
+    // ❌ VALIDATION
+    // ===============================
+    if (!fullName || !username || !password || !confirmPassword) {
+      return res.status(400).json({
+        message: "All fields are required"
+      });
+    }
+
+    // 🔥 Password match check
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        message: "Passwords do not match"
+      });
+    }
+
+    // 🔥 Optional: password strength
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters"
+      });
     }
 
     const existingUser = await User.findOne({
-      where: {
-        [Op.or]: [{ email }, { username }]
-      }
+      where: { username }
     });
 
     if (existingUser) {
       return res.status(400).json({
-        message: "Email or username already exists"
+        message: "Username already exists"
       });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const token = crypto.randomBytes(32).toString("hex");
-
     const user = await User.create({
-      email,
+      name: fullName,
       username,
-      name: `${firstName} ${lastName}`,
       password: hashedPassword,
-      emailVerificationToken: token,
-      emailVerificationExpires: new Date(Date.now() + 10 * 60 * 1000) // ⏱ 10 min
+      isVerified: false,
+      email: null,
+      phone: null
     });
 
-    const url = `https://4sb8r8b7-5000.inc1.devtunnels.ms/api/verify-email/${token}`;
-
-    await sendEmail(
-      email,
-      "Verify your account",
-      "verify-email",
-      { url }
-    );
-
-    return res.status(201).json({
-      message: "Signup successful. Please verify your email."
+    res.status(201).json({
+      message: "Signup successful. Please verify your account",
+      userId: user.id
     });
 
   } catch (error) {
@@ -61,74 +73,44 @@ export const signup = async (req, res) => {
   }
 };
 
-export const sendEmailVerification = async (req, res) => {
-  const user = req.user;
-
-  let token = user.emailVerificationToken;
-
-  // ✅ generate ONLY if not exists or expired
-  if (!token || user.emailVerificationExpires < new Date()) {
-    token = crypto.randomBytes(32).toString("hex");
-
-    await user.update({
-      emailVerificationToken: token,
-      emailVerificationExpires: new Date(Date.now() + 10 * 60 * 1000)
-    });
-  }
-
-  const url = `https://4sb8r8b7-5000.inc1.devtunnels.ms/api/verify-email/${token}`;
-
-  await sendEmail(
-    user.email,
-    "Verify your account",
-    "verify-email",
-    { url }
-  );
-
-  res.json({ message: "Verification email sent" });
-};
-
-export const verifyEmail = async (req, res) => {
+export const sendVerificationOtp = async (req, res) => {
   try {
-    const { token } = req.params;
+    const { userId, method, value } = req.body;
+    // method = "email" or "phone"
 
-    const user = await User.findOne({
-      where: {
-        emailVerificationToken: token,
-        emailVerificationExpires: {
-          [Op.gt]: new Date()
-        }
-      }
-    });
+    const user = await User.findByPk(userId);
 
-    if (!user) {
-      return res.status(400).send("Invalid or expired token");
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // ✅ already verified check
-    if (user.isVerified) {
-      return res.redirect("doodlepad://home");
-    }
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
     await user.update({
-      isVerified: true,
-      emailVerificationToken: null,
-      emailVerificationExpires: null
+      otp,
+      otpExpires: new Date(Date.now() + 5 * 60 * 1000), // 5 min
+      email: method === "email" ? value : user.email,
+      phone: method === "phone" ? value : user.phone
     });
 
-    const jwtToken = jwt.sign(
-      { id: user.id },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
-    );
+    // 🔥 EMAIL OTP
+    if (method === "email") {
+      await sendEmail(
+        value,
+        "Your OTP",
+        "otp",
+        { otp }
+      );
+    }
 
-    res.redirect(
-      `https://4sb8r8b7-5000.inc1.devtunnels.ms/success.html?token=${jwtToken}`
-    );
+    // 🔥 PHONE OTP (DEV MODE)
+    if (method === "phone") {
+      console.log(`📱 OTP for ${value}: ${otp}`);
+    }
+
+    res.json({ message: "OTP sent successfully" });
 
   } catch (error) {
     console.error(error);
-    res.status(500).send("Verification failed");
+    res.status(500).json({ message: "Failed to send OTP" });
   }
 };
 
@@ -170,39 +152,40 @@ export const sendOtp = async (req, res) => {
 
 export const verifyOtp = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    const { userId, otp } = req.body;
 
-    const user = await User.findOne({ where: { phone } });
+    const user = await User.findByPk(userId);
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     if (
-      user.phoneOtp !== otp ||
-      user.phoneOtpExpires < new Date()
+      user.otp !== otp ||
+      user.otpExpires < new Date()
     ) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
     await user.update({
-      isPhoneVerified: true,
-      phoneOtp: null,
-      phoneOtpExpires: null
+      isVerified: true,
+      otp: null,
+      otpExpires: null
     });
 
-    // 🔥 LOGIN (JWT)
+    // 🔥 AUTO LOGIN
     const token = jwt.sign(
       { id: user.id },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    return res.json({
-      message: "Phone verified successfully",
+    res.json({
+      message: "Verified successfully",
       token,
       user: {
         id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
         phone: user.phone
       }
     });
@@ -213,50 +196,34 @@ export const verifyOtp = async (req, res) => {
   }
 };
 
-export const updatePhone = async (req, res) => {
-  const { phone } = req.body;
-
-  const user = req.user;
-
-  await user.update({
-    phone,
-    isPhoneVerified: false
-  });
-
-  res.json({ message: "Phone updated, verify again" });
-};
-
 export const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
-    // identifier = email OR username
 
     const user = await User.findOne({
       where: {
         [Op.or]: [
+          { username: identifier },
           { email: identifier },
-          { username: identifier }
+          { phone: identifier }
         ]
       }
     });
-
-    if (user.email === identifier && !user.isVerified) {
-      return res.status(403).json({
-        message: "Please verify your email first"
-      });
-    }
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid password" });
+    if (!user.isVerified) {
+      return res.status(403).json({
+        message: "Please verify your account first"
+      });
     }
 
-    if (user.status !== "active") {
-      return res.status(403).json({ message: "Account blocked" });
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid password" });
     }
 
     const token = jwt.sign(
@@ -265,96 +232,167 @@ export const login = async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    return res.json({
+    res.json({
       message: "Login successful",
-      token
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        phone: user.phone
+      }
     });
 
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Login failed" });
   }
 };
 
 export const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { identifier } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+    if (!identifier) {
+      return res.status(400).json({ message: "Email or phone required" });
     }
 
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: identifier },
+          { phone: identifier }
+        ]
+      }
+    });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // 🔥 generate token
-    const token = crypto.randomBytes(32).toString("hex");
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
     await user.update({
-      resetPasswordToken: token,
-      resetPasswordExpires: new Date(Date.now() + 10 * 60 * 1000) // 10 min
+      otp,
+      otpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
     });
 
-    // 🔥 reset link
-    const url = `http://localhost:5000/api/reset-password/${token}`;
+    // 🔥 SEND EMAIL
+    if (user.email) {
+      await sendEmail(user.email, "Reset Password OTP", "otp", { otp });
+    } else {
+      console.log(`📱 Reset OTP for ${user.phone}: ${otp}`);
+    }
 
-    console.log("🔐 Reset URL:", url);
-
-    await sendEmail(
-      email,
-      "Reset your password",
-      `<h3>Reset Password</h3><a href="${url}">${url}</a>`
-    );
-
-    return res.json({
-      message: "Password reset email sent"
+    res.json({
+      message: "OTP sent successfully"
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Failed to send reset email" });
+    res.status(500).json({ message: "Failed to send OTP" });
+  }
+};
+
+export const verifyResetOtp = async (req, res) => {
+  try {
+    const { identifier, otp } = req.body;
+
+    if (!identifier || !otp) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: identifier },
+          { phone: identifier }
+        ]
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (
+      user.otp !== otp ||
+      user.otpExpires < new Date()
+    ) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    // ✅ Mark OTP verified (IMPORTANT)
+    await user.update({
+      otp: null,
+      otpExpires: null,
+      otpVerified: true   // 🔥 ADD THIS FIELD IN MODEL
+    });
+
+    res.json({
+      message: "OTP verified successfully"
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "OTP verification failed" });
   }
 };
 
 export const resetPassword = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { password } = req.body;
+    const { identifier, password, confirmPassword } = req.body;
 
-    if (!password) {
-      return res.status(400).json({ message: "Password is required" });
+    if (!identifier || !password || !confirmPassword) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+
+    // 🔥 password match check
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters"
+      });
     }
 
     const user = await User.findOne({
       where: {
-        resetPasswordToken: token,
-        resetPasswordExpires: {
-          [Op.gt]: new Date()
-        }
+        [Op.or]: [
+          { email: identifier },
+          { phone: identifier }
+        ]
       }
     });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid or expired token" });
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // ❌ If OTP not verified
+    if (!user.otpVerified) {
+      return res.status(403).json({
+        message: "Please verify OTP first"
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await user.update({
       password: hashedPassword,
-      resetPasswordToken: null,
-      resetPasswordExpires: null
+      otpVerified: false // 🔥 reset flag
     });
 
-    return res.json({
+    res.json({
       message: "Password reset successful"
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Password reset failed" });
+    res.status(500).json({ message: "Reset failed" });
   }
 };
 
@@ -432,10 +470,27 @@ export const followUser = async (req, res) => {
     const status = targetUser.isPrivate ? "pending" : "accepted";
 
     await Follower.create({
-      followerId,
-      followingId,
-      status
-    });
+  followerId,
+  followingId,
+  status
+});
+
+// 🔥 ADD THIS
+if (status === "pending") {
+  await createNotification({
+    senderId: followerId,
+    receiverId: followingId,
+    type: "FOLLOW_REQUEST"
+  });
+}
+
+if (status === "accepted") {
+  await createNotification({
+    senderId: followerId,
+    receiverId: followingId,
+    type: "FOLLOW_ACCEPTED"
+  });
+}
 
     return res.json({
       message: targetUser.isPrivate
@@ -449,9 +504,11 @@ export const followUser = async (req, res) => {
   }
 };
 
+// ACCEPT
 export const acceptFollowRequest = async (req, res) => {
   try {
     const requestId = req.params.id;
+    const userId = req.user.id;
 
     const request = await Follower.findByPk(requestId);
 
@@ -459,8 +516,24 @@ export const acceptFollowRequest = async (req, res) => {
       return res.status(404).json({ message: "Request not found" });
     }
 
-    request.status = "accepted";
-    await request.save();
+    // 🔥 IMPORTANT CHECK
+    if (request.followingId !== userId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (request.status !== "pending") {
+      return res.status(400).json({ message: "Invalid request state" });
+    }
+
+   request.status = "accepted";
+await request.save();
+
+// 🔥 NOTIFY FOLLOWER
+await createNotification({
+  senderId: userId,
+  receiverId: request.followerId,
+  type: "FOLLOW_ACCEPTED"
+});
 
     res.json({ message: "Follow request accepted" });
 
@@ -469,14 +542,25 @@ export const acceptFollowRequest = async (req, res) => {
   }
 };
 
+// REJECT
 export const rejectFollowRequest = async (req, res) => {
   try {
     const requestId = req.params.id;
+    const userId = req.user.id;
 
     const request = await Follower.findByPk(requestId);
 
     if (!request) {
       return res.status(404).json({ message: "Request not found" });
+    }
+
+    // 🔥 IMPORTANT CHECK
+    if (request.followingId !== userId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (request.status !== "pending") {
+      return res.status(400).json({ message: "Invalid request state" });
     }
 
     request.status = "rejected";
@@ -692,5 +776,17 @@ const isPrivateBool = isPrivate === true || isPrivate === "true";
     console.error(error);
     res.status(500).json({ message: "Failed to update privacy" });
   }
+};
+
+export const saveFcmToken = async (req, res) => {
+  const userId = req.user.id;
+  const { token } = req.body;
+
+  await User.update(
+    { fcmToken: token },
+    { where: { id: userId } }
+  );
+
+  res.json({ success: true });
 };
 
