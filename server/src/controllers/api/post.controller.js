@@ -43,7 +43,7 @@ export const createPost = async (req, res) => {
 
           stream.on("error", (err) => reject(err));
           stream.on("finish", async () => {
-            await blob.makePublic();
+            // await blob.makePublic();
             resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
           });
 
