@@ -10,43 +10,45 @@ import bucket from "../../config/firebase.js";
 
 export const createPost = async (req, res) => {
   try {
+    const { type, content, caption, isSaved } = req.body;
     const userId = req.user.id;
-    const { type, caption, content, isSaved } = req.body;
-
-    const cleanType = type?.trim().toLowerCase();
+    const cleanType = type?.toLowerCase();
     const isSavedBool = isSaved === "true" || isSaved === true;
-    
+
     let mediaUrls = [];
 
-    const allowedTypes = ["image", "video", "audio", "doodle", "text"];
-
-    if (!allowedTypes.includes(cleanType)) {
-      return res.status(400).json({ message: "Invalid post type" });
-    }
-
-    // 🚀 BUCKET UPLOAD LOGIC (Replaced local URL logic)
     if (req.files && req.files.length > 0) {
-      // Type ke hisaab se folder select karo
-      let folderName = "post_others";
-      if (cleanType === "image") folderName = "post_images";
-      else if (cleanType === "video") folderName = "post_videos";
-      else if (cleanType === "doodle") folderName = "doodles";
-
       // Sabhi files ko parallel upload karo Bucket mein
       const uploadPromises = req.files.map((file) => {
         return new Promise((resolve, reject) => {
+          // 🚀 VIDEO SEPARATION LOGIC
+          const isVideo = file.mimetype.startsWith('video');
+          const isAudio = file.mimetype.startsWith('audio');
+          
+          let folderName = 'post_images'; // Default
+          if (isVideo) folderName = 'post_videos';
+          if (isAudio) folderName = 'post_audios';
+
           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           const blob = bucket.file(fileName);
+
           const stream = blob.createWriteStream({
             metadata: { contentType: file.mimetype },
+            resumable: false, // 🔥 0B FIX: Choti files ke liye ise false rakhna zaroori hai
           });
 
-          stream.on("error", (err) => reject(err));
-          stream.on("finish", async () => {
-            // await blob.makePublic();
-            resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
+          stream.on("error", (err) => {
+            console.error("GCS Stream Error:", err);
+            reject(err);
           });
 
+          stream.on("finish", () => {
+            // Bucket uniform access par hai, isliye makePublic ki zarurat nahi
+            const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+            resolve(publicUrl);
+          });
+
+          // Buffer pass karo stream khatam karne ke liye
           stream.end(file.buffer);
         });
       });
@@ -54,6 +56,7 @@ export const createPost = async (req, res) => {
       mediaUrls = await Promise.all(uploadPromises);
     }
 
+    // Validation checks
     if (["image", "video", "audio"].includes(cleanType) && mediaUrls.length === 0) {
       return res.status(400).json({ message: "File is required" });
     }
@@ -67,9 +70,8 @@ export const createPost = async (req, res) => {
     }
 
     let expiresAt = null;
-
     if (!isSavedBool) {
-      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours expiry
     }
 
     const post = await Post.create({
@@ -82,14 +84,14 @@ export const createPost = async (req, res) => {
       expiresAt
     });
 
-    // 🚀 CACHE INVALIDATION: Nayi post aate hi purana cache uda do
+    // 🚀 CACHE INVALIDATION
     if (redisClient?.isReady) {
       await redisClient.del(`userPosts:${userId}`);
     }
 
     return res.status(201).json({
       success: true,
-      message: "Post created",
+      message: "Post created successfully",
       post
     });
 
@@ -97,7 +99,8 @@ export const createPost = async (req, res) => {
     console.error("Create Post Error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to create post"
+      message: "Failed to create post",
+      error: error.message
     });
   }
 };
