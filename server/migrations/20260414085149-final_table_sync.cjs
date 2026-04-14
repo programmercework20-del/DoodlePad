@@ -1,4 +1,4 @@
-// Followers 
+
 await queryInterface.createTable('followers', {
   id: { type: Sequelize.UUID, primaryKey: true, defaultValue: Sequelize.UUIDV4 },
   followerId: { type: Sequelize.UUID, allowNull: false },
