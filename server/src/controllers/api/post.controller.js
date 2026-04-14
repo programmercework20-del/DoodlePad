@@ -18,45 +18,36 @@ export const createPost = async (req, res) => {
     let mediaUrls = [];
 
     if (req.files && req.files.length > 0) {
-      // Sabhi files ko parallel upload karo Bucket mein
       const uploadPromises = req.files.map((file) => {
         return new Promise((resolve, reject) => {
-          // 🚀 VIDEO SEPARATION LOGIC
           const isVideo = file.mimetype.startsWith('video');
           const isAudio = file.mimetype.startsWith('audio');
-          
-          let folderName = 'post_images'; // Default
+
+          let folderName = 'post_images';
           if (isVideo) folderName = 'post_videos';
           if (isAudio) folderName = 'post_audios';
 
           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           const blob = bucket.file(fileName);
 
-          const stream = blob.createWriteStream({
+          // 🔥 FIX: save() use karo stream ki jagah
+          blob.save(file.buffer, {
             metadata: { contentType: file.mimetype },
-            resumable: false, // 🔥 0B FIX: Choti files ke liye ise false rakhna zaroori hai
-          });
-
-          stream.on("error", (err) => {
-            console.error("GCS Stream Error:", err);
-            reject(err);
-          });
-
-          stream.on("finish", () => {
-            // Bucket uniform access par hai, isliye makePublic ki zarurat nahi
+            resumable: file.size > 5 * 1024 * 1024, // 5MB se bada ho toh resumable
+          }, (err) => {
+            if (err) {
+              console.error("GCS Upload Error:", err);
+              return reject(err);
+            }
             const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
             resolve(publicUrl);
           });
-
-          // Buffer pass karo stream khatam karne ke liye
-          stream.end(file.buffer);
         });
       });
 
       mediaUrls = await Promise.all(uploadPromises);
     }
 
-    // Validation checks
     if (["image", "video", "audio"].includes(cleanType) && mediaUrls.length === 0) {
       return res.status(400).json({ message: "File is required" });
     }
@@ -71,7 +62,7 @@ export const createPost = async (req, res) => {
 
     let expiresAt = null;
     if (!isSavedBool) {
-      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours expiry
+      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     }
 
     const post = await Post.create({
@@ -84,7 +75,6 @@ export const createPost = async (req, res) => {
       expiresAt
     });
 
-    // 🚀 CACHE INVALIDATION
     if (redisClient?.isReady) {
       await redisClient.del(`userPosts:${userId}`);
     }
@@ -104,6 +94,8 @@ export const createPost = async (req, res) => {
     });
   }
 };
+
+
 
 export const getArchivedPosts = async (req, res) => {
   try {
