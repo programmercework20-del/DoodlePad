@@ -1,12 +1,11 @@
 import admin from "firebase-admin";
-import fs from "fs";
-
-const serviceAccount = JSON.parse(
-  fs.readFileSync(new URL("./firebaseServiceKey.json", import.meta.url))
-);
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+  credential: admin.credential.applicationDefault(),
+  storageBucket: "doodlepad-media-staging"
 });
 
-export default admin;
+// 👇 Ye line ensure karegi ki bucket hi export ho
+const bucket = admin.storage().bucket();
+
+export default bucket;
