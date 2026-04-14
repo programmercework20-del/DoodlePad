@@ -1,5 +1,5 @@
 'use strict';
-
+//1
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     // 1. CREATE ENUMS FIRST (Bypasses "type does not exist" error)

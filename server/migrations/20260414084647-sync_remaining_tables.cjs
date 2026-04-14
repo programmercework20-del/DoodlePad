@@ -1,5 +1,5 @@
 'use strict';
-
+//2
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     // 1. ADS TABLE: Adding columns if they are missing
