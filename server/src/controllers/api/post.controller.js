@@ -4,6 +4,9 @@ import Comment from "../../models/Comment.js";
 import { processHashtags } from "../../utils/hashtag.util.js";
 import { Op } from "sequelize";
 
+// 🔥 REDIS & BUCKET IMPORT
+import redisClient from "../../config/redis.js"; 
+import bucket from "../../config/firebase.js"; 
 
 export const createPost = async (req, res) => {
   try {
@@ -11,18 +14,9 @@ export const createPost = async (req, res) => {
     const { type, caption, content, isSaved } = req.body;
 
     const cleanType = type?.trim().toLowerCase();
-
     const isSavedBool = isSaved === "true" || isSaved === true;
-
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-
+    
     let mediaUrls = [];
-
-    if (req.files && req.files.length > 0) {
-      mediaUrls = req.files.map(
-        file => `${baseUrl}/uploads/stories/${file.filename}`
-      );
-    }
 
     const allowedTypes = ["image", "video", "audio", "doodle", "text"];
 
@@ -30,10 +24,37 @@ export const createPost = async (req, res) => {
       return res.status(400).json({ message: "Invalid post type" });
     }
 
-    if (
-      ["image", "video", "audio"].includes(cleanType) &&
-      mediaUrls.length === 0
-    ) {
+    // 🚀 BUCKET UPLOAD LOGIC (Replaced local URL logic)
+    if (req.files && req.files.length > 0) {
+      // Type ke hisaab se folder select karo
+      let folderName = "post_others";
+      if (cleanType === "image") folderName = "post_images";
+      else if (cleanType === "video") folderName = "post_videos";
+      else if (cleanType === "doodle") folderName = "doodles";
+
+      // Sabhi files ko parallel upload karo Bucket mein
+      const uploadPromises = req.files.map((file) => {
+        return new Promise((resolve, reject) => {
+          const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          const blob = bucket.file(fileName);
+          const stream = blob.createWriteStream({
+            metadata: { contentType: file.mimetype },
+          });
+
+          stream.on("error", (err) => reject(err));
+          stream.on("finish", async () => {
+            await blob.makePublic();
+            resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
+          });
+
+          stream.end(file.buffer);
+        });
+      });
+
+      mediaUrls = await Promise.all(uploadPromises);
+    }
+
+    if (["image", "video", "audio"].includes(cleanType) && mediaUrls.length === 0) {
       return res.status(400).json({ message: "File is required" });
     }
 
@@ -61,6 +82,11 @@ export const createPost = async (req, res) => {
       expiresAt
     });
 
+    // 🚀 CACHE INVALIDATION: Nayi post aate hi purana cache uda do
+    if (redisClient?.isReady) {
+      await redisClient.del(`userPosts:${userId}`);
+    }
+
     return res.status(201).json({
       success: true,
       message: "Post created",
@@ -68,7 +94,7 @@ export const createPost = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("Create Post Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to create post"
@@ -79,17 +105,30 @@ export const createPost = async (req, res) => {
 export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
+    const cacheKey = `archivedPosts:${userId}`;
 
-    // 🔥 IMPORTANT FIX
+    // 🔥 IMPORTANT FIX (Original logic maintained)
     await markExpiredPosts();
 
+    // 🚀 1. Check Redis Cache
+    if (redisClient?.isReady) {
+      const cachedData = await redisClient.get(cacheKey);
+      if (cachedData) {
+        const parsedData = JSON.parse(cachedData);
+        return res.json({ success: true, count: parsedData.length, posts: parsedData });
+      }
+    }
+
+    // 🚀 2. Fetch from DB if not in Cache
     const posts = await Post.findAll({
-      where: {
-        userId,
-        status: "archived"
-      },
+      where: { userId, status: "archived" },
       order: [["createdAt", "DESC"]]
     });
+
+    // 🚀 3. Set Cache for 1 Hour
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+    }
 
     return res.json({
       success: true,
@@ -113,9 +152,7 @@ export const markExpiredPosts = async () => {
       {
         where: {
           isSaved: false,
-          expiresAt: {
-            [Op.lt]: new Date()
-          },
+          expiresAt: { [Op.lt]: new Date() },
           status: "active"
         }
       }
@@ -133,9 +170,7 @@ export const getExpiredPosts = async (req, res) => {
       where: {
         userId,
         isSaved: false,
-        expiresAt: {
-            [Op.lt]: new Date()
-          }
+        expiresAt: { [Op.lt]: new Date() }
       },
       order: [["createdAt", "DESC"]]
     });
@@ -163,17 +198,11 @@ export const restoreArchivedPost = async (req, res) => {
     const post = await Post.findByPk(postId);
 
     if (!post || post.userId !== userId) {
-      return res.status(404).json({
-        success: false,
-        message: "Post not found"
-      });
+      return res.status(404).json({ success: false, message: "Post not found" });
     }
 
     if (post.status !== "archived") {
-      return res.status(400).json({
-        success: false,
-        message: "Post is not archived"
-      });
+      return res.status(400).json({ success: false, message: "Post is not archived" });
     }
 
     await post.update({
@@ -182,17 +211,17 @@ export const restoreArchivedPost = async (req, res) => {
       expiresAt: null
     });
 
-    return res.json({
-      success: true,
-      message: "Post restored and made permanent"
-    });
+    // 🚀 CACHE INVALIDATION
+    if (redisClient?.isReady) {
+      await redisClient.del(`userPosts:${userId}`);
+      await redisClient.del(`archivedPosts:${userId}`);
+    }
+
+    return res.json({ success: true, message: "Post restored and made permanent" });
 
   } catch (error) {
     console.error("RESTORE ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Restore failed"
-    });
+    return res.status(500).json({ success: false, message: "Restore failed" });
   }
 };
 
@@ -204,17 +233,11 @@ export const archivePost = async (req, res) => {
     const post = await Post.findByPk(postId);
 
     if (!post || post.userId !== userId) {
-      return res.status(404).json({
-        success: false,
-        message: "Post not found"
-      });
+      return res.status(404).json({ success: false, message: "Post not found" });
     }
 
     if (post.status === "archived") {
-      return res.status(400).json({
-        success: false,
-        message: "Post already archived"
-      });
+      return res.status(400).json({ success: false, message: "Post already archived" });
     }
 
     await post.update({
@@ -222,17 +245,17 @@ export const archivePost = async (req, res) => {
       expiresAt: null // 🔥 IMPORTANT (stop expiry)
     });
 
-    return res.json({
-      success: true,
-      message: "Post moved to archive"
-    });
+    // 🚀 CACHE INVALIDATION
+    if (redisClient?.isReady) {
+      await redisClient.del(`userPosts:${userId}`);
+      await redisClient.del(`archivedPosts:${userId}`);
+    }
+
+    return res.json({ success: true, message: "Post moved to archive" });
 
   } catch (error) {
     console.error("ARCHIVE ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Archive failed"
-    });
+    return res.status(500).json({ success: false, message: "Archive failed" });
   }
 };
 
@@ -244,48 +267,50 @@ export const deletePost = async (req, res) => {
     const post = await Post.findByPk(postId);
 
     if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: "Post not found"
-      });
+      return res.status(404).json({ success: false, message: "Post not found" });
     }
 
     // ✅ Ownership check
     if (post.userId !== userId && req.user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "You are not allowed to delete this post"
-      });
+      return res.status(403).json({ success: false, message: "You are not allowed to delete this post" });
     }
 
     // ✅ Already deleted check
     if (post.status === "deleted") {
-      return res.status(400).json({
-        success: false,
-        message: "Post already deleted"
-      });
+      return res.status(400).json({ success: false, message: "Post already deleted" });
     }
 
     await post.update({ status: "deleted" });
 
-    return res.json({
-      success: true,
-      message: "Post deleted successfully"
-    });
+    // 🚀 CACHE INVALIDATION
+    if (redisClient?.isReady) {
+      await redisClient.del(`userPosts:${userId}`);
+      await redisClient.del(`archivedPosts:${userId}`);
+    }
+
+    return res.json({ success: true, message: "Post deleted successfully" });
 
   } catch (error) {
     console.error("Delete post error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete post"
-    });
+    res.status(500).json({ success: false, message: "Failed to delete post" });
   }
 };
 
 export const getUserPosts = async (req, res) => {
   try {
     const { id } = req.params;
+    const cacheKey = `userPosts:${id}`;
 
+    // 🚀 1. Check Redis Cache First
+    if (redisClient?.isReady) {
+      const cachedData = await redisClient.get(cacheKey);
+      if (cachedData) {
+        const parsedData = JSON.parse(cachedData);
+        return res.json({ success: true, count: parsedData.length, posts: parsedData });
+      }
+    }
+
+    // 🚀 2. Fetch from DB if Cache is empty
     const posts = await Post.findAll({
       where: {
         userId: id,
@@ -312,6 +337,11 @@ export const getUserPosts = async (req, res) => {
       ],
       order: [["createdAt", "DESC"]]
     });
+
+    // 🚀 3. Save to Redis Cache (1 Hour Expiry)
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+    }
 
     return res.json({
       success: true,
