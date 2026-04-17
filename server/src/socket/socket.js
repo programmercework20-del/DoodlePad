@@ -7,7 +7,8 @@ export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
       origin: "*", // Testing ke liye thik hai, production mein app ka domain daal sakte ho
-      methods: ["GET", "POST"]
+      methods: ["GET", "POST"],
+      credentials: true
     },
     // 🚀 MOBILE APP FIX: In settings ke bina Android/iOS mein connection errors aate hain
     transports: ["websocket", "polling"], 
