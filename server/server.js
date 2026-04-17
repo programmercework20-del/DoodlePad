@@ -5,9 +5,10 @@ import cron from "node-cron";
 import config from './src/config/env.js';
 import http from "http";
 import { initSocket } from "./src/socket/socket.js";
+import { markExpiredPosts } from "./src/controllers/api/post.controller.js";
 
 const PORT = config.port;
-// 🔥 हर 1 घंटे में run होगा
+
 cron.schedule("0 * * * *", async () => {
   console.log("⏳ Checking expired posts (every 1 hour)...");
   await markExpiredPosts();
