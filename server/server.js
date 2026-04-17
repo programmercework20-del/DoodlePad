@@ -7,34 +7,47 @@ import http from "http";
 import { initSocket } from "./src/socket/socket.js";
 import { markExpiredPosts } from "./src/controllers/api/post.controller.js";
 
-const PORT = config.port;
+const PORT = config.port || 5000;
 
+// 🔥 1. TRUST PROXY: GCP/Cloud deployment ke liye mandatory hai
+app.set('trust proxy', 1);
+
+// CRON JOB
 cron.schedule("0 * * * *", async () => {
-  console.log("⏳ Checking expired posts (every 1 hour)...");
-  await markExpiredPosts();
+  try {
+    console.log("⏳ Checking expired posts (every 1 hour)...");
+    await markExpiredPosts();
+  } catch (err) {
+    console.error("Cron Job Error:", err);
+  }
 });
 
 const server = http.createServer(app);
 
-// ✅ Initialize Socket.IO (ONLY HERE)
+// ✅ Initialize Socket.IO
 initSocket(server);
 
 // START SERVER
 const startServer = async () => {
   try {
+    // DB Connection check
     await sequelize.authenticate();
     console.log("✅ DB connected");
 
+    // Only sync in dev mode
     if (config.nodeEnv === "development") {
-      await sequelize.sync({alter: true});
+      console.log("🔄 Syncing Database...");
+      await sequelize.sync({ alter: true });
     }
 
+    // 🔥 2. BIND TO 0.0.0.0: Isse bahar ke connections (Android/iOS) allow hote hain
     server.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on ${PORT}`);
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${config.nodeEnv}`);
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("❌ Server Start Error:", error);
     process.exit(1);
   }
 };
