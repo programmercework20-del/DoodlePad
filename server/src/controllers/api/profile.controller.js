@@ -13,20 +13,33 @@ export const getUserProfile = async (req, res) => {
   try {
     const profileUserId = req.params.id;
     const viewerId = req.user?.id;
+
+    // 🛠️ 1. UUID VALIDATION: Agar ID galat format mein hai (like 'u3'), toh server crash nahi hoga
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(profileUserId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid User ID format. UUID expected." 
+      });
+    }
+
+    // 🚀 2. REDIS CACHE KEY
     const cacheKey = `userProfile:${profileUserId}:viewer:${viewerId || "guest"}`;
 
-    // 🚀 1. Redis Cache Check
+    // 🚀 3. REDIS CACHE CHECK
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
       if (cached) {
+        console.log("⚡ Serving from Redis Cache");
         return res.json({ success: true, ...JSON.parse(cached) });
       }
     }
 
+    // 🛰️ 4. DATABASE FETCH
     const user = await User.findByPk(profileUserId, {
       attributes: [
         "id", "username", "name", "bio", "profilePhoto",
-        "doodleImage", "doodleOwnerId", "isPrivate"
+        "doodleImage", "doodleData", "doodleOwnerId", "isPrivate"
       ]
     });
 
@@ -34,9 +47,12 @@ export const getUserProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const followersCount = await Follower.count({ where: { followingId: profileUserId } });
-    const followingCount = await Follower.count({ where: { followerId: profileUserId } });
-    const postsCount = await Post.count({ where: { userId: profileUserId } });
+    // Speed optimization using Promise.all
+    const [followersCount, followingCount, postsCount] = await Promise.all([
+      Follower.count({ where: { followingId: profileUserId } }),
+      Follower.count({ where: { followerId: profileUserId } }),
+      Post.count({ where: { userId: profileUserId } })
+    ]);
 
     let follow = null;
     if (viewerId) {
@@ -48,11 +64,12 @@ export const getUserProfile = async (req, res) => {
     const isFollowing = follow?.status === "accepted";
     let canViewFullProfile = true;
 
-    if (user.isPrivate && viewerId !== profileUserId) {
-      if (!isFollowing) canViewFullProfile = false;
+    // Privacy logic
+    if (user.isPrivate && viewerId !== profileUserId && !isFollowing) {
+      canViewFullProfile = false;
     }
 
-    const showDoodle = viewerId === profileUserId ? true : isFollowing;
+    const showDoodle = viewerId === profileUserId || isFollowing;
 
     let posts = [];
     if (canViewFullProfile) {
@@ -62,9 +79,42 @@ export const getUserProfile = async (req, res) => {
       });
     }
 
+    // 🔥 DEV'S NEW DOODLE LOGIC
+    let effectiveDoodleImage = user.doodleImage;
+    let effectiveDoodleData = user.doodleData;
+    let effectiveDoodleOwnerId = user.doodleOwnerId;
+
+    if (viewerId && viewerId !== profileUserId) {
+      const acceptedRequest = await DoodleRequest.findOne({
+        where: {
+          senderId: viewerId,
+          receiverId: profileUserId,
+          status: "accepted"
+        },
+        order: [["updatedAt", "DESC"]]
+      });
+
+      if (acceptedRequest) {
+        effectiveDoodleImage = acceptedRequest.doodleImage || null;
+        effectiveDoodleData = acceptedRequest.doodleData || null;
+        effectiveDoodleOwnerId = acceptedRequest.senderId;
+      }
+    }
+
+    // Formatting Response
     const profileData = {
       profile: {
-        user,
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          bio: user.bio,
+          profilePhoto: user.profilePhoto,
+          doodleImage: showDoodle ? effectiveDoodleImage : null,
+          doodleData: showDoodle ? effectiveDoodleData : null,
+          doodleOwnerId: showDoodle ? effectiveDoodleOwnerId : null,
+          isPrivate: user.isPrivate
+        },
         stats: canViewFullProfile
           ? { followers: followersCount, following: followingCount, posts: postsCount }
           : null,
@@ -76,7 +126,7 @@ export const getUserProfile = async (req, res) => {
       }
     };
 
-    // 🚀 2. Cache Store (5 min)
+    // 🚀 5. STORE IN REDIS (Cache for 5 mins)
     if (redisClient?.isReady) {
       await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData));
     }
@@ -84,8 +134,8 @@ export const getUserProfile = async (req, res) => {
     return res.json({ success: true, ...profileData });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Profile failed" });
+    console.error("GET USER PROFILE ERROR:", error);
+    return res.status(500).json({ message: "Profile fetch failed" });
   }
 };
 
