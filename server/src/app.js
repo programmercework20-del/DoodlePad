@@ -47,7 +47,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
+app.set('trust proxy', 1); // 🔥 Nginx/reverse proxy ke liye
 // Security
 app.use(helmet());
 app.use(hpp());
