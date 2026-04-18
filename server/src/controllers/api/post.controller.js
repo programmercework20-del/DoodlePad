@@ -102,30 +102,40 @@ export const createPost = async (req, res) => {
     const cleanType = type?.toLowerCase();
     const isSavedBool = isSaved === "true" || isSaved === true;
 
-let mediaUrls = [];
+    console.log(`🚀 Creating Post: Type=${cleanType}, ContentLength=${content?.length || 0}`);
 
-    // 🎨 AGAR DOODLE HAI: Separate folder "post_doodles" mein store karo
-    if (cleanType === "doodle" && content && content.startsWith('data:image')) {
-      const base64Data = content.replace(/^data:image\/\w+;base64,/, "");
-      const buffer = Buffer.from(base64Data, "base64");
+    let mediaUrls = [];
 
-      // 🔥 Folder name change kar diya: post_doodles
-      const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
-      const blob = bucket.file(fileName);
+    // 🎨 AGAR DOODLE HAI
+    if (cleanType === "doodle" && content) {
+      try {
+        // Flexible check: Agar header hai toh remove karo, warna direct buffer banao
+        const isBase64 = content.includes(';base64,');
+        const base64Data = isBase64 ? content.split(';base64,').pop() : content;
+        
+        const buffer = Buffer.from(base64Data, "base64");
 
-      await blob.save(buffer, {
-        metadata: { contentType: "image/png" },
-        resumable: false,
-      });
+        // 🔥 Folder name: post_doodles
+        const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
+        const blob = bucket.file(fileName);
 
-      mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
+        await blob.save(buffer, {
+          metadata: { contentType: "image/png" },
+          resumable: false,
+        });
+
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+        mediaUrls.push(publicUrl);
+        console.log("✅ Doodle uploaded to GCS:", publicUrl);
+      } catch (uploadErr) {
+        console.error("❌ Doodle GCS Save Error:", uploadErr.message);
+      }
     }
 
-    // 📂 AGAR REGULAR FILES HAIN (Images/Videos/Audios)
+    // 📂 AGAR REGULAR FILES HAIN
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map((file) => {
         return new Promise((resolve, reject) => {
-          // Normal logic for other files
           let folderName = 'post_images';
           if (file.mimetype.startsWith('video')) folderName = 'post_videos';
           else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
@@ -146,9 +156,10 @@ let mediaUrls = [];
       mediaUrls = [...mediaUrls, ...uploadedFiles];
     }
 
-    // Validation
+    // 🔥 Final Check
     if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
-      return res.status(400).json({ message: "Media file is missing!" });
+       console.error("❌ Validation Failed: No mediaUrls generated");
+       return res.status(400).json({ message: "Media file or Doodle data is missing/invalid!" });
     }
 
     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -156,7 +167,7 @@ let mediaUrls = [];
     const post = await Post.create({
       userId,
       type: cleanType,
-      content: cleanType === "doodle" ? "Doodle Post" : content, // DB mein heavy base64 save mat hone dena
+      content: cleanType === "doodle" ? "Doodle Post" : content,
       caption,
       mediaUrls,
       isSaved: isSavedBool,
@@ -172,7 +183,6 @@ let mediaUrls = [];
     res.status(500).json({ success: false, message: "Failed", error: error.message });
   }
 };
-
 export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
