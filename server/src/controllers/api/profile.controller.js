@@ -184,6 +184,7 @@ export const updateMyProfile = async (req, res) => {
       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
+    // DB Update
     await user.update({
       name: name ?? user.name,
       username: username ?? user.username,
@@ -193,10 +194,16 @@ export const updateMyProfile = async (req, res) => {
       profilePhoto
     });
 
-    // 🚀 Cache Invalidation
+    // 🚀 Cache Invalidation (Fixed & Improved)
     if (redisClient?.isReady) {
-      await redisClient.del(`userProfile:${req.user.id}:viewer:${req.user.id}`);
-      await redisClient.del(`userProfile:${req.user.id}:viewer:guest`);
+      // Is user ki saari profile cache keys dhoondo (guest, self, friends etc.)
+      const pattern = `userProfile:${req.user.id}:viewer:*`;
+      const keys = await redisClient.keys(pattern);
+      
+      if (keys.length > 0) {
+        await redisClient.del(keys);
+        console.log(`🧹 Cleared ${keys.length} cache keys for user: ${req.user.id}`);
+      }
     }
 
     return res.json({ success: true, message: "Profile updated successfully", user });
