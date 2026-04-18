@@ -105,28 +105,24 @@ export const createPost = async (req, res) => {
 
     let mediaUrls = [];
 
-    // 🎨 AGAR DOODLE HAI
    // 🎨 AGAR DOODLE HAI
 if (cleanType === "doodle" && content) {
   try {
-    // 1. String clean karo: Sirf base64 part nikaalo
-    // Kuch FE libs 'data:image/png;base64,' bhejti hain, kuch nahi.
+    // 1. Data Cleaning
     const base64Data = content.includes('base64,') 
       ? content.split('base64,')[1] 
       : content;
 
-    // 2. Buffer banao
     const buffer = Buffer.from(base64Data, "base64");
 
-    // 3. Buffer size check (Safety check)
-    if (buffer.length < 100) {
-       throw new Error("Corrupted base64 data: Buffer is too small");
+    if (buffer.length < 500) { // Check if it's actually an image
+       throw new Error("Invalid or too small image data");
     }
 
     const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
     const blob = bucket.file(fileName);
 
-    // 4. Save with tight metadata
+    // 2. Simple Save (makePublic hata diya)
     await blob.save(buffer, {
       metadata: { 
         contentType: "image/png",
@@ -135,14 +131,13 @@ if (cleanType === "doodle" && content) {
       resumable: false,
     });
 
-    // 5. Explicitly Public banao (Just in case bucket level par miss ho raha ho)
-    await blob.makePublic();
-
     mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-    console.log("✅ Doodle Fixed & Uploaded!");
+    console.log("✅ Doodle Saved Successfully!");
+
   } catch (uploadErr) {
     console.error("❌ Doodle Upload Error:", uploadErr.message);
-    return res.status(400).json({ message: "Invalid Doodle data" });
+    // Agar JWT issue hai, toh check karo ki key file sahi hai ya nahi
+    return res.status(400).json({ message: "Upload failed: " + uploadErr.message });
   }
 }
 
