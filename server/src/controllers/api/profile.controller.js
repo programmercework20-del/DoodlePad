@@ -152,7 +152,7 @@ export const updateMyProfile = async (req, res) => {
     name = name?.trim();
     bio = bio?.trim();
 
-    // Username check
+    // Username check logic...
     if (username && username !== user.username) {
       const existingUsername = await User.findOne({ where: { username } });
       if (existingUsername) {
@@ -160,27 +160,17 @@ export const updateMyProfile = async (req, res) => {
       }
     }
 
-    // 🔥 Profile Photo — GCS Bucket Upload
+    // Photo upload logic...
     let profilePhoto = user.profilePhoto;
-
     if (req.file) {
-      if (!req.file.buffer) {
-        return res.status(400).json({ message: "File buffer missing" });
-      }
-
       const fileName = `profile_images/user_${req.user.id}_${Date.now()}`;
       const blob = bucket.file(fileName);
-
       await new Promise((resolve, reject) => {
-        const stream = blob.createWriteStream({
-          metadata: { contentType: req.file.mimetype },
-          resumable: false
-        });
+        const stream = blob.createWriteStream({ metadata: { contentType: req.file.mimetype }, resumable: false });
         stream.on("error", reject);
         stream.on("finish", resolve);
         stream.end(req.file.buffer);
       });
-
       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
@@ -194,17 +184,19 @@ export const updateMyProfile = async (req, res) => {
       profilePhoto
     });
 
-    // 🚀 CACHE INVALIDATION (The "Flush" Logic)
+    // 🚀 CACHE INVALIDATION (Fixed)
     if (redisClient?.isReady) {
       try {
-        // Is user se judi saari viewer keys dhoondo
+        // 1. Delete userProfile keys (jo dusre log dekhte hain)
         const pattern = `userProfile:${req.user.id}:*`;
         const keys = await redisClient.keys(pattern);
-        
-        if (keys.length > 0) {
-          await redisClient.del(keys);
-          console.log(`🧹 Redis: Deleted ${keys.length} keys for user ${req.user.id}`);
-        }
+        if (keys.length > 0) await redisClient.del(keys);
+
+        // 2. 🔥 DELETE myProfile KEY (Jo user khud dekhta hai - YAHI MISSING THA)
+        const myProfileKey = `myProfile:${req.user.id}`;
+        await redisClient.del(myProfileKey);
+
+        console.log(`🧹 Redis Cleaned for user ${req.user.id}`);
       } catch (redisErr) {
         console.error("⚠️ Redis Cache Clear Error:", redisErr);
       }
