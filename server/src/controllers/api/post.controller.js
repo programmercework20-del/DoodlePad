@@ -8,6 +8,93 @@ import { Op } from "sequelize";
 import redisClient from "../../config/redis.js"; 
 import bucket from "../../config/firebase.js"; 
 
+// export const createPost = async (req, res) => {
+//   try {
+//     const { type, content, caption, isSaved } = req.body;
+//     const userId = req.user.id;
+//     const cleanType = type?.toLowerCase();
+//     const isSavedBool = isSaved === "true" || isSaved === true;
+
+//     let mediaUrls = [];
+
+//     if (req.files && req.files.length > 0) {
+//       const uploadPromises = req.files.map((file) => {
+//         return new Promise((resolve, reject) => {
+//           const isVideo = file.mimetype.startsWith('video');
+//           const isAudio = file.mimetype.startsWith('audio');
+
+//           let folderName = 'post_images';
+//           if (isVideo) folderName = 'post_videos';
+//           if (isAudio) folderName = 'post_audios';
+
+//           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+//           const blob = bucket.file(fileName);
+
+//           // 🔥 FIX: save() use karo stream ki jagah
+//           blob.save(file.buffer, {
+//             metadata: { contentType: file.mimetype },
+//             resumable: file.size > 5 * 1024 * 1024, // 5MB se bada ho toh resumable
+//           }, (err) => {
+//             if (err) {
+//               console.error("GCS Upload Error:", err);
+//               return reject(err);
+//             }
+//             const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+//             resolve(publicUrl);
+//           });
+//         });
+//       });
+
+//       mediaUrls = await Promise.all(uploadPromises);
+//     }
+
+//     if (["image", "video", "audio"].includes(cleanType) && mediaUrls.length === 0) {
+//       return res.status(400).json({ message: "File is required" });
+//     }
+
+//     if (cleanType === "doodle" && !content) {
+//       return res.status(400).json({ message: "Doodle data required" });
+//     }
+
+//     if (cleanType === "text" && !content) {
+//       return res.status(400).json({ message: "Content required" });
+//     }
+
+//     let expiresAt = null;
+//     if (!isSavedBool) {
+//       expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+//     }
+
+//     const post = await Post.create({
+//       userId,
+//       type: cleanType,
+//       content,
+//       caption,
+//       mediaUrls,
+//       isSaved: isSavedBool,
+//       expiresAt
+//     });
+
+//     if (redisClient?.isReady) {
+//       await redisClient.del(`userPosts:${userId}`);
+//     }
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Post created successfully",
+//       post
+//     });
+
+//   } catch (error) {
+//     console.error("Create Post Error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to create post",
+//       error: error.message
+//     });
+//   }
+// };
+
 export const createPost = async (req, res) => {
   try {
     const { type, content, caption, isSaved } = req.body;
@@ -17,6 +104,25 @@ export const createPost = async (req, res) => {
 
     let mediaUrls = [];
 
+    // 🎨 1. AGAR DOODLE HAI (Base64 handle karne ke liye)
+    if (cleanType === "doodle" && content) {
+      // Base64 string se "data:image/png;base64," wala part hatana padta hai
+      const base64Data = content.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+
+      const fileName = `post_images/doodle_${userId}_${Date.now()}.png`;
+      const blob = bucket.file(fileName);
+
+      await blob.save(buffer, {
+        metadata: { contentType: "image/png" },
+        resumable: false,
+      });
+
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+      mediaUrls.push(publicUrl);
+    }
+
+    // 📂 2. AGAR REGULAR FILES HAIN (Images/Videos)
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map((file) => {
         return new Promise((resolve, reject) => {
@@ -30,34 +136,23 @@ export const createPost = async (req, res) => {
           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           const blob = bucket.file(fileName);
 
-          // 🔥 FIX: save() use karo stream ki jagah
           blob.save(file.buffer, {
             metadata: { contentType: file.mimetype },
-            resumable: file.size > 5 * 1024 * 1024, // 5MB se bada ho toh resumable
+            resumable: file.size > 5 * 1024 * 1024,
           }, (err) => {
-            if (err) {
-              console.error("GCS Upload Error:", err);
-              return reject(err);
-            }
-            const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-            resolve(publicUrl);
+            if (err) return reject(err);
+            resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
           });
         });
       });
 
-      mediaUrls = await Promise.all(uploadPromises);
+      const uploadedFiles = await Promise.all(uploadPromises);
+      mediaUrls = [...mediaUrls, ...uploadedFiles];
     }
 
-    if (["image", "video", "audio"].includes(cleanType) && mediaUrls.length === 0) {
-      return res.status(400).json({ message: "File is required" });
-    }
-
-    if (cleanType === "doodle" && !content) {
-      return res.status(400).json({ message: "Doodle data required" });
-    }
-
-    if (cleanType === "text" && !content) {
-      return res.status(400).json({ message: "Content required" });
+    // Validations
+    if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
+      return res.status(400).json({ message: "Media is required for this post type" });
     }
 
     let expiresAt = null;
@@ -68,7 +163,7 @@ export const createPost = async (req, res) => {
     const post = await Post.create({
       userId,
       type: cleanType,
-      content,
+      content: cleanType === "doodle" ? "Doodle Image" : content, // Doodle string DB mein save na karein
       caption,
       mediaUrls,
       isSaved: isSavedBool,
@@ -87,15 +182,9 @@ export const createPost = async (req, res) => {
 
   } catch (error) {
     console.error("Create Post Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create post",
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: "Failed to create post", error: error.message });
   }
 };
-
-
 
 export const getArchivedPosts = async (req, res) => {
   try {
