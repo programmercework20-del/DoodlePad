@@ -105,24 +105,29 @@ export const createPost = async (req, res) => {
 
     let mediaUrls = [];
 
+
    // 🎨 AGAR DOODLE HAI
 if (cleanType === "doodle" && content) {
   try {
-    // 1. Data Cleaning
+    console.log("🎨 Processing Doodle... Content Length:", content.length);
+
+    // 1. Data Cleaning (Flexible header removal)
     const base64Data = content.includes('base64,') 
       ? content.split('base64,')[1] 
       : content;
 
+    // 2. Buffer banao
     const buffer = Buffer.from(base64Data, "base64");
 
-    if (buffer.length < 500) { // Check if it's actually an image
-       throw new Error("Invalid or too small image data");
+    // 3. Size check (Thoda kam kar diya taaki chote doodles bhi save hon)
+    if (buffer.length < 10) { 
+       throw new Error(`Data too small (${buffer.length} bytes). Frontend is sending empty string.`);
     }
 
     const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
     const blob = bucket.file(fileName);
 
-    // 2. Simple Save (makePublic hata diya)
+    // 4. Save to GCS
     await blob.save(buffer, {
       metadata: { 
         contentType: "image/png",
@@ -132,12 +137,12 @@ if (cleanType === "doodle" && content) {
     });
 
     mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-    console.log("✅ Doodle Saved Successfully!");
+    console.log("✅ Doodle Saved Successfully to:", fileName);
 
   } catch (uploadErr) {
     console.error("❌ Doodle Upload Error:", uploadErr.message);
-    // Agar JWT issue hai, toh check karo ki key file sahi hai ya nahi
-    return res.status(400).json({ message: "Upload failed: " + uploadErr.message });
+    // Don't crash the whole request, but inform the user
+    return res.status(400).json({ success: false, message: "Doodle upload failed: " + uploadErr.message });
   }
 }
 
