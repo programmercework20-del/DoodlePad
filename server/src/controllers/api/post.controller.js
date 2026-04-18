@@ -6,8 +6,7 @@ import { Op } from "sequelize";
 
 // 🔥 REDIS & BUCKET IMPORT
 import redisClient from "../../config/redis.js"; 
-import bucket from "../../config/firebase.js"; 
-
+import { bucket } from "../../config/firebase.js";
 // export const createPost = async (req, res) => {
 //   try {
 //     const { type, content, caption, isSaved } = req.body;
