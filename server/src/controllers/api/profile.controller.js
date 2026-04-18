@@ -148,37 +148,68 @@ export const updateMyProfile = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     let { name, bio, dateOfBirth, gender, username } = req.body;
-    
-    // DB Update logic...
+    username = username?.trim();
+    name = name?.trim();
+    bio = bio?.trim();
+
+    // Username check
+    if (username && username !== user.username) {
+      const existingUsername = await User.findOne({ where: { username } });
+      if (existingUsername) {
+        return res.status(400).json({ message: "Username already taken" });
+      }
+    }
+
+    // 🔥 Profile Photo — GCS Bucket Upload
+    let profilePhoto = user.profilePhoto;
+
+    if (req.file) {
+      if (!req.file.buffer) {
+        return res.status(400).json({ message: "File buffer missing" });
+      }
+
+      const fileName = `profile_images/user_${req.user.id}_${Date.now()}`;
+      const blob = bucket.file(fileName);
+
+      await new Promise((resolve, reject) => {
+        const stream = blob.createWriteStream({
+          metadata: { contentType: req.file.mimetype },
+          resumable: false
+        });
+        stream.on("error", reject);
+        stream.on("finish", resolve);
+        stream.end(req.file.buffer);
+      });
+
+      profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    }
+
+    // 🛰️ DATABASE UPDATE
     await user.update({
       name: name ?? user.name,
-      username: username?.trim() ?? user.username,
+      username: username ?? user.username,
       bio: bio ?? user.bio,
       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
       gender: gender || null,
-      profilePhoto: req.file ? await uploadToGCS(req) : user.profilePhoto // Shortened for logic
+      profilePhoto
     });
 
-    // 🚀 CACHE CLEANING (HARD FIX)
-    if (redisClient) {
+    // 🚀 CACHE INVALIDATION (The "Flush" Logic)
+    if (redisClient?.isReady) {
       try {
+        // Is user se judi saari viewer keys dhoondo
         const pattern = `userProfile:${req.user.id}:*`;
         const keys = await redisClient.keys(pattern);
         
         if (keys.length > 0) {
           await redisClient.del(keys);
-          console.log(`🧹 Cache Purged: ${keys.length} keys deleted`);
-        } else {
-          // Force delete specific known keys if pattern fails
-          await redisClient.del(`userProfile:${req.user.id}:viewer:${req.user.id}`);
-          await redisClient.del(`userProfile:${req.user.id}:viewer:guest`);
+          console.log(`🧹 Redis: Deleted ${keys.length} keys for user ${req.user.id}`);
         }
-      } catch (redisError) {
-        console.error("❌ Redis Delete Error:", redisError);
+      } catch (redisErr) {
+        console.error("⚠️ Redis Cache Clear Error:", redisErr);
       }
     }
 
-    // Response bhejne se pehle ensure karo cache clear ho gayi
     return res.json({ 
       success: true, 
       message: "Profile updated successfully", 
