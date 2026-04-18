@@ -102,15 +102,15 @@ export const createPost = async (req, res) => {
     const cleanType = type?.toLowerCase();
     const isSavedBool = isSaved === "true" || isSaved === true;
 
-    let mediaUrls = [];
+let mediaUrls = [];
 
-    // 🎨 1. AGAR DOODLE HAI (Base64 handle karne ke liye)
-    if (cleanType === "doodle" && content) {
-      // Base64 string se "data:image/png;base64," wala part hatana padta hai
+    // 🎨 AGAR DOODLE HAI: Separate folder "post_doodles" mein store karo
+    if (cleanType === "doodle" && content && content.startsWith('data:image')) {
       const base64Data = content.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
 
-      const fileName = `post_images/doodle_${userId}_${Date.now()}.png`;
+      // 🔥 Folder name change kar diya: post_doodles
+      const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
       const blob = bucket.file(fileName);
 
       await blob.save(buffer, {
@@ -118,20 +118,17 @@ export const createPost = async (req, res) => {
         resumable: false,
       });
 
-      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-      mediaUrls.push(publicUrl);
+      mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
     }
 
-    // 📂 2. AGAR REGULAR FILES HAIN (Images/Videos)
+    // 📂 AGAR REGULAR FILES HAIN (Images/Videos/Audios)
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map((file) => {
         return new Promise((resolve, reject) => {
-          const isVideo = file.mimetype.startsWith('video');
-          const isAudio = file.mimetype.startsWith('audio');
-
+          // Normal logic for other files
           let folderName = 'post_images';
-          if (isVideo) folderName = 'post_videos';
-          if (isAudio) folderName = 'post_audios';
+          if (file.mimetype.startsWith('video')) folderName = 'post_videos';
+          else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
 
           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           const blob = bucket.file(fileName);
@@ -145,44 +142,34 @@ export const createPost = async (req, res) => {
           });
         });
       });
-
       const uploadedFiles = await Promise.all(uploadPromises);
       mediaUrls = [...mediaUrls, ...uploadedFiles];
     }
 
-    // Validations
+    // Validation
     if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
-      return res.status(400).json({ message: "Media is required for this post type" });
+      return res.status(400).json({ message: "Media file is missing!" });
     }
 
-    let expiresAt = null;
-    if (!isSavedBool) {
-      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    }
+    let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const post = await Post.create({
       userId,
       type: cleanType,
-      content: cleanType === "doodle" ? "Doodle Image" : content, // Doodle string DB mein save na karein
+      content: cleanType === "doodle" ? "Doodle Post" : content, // DB mein heavy base64 save mat hone dena
       caption,
       mediaUrls,
       isSaved: isSavedBool,
       expiresAt
     });
 
-    if (redisClient?.isReady) {
-      await redisClient.del(`userPosts:${userId}`);
-    }
+    if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
 
-    return res.status(201).json({
-      success: true,
-      message: "Post created successfully",
-      post
-    });
+    return res.status(201).json({ success: true, message: "Post created!", post });
 
   } catch (error) {
     console.error("Create Post Error:", error);
-    res.status(500).json({ success: false, message: "Failed to create post", error: error.message });
+    res.status(500).json({ success: false, message: "Failed", error: error.message });
   }
 };
 
