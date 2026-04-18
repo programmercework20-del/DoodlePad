@@ -275,28 +275,32 @@ export const restrictFeatures = async (req, res) => {
 
 
 export const googleLogin = async (req, res) => {
-  try {
-    const { idToken } = req.body;
+    try {
+        const { idToken } = req.body;
 
-    if (!idToken) {
-      return res.status(400).json({
-        message: "Google token required"
-      });
+        if (!idToken) {
+            return res.status(400).json({
+                message: "Google token required"
+            });
+        }
+
+
+        const result = await handleGoogleLogin(idToken);
+
+        console.log("🔥 Incoming Google Login Request");
+        console.log("Token:", idToken ? "Received" : "Missing");
+
+        return res.json({
+            message: "Google login successful",
+            ...result
+        });
+
+    } catch (error) {
+        console.error("Google Auth Error:", error);
+
+        return res.status(500).json({
+            message: error.message || "Google login failed"
+        });
     }
-
-    const result = await handleGoogleLogin(idToken);
-
-    return res.json({
-      message: "Google login successful",
-      ...result
-    });
-
-  } catch (error) {
-    console.error("Google Auth Error:", error);
-
-    return res.status(500).json({
-      message: error.message || "Google login failed"
-    });
-  }
 };
     
