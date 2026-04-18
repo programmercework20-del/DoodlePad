@@ -106,30 +106,45 @@ export const createPost = async (req, res) => {
     let mediaUrls = [];
 
     // 🎨 AGAR DOODLE HAI
-    if (cleanType === "doodle" && content) {
-      try {
-        // Flexible check: Agar header hai toh remove karo, warna direct buffer banao
-        const isBase64 = content.includes(';base64,');
-        const base64Data = isBase64 ? content.split(';base64,').pop() : content;
-        
-        const buffer = Buffer.from(base64Data, "base64");
+   // 🎨 AGAR DOODLE HAI
+if (cleanType === "doodle" && content) {
+  try {
+    // 1. String clean karo: Sirf base64 part nikaalo
+    // Kuch FE libs 'data:image/png;base64,' bhejti hain, kuch nahi.
+    const base64Data = content.includes('base64,') 
+      ? content.split('base64,')[1] 
+      : content;
 
-        // 🔥 Folder name: post_doodles
-        const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
-        const blob = bucket.file(fileName);
+    // 2. Buffer banao
+    const buffer = Buffer.from(base64Data, "base64");
 
-        await blob.save(buffer, {
-          metadata: { contentType: "image/png" },
-          resumable: false,
-        });
-
-        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-        mediaUrls.push(publicUrl);
-        console.log("✅ Doodle uploaded to GCS:", publicUrl);
-      } catch (uploadErr) {
-        console.error("❌ Doodle GCS Save Error:", uploadErr.message);
-      }
+    // 3. Buffer size check (Safety check)
+    if (buffer.length < 100) {
+       throw new Error("Corrupted base64 data: Buffer is too small");
     }
+
+    const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
+    const blob = bucket.file(fileName);
+
+    // 4. Save with tight metadata
+    await blob.save(buffer, {
+      metadata: { 
+        contentType: "image/png",
+        cacheControl: 'public, max-age=31536000'
+      },
+      resumable: false,
+    });
+
+    // 5. Explicitly Public banao (Just in case bucket level par miss ho raha ho)
+    await blob.makePublic();
+
+    mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
+    console.log("✅ Doodle Fixed & Uploaded!");
+  } catch (uploadErr) {
+    console.error("❌ Doodle Upload Error:", uploadErr.message);
+    return res.status(400).json({ message: "Invalid Doodle data" });
+  }
+}
 
     // 📂 AGAR REGULAR FILES HAIN
     if (req.files && req.files.length > 0) {
