@@ -9,7 +9,7 @@ import { createNotification } from "../../services/notification.service.js";
 
 // 🔥 REDIS & BUCKET IMPORT (Check paths carefully)
 import redisClient from "../../config/redis.js"; 
-import bucket from "../../config/firebase.js"; // Aapka bucket setup
+import { bucket } from "../../config/firebase.js";
 
 export const signup = async (req, res) => {
   try {

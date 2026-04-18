@@ -4,8 +4,7 @@ import Follower from "../../models/Follower.js";
 import DoodleRequest from "../../models/DoodleRequest.js";
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
-import bucket from "../../config/firebase.js";
-
+import { bucket } from "../../config/firebase.js";
 // ============================================================
 // GET USER PROFILE
 // ============================================================
