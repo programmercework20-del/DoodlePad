@@ -3,5 +3,6 @@ node_modules/
 config/config.json
 *.log
 .DS_Store
+
 dist/
-server/src/config/firebaseServiceKey.json
+firebaseServiceKey.json
