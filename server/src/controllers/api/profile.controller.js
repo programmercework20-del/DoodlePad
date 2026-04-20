@@ -5,48 +5,36 @@ import DoodleRequest from "../../models/DoodleRequest.js";
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
+
 // ============================================================
-// GET USER PROFILE
+// GET USER PROFILE (With Redis Caching)
 // ============================================================
 export const getUserProfile = async (req, res) => {
   try {
     const profileUserId = req.params.id;
     const viewerId = req.user?.id;
 
-    // 🛠️ 1. UUID VALIDATION: Agar ID galat format mein hai (like 'u3'), toh server crash nahi hoga
+    // UUID Validation
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(profileUserId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid User ID format. UUID expected." 
-      });
+      return res.status(400).json({ success: false, message: "Invalid ID format" });
     }
 
-    // 🚀 2. REDIS CACHE KEY
     const cacheKey = `userProfile:${profileUserId}:viewer:${viewerId || "guest"}`;
 
-    // 🚀 3. REDIS CACHE CHECK
+    // Redis Check
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
-      if (cached) {
-        console.log("⚡ Serving from Redis Cache");
-        return res.json({ success: true, ...JSON.parse(cached) });
-      }
+      if (cached) return res.json({ success: true, ...JSON.parse(cached) });
     }
 
-    // 🛰️ 4. DATABASE FETCH
     const user = await User.findByPk(profileUserId, {
-      attributes: [
-        "id", "username", "name", "bio", "profilePhoto",
-        "doodleImage", "doodleData", "doodleOwnerId", "isPrivate"
-      ]
+      attributes: ["id", "username", "name", "bio", "profilePhoto", "doodleImage", "doodleData", "doodleOwnerId", "isPrivate"]
     });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Speed optimization using Promise.all
+    // Concurrent fetching for speed
     const [followersCount, followingCount, postsCount] = await Promise.all([
       Follower.count({ where: { followingId: profileUserId } }),
       Follower.count({ where: { followerId: profileUserId } }),
@@ -55,15 +43,11 @@ export const getUserProfile = async (req, res) => {
 
     let follow = null;
     if (viewerId) {
-      follow = await Follower.findOne({
-        where: { followerId: viewerId, followingId: profileUserId }
-      });
+      follow = await Follower.findOne({ where: { followerId: viewerId, followingId: profileUserId } });
     }
 
     const isFollowing = follow?.status === "accepted";
     let canViewFullProfile = true;
-
-    // Privacy logic
     if (user.isPrivate && viewerId !== profileUserId && !isFollowing) {
       canViewFullProfile = false;
     }
@@ -72,24 +56,17 @@ export const getUserProfile = async (req, res) => {
 
     let posts = [];
     if (canViewFullProfile) {
-      posts = await Post.findAll({
-        where: { userId: profileUserId },
-        order: [["createdAt", "DESC"]]
-      });
+      posts = await Post.findAll({ where: { userId: profileUserId }, order: [["createdAt", "DESC"]] });
     }
 
-    // 🔥 DEV'S NEW DOODLE LOGIC
+    // Doodle Logic
     let effectiveDoodleImage = user.doodleImage;
     let effectiveDoodleData = user.doodleData;
     let effectiveDoodleOwnerId = user.doodleOwnerId;
 
     if (viewerId && viewerId !== profileUserId) {
       const acceptedRequest = await DoodleRequest.findOne({
-        where: {
-          senderId: viewerId,
-          receiverId: profileUserId,
-          status: "accepted"
-        },
+        where: { senderId: viewerId, receiverId: profileUserId, status: "accepted" },
         order: [["updatedAt", "DESC"]]
       });
 
@@ -100,7 +77,6 @@ export const getUserProfile = async (req, res) => {
       }
     }
 
-    // Formatting Response
     const profileData = {
       profile: {
         user: {
@@ -114,32 +90,25 @@ export const getUserProfile = async (req, res) => {
           doodleOwnerId: showDoodle ? effectiveDoodleOwnerId : null,
           isPrivate: user.isPrivate
         },
-        stats: canViewFullProfile
-          ? { followers: followersCount, following: followingCount, posts: postsCount }
-          : null,
+        stats: canViewFullProfile ? { followers: followersCount, following: followingCount, posts: postsCount } : null,
         isFollowing,
-        isPrivate: user.isPrivate,
         canViewFullProfile,
         showDoodle,
         posts
       }
     };
 
-    // 🚀 5. STORE IN REDIS (Cache for 5 mins)
-    if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData));
-    }
+    if (redisClient?.isReady) await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData));
 
     return res.json({ success: true, ...profileData });
-
   } catch (error) {
     console.error("GET USER PROFILE ERROR:", error);
-    return res.status(500).json({ message: "Profile fetch failed" });
+    return res.status(500).json({ message: "Profile failed" });
   }
 };
 
 // ============================================================
-// UPDATE MY PROFILE
+// UPDATE MY PROFILE (With GCS & Cache Clear)
 // ============================================================
 export const updateMyProfile = async (req, res) => {
   try {
@@ -148,32 +117,26 @@ export const updateMyProfile = async (req, res) => {
 
     let { name, bio, dateOfBirth, gender, username } = req.body;
     username = username?.trim();
-    name = name?.trim();
-    bio = bio?.trim();
 
-    // Username check logic...
     if (username && username !== user.username) {
-      const existingUsername = await User.findOne({ where: { username } });
-      if (existingUsername) {
-        return res.status(400).json({ message: "Username already taken" });
-      }
+      const existing = await User.findOne({ where: { username } });
+      if (existing) return res.status(400).json({ message: "Username taken" });
     }
 
-    // Photo upload logic...
     let profilePhoto = user.profilePhoto;
     if (req.file) {
       const fileName = `profile_images/user_${req.user.id}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      await new Promise((resolve, reject) => {
-        const stream = blob.createWriteStream({ metadata: { contentType: req.file.mimetype }, resumable: false });
-        stream.on("error", reject);
-        stream.on("finish", resolve);
-        stream.end(req.file.buffer);
+      
+      // Using blob.save for better stability with JWT
+      await blob.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype },
+        resumable: false
       });
+      
       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
-    // 🛰️ DATABASE UPDATE
     await user.update({
       name: name ?? user.name,
       username: username ?? user.username,
@@ -183,156 +146,96 @@ export const updateMyProfile = async (req, res) => {
       profilePhoto
     });
 
-    // 🚀 CACHE INVALIDATION (Fixed)
+    // Clean Redis Cache
     if (redisClient?.isReady) {
-      try {
-        // 1. Delete userProfile keys (jo dusre log dekhte hain)
-        const pattern = `userProfile:${req.user.id}:*`;
-        const keys = await redisClient.keys(pattern);
-        if (keys.length > 0) await redisClient.del(keys);
-
-        // 2. 🔥 DELETE myProfile KEY (Jo user khud dekhta hai - YAHI MISSING THA)
-        const myProfileKey = `myProfile:${req.user.id}`;
-        await redisClient.del(myProfileKey);
-
-        console.log(`🧹 Redis Cleaned for user ${req.user.id}`);
-      } catch (redisErr) {
-        console.error("⚠️ Redis Cache Clear Error:", redisErr);
-      }
+      const keys = await redisClient.keys(`userProfile:${req.user.id}:*`);
+      if (keys.length > 0) await redisClient.del(keys);
+      await redisClient.del(`myProfile:${req.user.id}`);
     }
 
-    return res.json({ 
-      success: true, 
-      message: "Profile updated successfully", 
-      user 
-    });
-
+    return res.json({ success: true, message: "Profile updated", user });
   } catch (error) {
     console.error("UPDATE PROFILE ERROR:", error);
-    res.status(500).json({ message: "Profile update failed" });
+    res.status(500).json({ message: "Update failed" });
   }
 };
+
 // ============================================================
 // GET MY PROFILE
 // ============================================================
 export const getMyProfile = async (req, res) => {
   try {
     const cacheKey = `myProfile:${req.user.id}`;
-
-    // 🚀 Cache Check
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
-      if (cached) {
-        return res.json({ success: true, user: JSON.parse(cached) });
-      }
+      if (cached) return res.json({ success: true, user: JSON.parse(cached) });
     }
 
     const user = await User.findByPk(req.user.id, {
-      attributes: [
-        "id", "name", "username", "profilePhoto", "bio",
-        "dateOfBirth", "gender", "doodleImage", "doodleOwnerId"
-      ]
+      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId"]
     });
 
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    // 🚀 Cache Store (10 min)
-    if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 600, JSON.stringify(user));
-    }
-
+    if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user));
     res.json({ success: true, user });
-
   } catch (error) {
-    console.error("GET PROFILE ERROR:", error);
     res.status(500).json({ message: "Failed to fetch profile" });
   }
 };
 
 // ============================================================
-// SEND DOODLE REQUEST
+// SEND DOODLE REQUEST (GCS Base64 Fix)
 // ============================================================
 export const sendDoodleRequest = async (req, res) => {
   try {
     const senderId = req.user.id;
-    const { receiverId, base64Image } = req.body;
+    const { receiverId, base64Image, doodleData } = req.body;
 
-    let doodleImage = null;
+    let finalDoodleImage = null;
 
-    // ✅ CASE 1: File upload → GCS
-    if (req.file) {
-      if (!req.file.buffer) {
-        return res.status(400).json({ message: "File buffer missing" });
-      }
+    // Case 1: Base64 Canvas
+    if (base64Image) {
+      const base64Clean = base64Image.includes('base64,') ? base64Image.split('base64,')[1] : base64Image;
+      const buffer = Buffer.from(base64Clean, "base64");
+      
+      if (buffer.length < 500) throw new Error("Invalid image data");
 
-      const fileName = `doodle_images/doodle_${senderId}_${Date.now()}`;
-      const blob = bucket.file(fileName);
-
-      await new Promise((resolve, reject) => {
-        const stream = blob.createWriteStream({
-          metadata: { contentType: req.file.mimetype },
-          resumable: false
-        });
-        stream.on("error", reject);
-        stream.on("finish", resolve);
-        stream.end(req.file.buffer);
-      });
-
-      doodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    }
-
-    // ✅ CASE 2: Base64 canvas → GCS
-    else if (base64Image) {
-      const matches = base64Image.match(/^data:image\/png;base64,(.+)$/);
-      if (!matches) {
-        return res.status(400).json({ message: "Invalid base64 image" });
-      }
-
-      const buffer = Buffer.from(matches[1], "base64");
       const fileName = `doodle_images/doodle_${senderId}_${Date.now()}.png`;
       const blob = bucket.file(fileName);
 
-      await new Promise((resolve, reject) => {
-        const stream = blob.createWriteStream({
-          metadata: { contentType: "image/png" },
-          resumable: false
-        });
-        stream.on("error", reject);
-        stream.on("finish", resolve);
-        stream.end(buffer);
+      await blob.save(buffer, {
+        metadata: { contentType: "image/png" },
+        resumable: false
       });
 
-      doodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    }
-
-    else {
-      return res.status(400).json({ message: "Doodle image required" });
+      finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    } 
+    // Case 2: Multi-part File
+    else if (req.file) {
+      const fileName = `doodle_images/doodle_${senderId}_${Date.now()}`;
+      const blob = bucket.file(fileName);
+      await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
     const request = await DoodleRequest.create({
       senderId,
       receiverId,
-      doodleImage,
-      status: "pending"
+      doodleImage: finalDoodleImage,
+      doodleData: doodleData || null,
+      status: "pending",
     });
 
-    await createNotification({
-      senderId,
-      receiverId,
-      type: "DOODLE_REQUEST",
-      doodleRequestId: request.id
-    });
+    await createNotification({ senderId, receiverId, type: "DOODLE_REQUEST", doodleRequestId: request.id });
 
-    return res.json({ success: true, message: "Doodle request sent", request });
-
+    return res.status(201).json({ success: true, message: "Doodle request sent", request });
   } catch (error) {
     console.error("DOODLE SEND ERROR:", error);
-    res.status(500).json({ message: "Failed to send doodle request" });
+    return res.status(500).json({ message: "Failed to send request" });
   }
 };
 
 // ============================================================
-// ACCEPT DOODLE REQUEST
+// ACCEPT / REJECT / GET DOODLE REQUESTS
 // ============================================================
 export const acceptDoodleRequest = async (req, res) => {
   try {
@@ -340,99 +243,48 @@ export const acceptDoodleRequest = async (req, res) => {
     const userId = req.user.id;
 
     const request = await DoodleRequest.findByPk(requestId);
-    if (!request || request.receiverId !== userId) {
-      return res.status(403).json({ message: "Not allowed" });
-    }
-
-    if (request.status !== "pending") {
-      return res.status(400).json({ message: "Already processed" });
-    }
+    if (!request || request.receiverId !== userId) return res.status(403).json({ message: "Not allowed" });
 
     await request.update({ status: "accepted" });
-
     await User.update(
-      { doodleImage: request.doodleImage, doodleOwnerId: request.senderId },
+      { doodleImage: request.doodleImage, doodleData: request.doodleData, doodleOwnerId: request.senderId },
       { where: { id: userId } }
     );
 
-    // 🚀 Cache Invalidation
     if (redisClient?.isReady) {
-      await redisClient.del(`userProfile:${userId}:viewer:${userId}`);
-      await redisClient.del(`myProfile:${userId}`);
+       const keys = await redisClient.keys(`userProfile:${userId}:*`);
+       if (keys.length > 0) await redisClient.del(keys);
+       await redisClient.del(`myProfile:${userId}`);
     }
 
-    await createNotification({
-      senderId: userId,
-      receiverId: request.senderId,
-      type: "DOODLE_ACCEPTED",
-      doodleRequestId: request.id
-    });
-
-    return res.json({
-      success: true,
-      message: "Doodle applied to profile",
-      doodleImage: request.doodleImage
-    });
-
+    await createNotification({ senderId: userId, receiverId: request.senderId, type: "DOODLE_ACCEPTED", doodleRequestId: request.id });
+    res.json({ success: true, message: "Doodle applied" });
   } catch (error) {
-    console.error("DOODLE ACCEPT ERROR:", error);
-    res.status(500).json({ message: "Failed to accept request" });
+    res.status(500).json({ message: "Accept failed" });
   }
 };
 
-// ============================================================
-// REJECT DOODLE REQUEST
-// ============================================================
 export const rejectDoodleRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
-    const userId = req.user.id;
-
     const request = await DoodleRequest.findByPk(requestId);
-    if (!request || request.receiverId !== userId) {
-      return res.status(403).json({ message: "Not allowed" });
-    }
+    if (!request || request.receiverId !== req.user.id) return res.status(403).json({ message: "Not allowed" });
 
     await request.update({ status: "rejected" });
-
-    return res.json({ success: true, message: "Doodle request rejected" });
-
+    res.json({ success: true, message: "Rejected" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to reject request" });
+    res.status(500).json({ message: "Reject failed" });
   }
 };
 
-// ============================================================
-// GET DOODLE REQUESTS
-// ============================================================
 export const getDoodleRequests = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const cacheKey = `doodleRequests:${userId}`;
-
-    // 🚀 Cache Check
-    if (redisClient?.isReady) {
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
-        return res.json({ success: true, requests: JSON.parse(cached) });
-      }
-    }
-
     const requests = await DoodleRequest.findAll({
-      where: { receiverId: userId, status: "pending" },
+      where: { receiverId: req.user.id, status: "pending" },
       order: [["createdAt", "DESC"]]
     });
-
-    // 🚀 Cache Store (2 min)
-    if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 120, JSON.stringify(requests));
-    }
-
     res.json({ success: true, requests });
-
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to fetch doodle requests" });
+    res.status(500).json({ message: "Fetch failed" });
   }
 };
