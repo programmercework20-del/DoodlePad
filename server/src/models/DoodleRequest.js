@@ -1,3 +1,4 @@
+
 import { DataTypes } from "sequelize";
 import sequelize from "../config/db.js";
 
@@ -20,13 +21,19 @@ const DoodleRequest = sequelize.define("DoodleRequest", {
 
   doodleImage: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
 
   status: {
     type: DataTypes.ENUM("pending", "accepted", "rejected"),
-    defaultValue: "pending"
-  }
+    allowNull: true
+  },
+  
+  doodleData: {
+    // Use DataTypes.TEXT for long strings or DataTypes.JSON for objects
+    type: DataTypes.TEXT, 
+    defaultValue: null 
+  } // Add this line
 
 }, {
   tableName: "doodle_requests",
