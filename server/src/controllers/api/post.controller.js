@@ -107,42 +107,29 @@ export const createPost = async (req, res) => {
 
 
    // 🎨 AGAR DOODLE HAI
-if (cleanType === "doodle" && content) {
-  try {
-    console.log("🎨 Processing Doodle... Content Length:", content.length);
-
-    // 1. Data Cleaning (Flexible header removal)
-    const base64Data = content.includes('base64,') 
-      ? content.split('base64,')[1] 
-      : content;
-
-    // 2. Buffer banao
-    const buffer = Buffer.from(base64Data, "base64");
-
-    // 3. Size check (Thoda kam kar diya taaki chote doodles bhi save hon)
-    if (buffer.length < 10) { 
-       throw new Error(`Data too small (${buffer.length} bytes). Frontend is sending empty string.`);
-    }
-
-    const fileName = `post_doodles/doodle_${userId}_${Date.now()}.png`;
+if (cleanType === "doodle") {
+  // 🔥 Content = paths JSON hai, base64 nahi
+  // File (media) already req.files mein aa rahi hai — wahi use karo
+  // Koi alag GCS upload mat karo doodle ke liye
+  
+  if (req.files && req.files.length > 0) {
+    const file = req.files[0]; // doodle JPEG file
+    
+    const fileName = `post_doodles/doodle_${userId}_${Date.now()}.jpg`;
     const blob = bucket.file(fileName);
 
-    // 4. Save to GCS
-    await blob.save(buffer, {
-      metadata: { 
-        contentType: "image/png",
-        cacheControl: 'public, max-age=31536000'
-      },
-      resumable: false,
+    await new Promise((resolve, reject) => {
+      const stream = blob.createWriteStream({
+        metadata: { contentType: file.mimetype },
+        resumable: false,
+      });
+      stream.on("error", reject);
+      stream.on("finish", resolve);
+      stream.end(file.buffer);
     });
 
     mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-    console.log("✅ Doodle Saved Successfully to:", fileName);
-
-  } catch (uploadErr) {
-    console.error("❌ Doodle Upload Error:", uploadErr.message);
-    // Don't crash the whole request, but inform the user
-    return res.status(400).json({ success: false, message: "Doodle upload failed: " + uploadErr.message });
+    console.log("✅ Doodle file uploaded:", fileName);
   }
 }
 
@@ -197,6 +184,9 @@ if (cleanType === "doodle" && content) {
     res.status(500).json({ success: false, message: "Failed", error: error.message });
   }
 };
+
+
+
 export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
