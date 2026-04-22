@@ -18,7 +18,8 @@ import userAuth from '../middlewares/userAuth.js';
 const router = express.Router();
 
 router.get("/",adminAuth, getAllUsers);
-router.get("/admin/:id", adminAuth, getUserById);
+// router.get("/admin/:id", adminAuth, getUserById);
+router.get("/:id", adminAuth, getUserById); //get user by id with details (admin only)
 router.post("/:id/warn",adminAuth, warnUser);
 router.post("/:id/block",adminAuth, blockUser);
 router.post("/:id/ban",adminAuth, banUser);
