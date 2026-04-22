@@ -290,11 +290,10 @@ const userSlice = createSlice({
                 state.error = null;
             })
             .addCase(fetchUserById.fulfilled, (state, action) => {
-                state.loading = false;
-                // 🔥 FIX: response = { success, data: { user, stats } }
-                state.currentUser = action.payload?.data?.user || null;
-                state.stats = action.payload?.data?.stats || null;
-            })
+    state.loading = false;
+    state.currentUser = action.payload?.profile?.user || null;
+    state.stats = action.payload?.profile?.stats || null;
+})
             .addCase(fetchUserById.rejected, (state, action) => {
                 state.loading = false;
                 state.error = action.payload;
