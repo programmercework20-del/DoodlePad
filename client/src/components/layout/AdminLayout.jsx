@@ -47,9 +47,9 @@ export default function AdminLayout({ children }) {
             <div className="flex-1 flex flex-col h-full overflow-hidden">
                 <Header />
                 {/* 
-                  Wrapper needs to be the one with overflow-y-auto.
-                  We give it a ref for Lenis to control.
-                */}
+                      Wrapper needs to be the one with overflow-y-auto.
+                      We give it a ref for Lenis to control.
+                    */}
                 <main
                     ref={mainRef}
                     className="flex-1 overflow-y-auto p-6 relative w-full"

@@ -20,16 +20,23 @@ export default {
                 border: "hsl(var(--border))",
                 input: "hsl(var(--input))",
                 ring: "hsl(var(--ring))",
-                background: "hsl(var(--background))",
-                foreground: "hsl(var(--foreground))",
+                background: "#FFFFFF",
+                foreground: "#1C1C1E",
                 primary: {
-                    DEFAULT: "hsl(var(--primary))",
-                    foreground: "hsl(var(--primary-foreground))",
+                    DEFAULT: "#E11D24",
+                    foreground: "#FFFFFF",
                 },
                 secondary: {
-                    DEFAULT: "hsl(var(--secondary))",
-                    foreground: "hsl(var(--secondary-foreground))",
+                    DEFAULT: "#FFB800",
+                    foreground: "#1C1C1E",
                 },
+                surface: "#F5F5F5",
+                textMain: "#1C1C1E",
+                textSecondary: "#8E8E93",
+                inputBorder: "#E2E8F0",
+                inputBg: "#FAFAFA",
+                accentLight: "#FFEFEF",
+                neutralGray: "#A0A0A0",
                 destructive: {
                     DEFAULT: "hsl(var(--destructive))",
                     foreground: "hsl(var(--destructive-foreground))",
@@ -47,14 +54,18 @@ export default {
                     foreground: "hsl(var(--popover-foreground))",
                 },
                 card: {
-                    DEFAULT: "hsl(var(--card))",
-                    foreground: "hsl(var(--card-foreground))",
+                    DEFAULT: "#F5F5F5",
+                    foreground: "#1C1C1E",
                 },
             },
             borderRadius: {
                 lg: "var(--radius)",
                 md: "calc(var(--radius) - 2px)",
                 sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+                ballet: ['Ballet', 'cursive'],
+                sacramento: ['Sacramento', 'cursive'],
             },
             keyframes: {
                 "accordion-down": {
@@ -72,5 +83,5 @@ export default {
             },
         },
     },
-    plugins: [require("tailwindcss-animate")],
+    plugins: [require("tailwindcss-animate"), require("tailwind-scrollbar")({ nocompatible: true }),],
 }

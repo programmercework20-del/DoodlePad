@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Ballet';
+  src: url('/fonts/Ballet-Regular-VariableFont_opsz.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Sacramento';
+  src: url('/fonts/Sacramento-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 html,
 body {
   height: 100%;
@@ -34,6 +50,10 @@ body {
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+
+    /* Extra theme variables from request */
+    --color-destructive-foreground: var(--destructive-foreground);
+    --destructive-foreground-oklch: oklch(1 0 0);
   }
 
   .dark {
@@ -56,16 +76,20 @@ body {
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+
+    /* Extra theme variables from request */
+    --color-destructive-foreground: var(--destructive-foreground);
+    --destructive-foreground-oklch: oklch(1 0 0);
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-inputBorder;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-textMain;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
       'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
       sans-serif;

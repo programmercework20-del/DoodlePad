@@ -10,6 +10,10 @@ import {
     Radio,
     Mail,
     LogOut,
+    Megaphone,
+    PlusCircle,
+    Wallet,
+    BarChart3,
 } from 'lucide-react';
 
 const menuItems = [
@@ -20,6 +24,13 @@ const menuItems = [
     { name: 'Reports', path: '/reports', icon: Flag },
     { name: 'Live Sessions', path: '/live', icon: Radio },
     { name: 'Messages', path: '/messages', icon: Mail },
+];
+
+const advertisementItems = [
+    { name: 'All Ads', path: '/ads', icon: Megaphone },
+    { name: 'Create Ad', path: '/ads/create', icon: PlusCircle },
+    { name: 'Payments', path: '/payments', icon: Wallet },
+    { name: 'Revenue Dashboard', path: '/revenue', icon: BarChart3 },
 ];
 
 export default function Sidebar() {
@@ -38,7 +49,9 @@ export default function Sidebar() {
                 <h1 className="text-2xl font-bold">Admin Panel</h1>
             </div>
 
-            <nav className="flex-1 px-4 space-y-2">
+            <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-thin 
+scrollbar-thumb-gray-700 
+scrollbar-track-gray-900">
                 {menuItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = location.pathname === item.path;
@@ -57,12 +70,39 @@ export default function Sidebar() {
                         </Link>
                     );
                 })}
+
+                <div className="pt-4">
+                    <p className="px-4 pb-2 text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">
+                        Advertisement
+                    </p>
+                    <div className="space-y-2">
+                        {advertisementItems.map((item) => {
+                            const Icon = item.icon;
+                            const isActive = location.pathname === item.path
+                                || (item.path === '/ads' && location.pathname.startsWith('/ads/'));
+
+                            return (
+                                <Link
+                                    key={item.path}
+                                    to={item.path}
+                                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
+                                        ? 'bg-white text-black'
+                                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                                        }`}
+                                >
+                                    <Icon className="h-5 w-5" />
+                                    <span className="font-medium">{item.name}</span>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </div>
             </nav>
 
             <div className="p-4">
                 <button
                     onClick={handleLogout}
-                    className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                    className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-gray-300 hover:bg-red-800 hover:text-white transition-colors"
                 >
                     <LogOut className="h-5 w-5" />
                     <span className="font-medium">Logout</span>

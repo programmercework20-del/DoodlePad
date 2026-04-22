@@ -16,6 +16,9 @@ import reportRoutes from './routes/report.routes.js';
 import liveRoutes from './routes/live.routes.js';
 import messageRoutes from './routes/message.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
+import adRoutes from './routes/ad.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
+import revenueRoutes from './routes/revenue.routes.js';
 
 const app = express();
 
@@ -81,6 +84,9 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/ads", adRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/revenue", revenueRoutes);
 
 // 404 handler
 app.use((req, res) => {

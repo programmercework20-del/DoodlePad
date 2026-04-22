@@ -1,6 +1,7 @@
 import app from './src/app.js';
 import { sequelize } from './src/models/index.js';
 import config from './src/config/env.js';
+import { startAdCleanupTask } from './src/services/adCleanup.js';
 
 const PORT = config.port;
 
@@ -22,6 +23,9 @@ const startServer = async () => {
             } else {
                 console.log("ℹ️ Production Mode: Skipping auto-sync. Use migrations.");
             }
+
+            // Start background tasks
+            startAdCleanupTask();
         } catch (syncError) {
             console.error("⚠️ Database Sync Error (Non-Fatal):", syncError.message);
             console.log("⚠️ Continuing server startup anyway...");

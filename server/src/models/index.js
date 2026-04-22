@@ -8,6 +8,8 @@ import Comment from './Comment.js';
 import Report from './Report.js';
 import Live from './Live.js';
 import Message from './Message.js';
+import Ad from './Ad.js';
+import Payment from './Payment.js';
 
 // Define associations
 
@@ -39,6 +41,10 @@ Live.belongsTo(Admin, { foreignKey: "terminatedBy", as: "terminator" });
 Message.belongsTo(User, { foreignKey: "senderId", as: "sender" });
 Message.belongsTo(User, { foreignKey: "receiverId", as: "receiver" });
 
+// Advertisement associations
+Ad.hasMany(Payment, { foreignKey: 'adId', as: 'payments', onDelete: 'CASCADE' });
+Payment.belongsTo(Ad, { foreignKey: 'adId', as: 'ad' });
+
 // Admin associations
 Admin.hasMany(Report, { foreignKey: "reviewedBy", as: "reviewedReports" });
 Admin.hasMany(Live, { foreignKey: "terminatedBy", as: "terminatedLives" });
@@ -51,5 +57,7 @@ export {
     Comment,
     Report,
     Live,
-    Message
+    Message,
+    Ad,
+    Payment
 };
