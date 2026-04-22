@@ -52,22 +52,85 @@ export const getAllUsers = async (req, res) => {
 };
 
 // Get user by ID with details
-export const getUserById = async (req, res) => {
+// export const getUserById = async (req, res) => { 
+//     try {
+//         const { id } = req.params;
+
+//         const user = await User.findByPk(id, {
+//             attributes: { exclude: ["password"] },
+//             include: [
+//                 {
+//                     model: Post,
+//                     as: "posts",
+//                     limit: 10,
+//                     order: [["createdAt", "DESC"]]
+//                 },
+//                 {
+//                     model: Comment,
+//                     as: "comments",
+//                     limit: 10,
+//                     order: [["createdAt", "DESC"]]
+//                 }
+//             ]
+//         });
+
+//         if (!user) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "User not found"
+//             });
+//         }
+
+//         // Get additional stats
+//         const postsCount = await Post.count({ where: { userId: id } });
+//         const commentsCount = await Comment.count({ where: { userId: id } });
+//         const reportsCount = await Report.count({
+//             where: { targetType: "user", targetId: id }
+//         });
+
+//         res.json({
+//             success: true,
+//             data: {
+//                 user,
+//                 stats: {
+//                     postsCount,
+//                     commentsCount,
+//                     reportsCount
+//                 }
+//             }
+//         });
+//     } catch (error) {
+//         console.error("Get user by ID error:", error);
+//         res.status(500).json({
+//             success: false,
+//             message: "Server error"
+//         });
+//     }
+// };
+
+export const getUserById = async (req, res) => { 
     try {
         const { id } = req.params;
+        console.log("🔍 Admin Request: Fetching Details for User ID:", id);
+
+        // 🛠️ Check if id exists
+        if (!id) {
+            return res.status(400).json({ success: false, message: "User ID is required" });
+        }
 
         const user = await User.findByPk(id, {
             attributes: { exclude: ["password"] },
+            // Note: Agar associations error de rahe hain, toh temporarily 'include' hata kar check karein
             include: [
                 {
                     model: Post,
-                    as: "posts",
+                    as: "posts", // Ensure this matches your association
                     limit: 10,
                     order: [["createdAt", "DESC"]]
                 },
                 {
                     model: Comment,
-                    as: "comments",
+                    as: "comments", // Ensure this matches your association
                     limit: 10,
                     order: [["createdAt", "DESC"]]
                 }
@@ -75,18 +138,19 @@ export const getUserById = async (req, res) => {
         });
 
         if (!user) {
+            console.log("❌ User not found in DB for ID:", id);
             return res.status(404).json({
                 success: false,
                 message: "User not found"
             });
         }
 
-        // Get additional stats
-        const postsCount = await Post.count({ where: { userId: id } });
-        const commentsCount = await Comment.count({ where: { userId: id } });
-        const reportsCount = await Report.count({
-            where: { targetType: "user", targetId: id }
-        });
+        // 🚀 Concurrent Stats Fetching (Faster)
+        const [postsCount, commentsCount, reportsCount] = await Promise.all([
+            Post.count({ where: { userId: id } }),
+            Comment.count({ where: { userId: id } }),
+            Report.count({ where: { targetType: "user", targetId: id } }).catch(() => 0) // Catch error if Report table missing
+        ]);
 
         res.json({
             success: true,
@@ -100,13 +164,15 @@ export const getUserById = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("Get user by ID error:", error);
+        console.error("🔥 Detailed Admin Error:", error); // Isse terminal mein exact error dikhega
         res.status(500).json({
             success: false,
-            message: "Server error"
+            message: "Server error",
+            error: error.message // Live debugging ke liye
         });
     }
 };
+
 
 // Warn user
 export const warnUser = async (req, res) => {
