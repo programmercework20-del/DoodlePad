@@ -120,11 +120,19 @@ const userSlice = createSlice({
                 state.loading = true;
                 state.error = null;
             })
-            .addCase(fetchUserById.fulfilled, (state, action) => {
-                state.loading = false;
-                state.currentUser = action.payload.user;
-                state.stats = action.payload.stats;
-            })
+
+            // .addCase(fetchUserById.fulfilled, (state, action) => {
+            //     state.loading = false;
+            //     state.currentUser = action.payload.user;
+            //     state.stats = action.payload.stats;
+            // })
+
+                .addCase(fetchUserById.fulfilled, (state, action) => {
+    state.loading = false;
+    state.currentUser = action.payload.data?.user || action.payload.user;
+    state.stats = action.payload.data?.stats || action.payload.stats;
+})
+
             .addCase(fetchUserById.rejected, (state, action) => {
                 state.loading = false;
                 state.error = action.payload;

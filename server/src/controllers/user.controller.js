@@ -52,92 +52,61 @@ export const getAllUsers = async (req, res) => {
 };
 
 // Get user by ID with details
-// export const getUserById = async (req, res) => { 
-//     try {
-//         const { id } = req.params;
-
-//         const user = await User.findByPk(id, {
-//             attributes: { exclude: ["password"] },
-//             include: [
-//                 {
-//                     model: Post,
-//                     as: "posts",
-//                     limit: 10,
-//                     order: [["createdAt", "DESC"]]
-//                 },
-//                 {
-//                     model: Comment,
-//                     as: "comments",
-//                     limit: 10,
-//                     order: [["createdAt", "DESC"]]
-//                 }
-//             ]
-//         });
-
-//         if (!user) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: "User not found"
-//             });
-//         }
-
-//         // Get additional stats
-//         const postsCount = await Post.count({ where: { userId: id } });
-//         const commentsCount = await Comment.count({ where: { userId: id } });
-//         const reportsCount = await Report.count({
-//             where: { targetType: "user", targetId: id }
-//         });
-
-//         res.json({
-//             success: true,
-//             data: {
-//                 user,
-//                 stats: {
-//                     postsCount,
-//                     commentsCount,
-//                     reportsCount
-//                 }
-//             }
-//         });
-//     } catch (error) {
-//         console.error("Get user by ID error:", error);
-//         res.status(500).json({
-//             success: false,
-//             message: "Server error"
-//         });
-//     }
-// };
-
-export const getUserById = async (req, res) => { 
+export const getUserById = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log("🛠️ Debugging User ID:", id);
 
-        // Simple fetch without associations first
         const user = await User.findByPk(id, {
-            attributes: { exclude: ["password"] }
+            attributes: { exclude: ["password"] },
+            include: [
+                {
+                    model: Post,
+                    as: "posts",
+                    limit: 10,
+                    order: [["createdAt", "DESC"]]
+                },
+                {
+                    model: Comment,
+                    as: "comments",
+                    limit: 10,
+                    order: [["createdAt", "DESC"]]
+                }
+            ]
         });
 
         if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
         }
 
-        // Send dummy stats for testing
+        // Get additional stats
+        const postsCount = await Post.count({ where: { userId: id } });
+        const commentsCount = await Comment.count({ where: { userId: id } });
+        const reportsCount = await Report.count({
+            where: { targetType: "user", targetId: id }
+        });
+
         res.json({
             success: true,
             data: {
                 user,
-                stats: { postsCount: 0, commentsCount: 0, reportsCount: 0 }
+                stats: {
+                    postsCount,
+                    commentsCount,
+                    reportsCount
+                }
             }
         });
-        
-        console.log("✅ Data sent successfully for ID:", id);
     } catch (error) {
-        console.error("🔥 ERROR IN GETUSERBYID:", error.message);
-        res.status(500).json({ success: false, message: error.message });
+        console.error("Get user by ID error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
     }
 };
-
 
 // Warn user
 export const warnUser = async (req, res) => {
