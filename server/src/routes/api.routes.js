@@ -76,14 +76,22 @@ router.post("/save-fcm-token", protect, saveFcmToken);
 
 router.put(
   "/users/update-profile",
-  userAuth,
+  protect,
   upload.single("profilePhoto"),
   updateMyProfile
 );
+// router.put(
+//   "/users/update-profile",
+//   userAuth,
+//   upload.single("profilePhoto"),
+//   updateMyProfile
+// );
 
-router.get("/users/my-profile", userAuth, getMyProfile);
+router.get("/users/my-profile", protect, getMyProfile);
+// router.get("/users/my-profile", userAuth, getMyProfile);
 
-router.get("/users/:id", userAuth, getUserProfile);
+router.get("/users/:id", protect, getUserProfile);
+// router.get("/users/:id", userAuth, getUserProfile);
 
 router.post("/doodle/request", userAuth, upload.single("doodle"), sendDoodleRequest);
 

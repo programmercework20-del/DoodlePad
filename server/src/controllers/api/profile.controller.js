@@ -163,22 +163,49 @@ export const updateMyProfile = async (req, res) => {
 // ============================================================
 // GET MY PROFILE
 // ============================================================
+// export const getMyProfile = async (req, res) => {
+//   try {
+//     const cacheKey = `myProfile:${req.user.id}`;
+//     if (redisClient?.isReady) {
+//       const cached = await redisClient.get(cacheKey);
+//       if (cached) return res.json({ success: true, user: JSON.parse(cached) });
+//     }
+
+//     const user = await User.findByPk(req.user.id, {
+//       attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId"]
+//     });
+
+//     if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user));
+//     res.json({ success: true, user });
+//   } catch (error) {
+//     res.status(500).json({ message: "Failed to fetch profile" });
+//   }
+// };
+
+//updated
 export const getMyProfile = async (req, res) => {
   try {
     const cacheKey = `myProfile:${req.user.id}`;
-    if (redisClient?.isReady) {
-      const cached = await redisClient.get(cacheKey);
-      if (cached) return res.json({ success: true, user: JSON.parse(cached) });
-    }
-
+    
+    // Redis clear karke fresh data mangwao
     const user = await User.findByPk(req.user.id, {
-      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId"]
+      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData"]
     });
 
-    if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user));
-    res.json({ success: true, user });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    // Response structure ko App ke hisaab se set karo
+    res.json({ 
+      success: true, 
+      data: {
+        profile: {
+          user: user
+        }
+      }
+    });
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch profile" });
+    console.error("GET MY PROFILE ERROR:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch profile" });
   }
 };
 
