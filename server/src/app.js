@@ -19,6 +19,8 @@ import analyticsRoutes from "./routes/analytics.routes.js";
 import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
+import profileRoutes from "./routes/profile.routes.js";
+
 
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
@@ -101,8 +103,9 @@ app.use("/uploads", express.static("uploads"));
 
 
 // ✅ API routes
--
+-// ... middle of app.js
 app.use("/api/users", userRoutes);
+app.use("/api/profile", profileRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/reports", reportRoutes);
