@@ -73,6 +73,7 @@ router.post("/save-fcm-token", protect, saveFcmToken);
 
 
 /* ================= PROFILE APIs ================= */
+router.get("/users/my-profile", protect, getMyProfile);
 
 router.put(
   "/users/update-profile",
@@ -87,7 +88,6 @@ router.put(
 //   updateMyProfile
 // );
 
-router.get("/users/my-profile", protect, getMyProfile);
 // router.get("/users/my-profile", userAuth, getMyProfile);
 
 router.get("/users/:id", protect, getUserProfile);
@@ -116,7 +116,6 @@ router.post("/posts/:id/restore", protect, restoreArchivedPost);
 
 
 router.get("/posts",protect, postController.getFeedPosts);
-router.get("/:id",protect, postController.getPostById);
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
 router.post("/comments/:commentId/like",protect, likeComment);
@@ -140,5 +139,8 @@ router.post("/reports", userAuth, createReport);
 router.get("/", (req, res) => {
   res.json({ success: true, message: "API routes working" });
 });
+
+router.get("/:id",protect, postController.getPostById);
+
 
 export default router;
