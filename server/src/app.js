@@ -102,7 +102,6 @@ app.use("/uploads", express.static("uploads"));
 
 // ✅ API routes
 -
-app.use("/api/admin", adminRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/posts", postRoutes);
@@ -113,6 +112,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use(express.static("public"));
+app.use("/api/admin", adminRoutes);
 
 
 
