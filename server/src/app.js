@@ -20,10 +20,8 @@ import analyticsRoutes from "./routes/analytics.routes.js";
 import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
-import messageRoutes from './routes/message.routes.js';
 import conversationRoutes from './routes/conversation.routes.js';
 import profileRoutes from './routes/profile.routes.js';
-
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
 
