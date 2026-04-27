@@ -8,7 +8,8 @@ import hpp from "hpp";
 import config from "./config/env.js";
 import cron from "node-cron";
 
-
+// Routes
+import messageRoutes from "./routes/message.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import commentRoutes from "./routes/comment.routes.js";
 import postRoutes from "./routes/post.routes.js";
