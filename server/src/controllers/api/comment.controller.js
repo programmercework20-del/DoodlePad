@@ -3,32 +3,35 @@ import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import CommentLike from "../../models/CommentLike.js";
 import { createNotification } from "../../services/notification.service.js";
+import redisClient from "../../config/redis.js";
+import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket
 
-
-
-// Add a comment to a post
+// ============================================================
+// ADD COMMENT / REPLY (With GCS & Cache Clear)
+// ============================================================
 export const addComment = async (req, res) => {
   try {
     const userId = req.user.id;
     const { postId } = req.params;
     const { type, content, parentId } = req.body;
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-
     let mediaUrl = null;
+
+    // 🔥 GCS Bucket Upload logic
     if (req.file) {
-      mediaUrl = `${baseUrl}/uploads/${req.file.filename}`;
+      const fileName = `comments/comment_${userId}_${Date.now()}`;
+      const blob = bucket.file(fileName);
+      await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
     const post = await Post.findByPk(postId);
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
+    if (!post) return res.status(404).json({ success: false, message: "Post not found" });
 
     const comment = await Comment.create({
       postId,
       userId,
-      type,
+      type: type || "text",
       content,
       mediaUrl,
       parentId: parentId || null
@@ -36,88 +39,59 @@ export const addComment = async (req, res) => {
 
     await post.increment("commentsCount");
 
-    // 🔥 DETERMINE RECEIVER
-    let receiverId = post.userId;
+    // 🚀 Clear Redis Cache for this post's comments
+    if (redisClient?.isReady) {
+      await redisClient.del(`comments:${postId}`);
+      await redisClient.del(`post:${postId}`);
+    }
 
+    // 🔔 Notification Logic
+    let receiverId = post.userId;
     if (parentId) {
       const parentComment = await Comment.findByPk(parentId);
-
       if (parentComment && parentComment.userId !== userId) {
         receiverId = parentComment.userId;
       }
     }
 
-    // ✅ PREVENT SELF NOTIFICATION
     if (receiverId !== userId) {
-      await createNotification({
+      createNotification({
         senderId: userId,
         receiverId,
         type: parentId ? "REPLY_COMMENT" : "COMMENT_POST",
         postId,
         commentId: comment.id
-      });
+      }).catch(e => console.error(e));
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: parentId ? "Reply added" : "Comment added",
       comment
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to add comment" });
+    console.error("ADD COMMENT ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to add comment" });
   }
 };
-// get comments by postId.
-// export const getPostComments = async (req, res) => {
-//   try {
-//     const { postId } = req.params;
 
-//     const post = await Post.findByPk(postId);
-//     if (!post) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Post not found"
-//       });
-//     }
-
-//     const comments = await Comment.findAll({
-//       where: { postId, status: "active" },
-//       include: [
-//         {
-//           model: User,
-//           as: "user",
-//           attributes: ["id", "username", "name", "profilePhoto"]
-//         }
-//       ],
-//       order: [["createdAt", "DESC"]]
-//     });
-
-//     return res.json({
-//       success: true,
-//       comments
-//     });
-
-//   } catch (error) {
-//     console.error("GET COMMENTS ERROR:", error); // 👈 ye important
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to get comments"
-//     });
-//   }
-// };
-
+// ============================================================
+// GET POST COMMENTS (Top-level + Replies)
+// ============================================================
 export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
+    const cacheKey = `comments:${postId}`;
+
+    // 🚀 Redis Check
+    if (redisClient?.isReady) {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) return res.json({ success: true, comments: JSON.parse(cached) });
+    }
 
     const comments = await Comment.findAll({
-      where: {
-        postId,
-        parentId: null, // 🔥 only top-level
-        status: "active"
-      },
+      where: { postId, parentId: null, status: "active" },
       include: [
         {
           model: User,
@@ -141,125 +115,90 @@ export const getPostComments = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    res.json({
-      success: true,
-      comments
-    });
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(comments));
+    }
+
+    return res.json({ success: true, comments });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to fetch comments" });
+    console.error("GET COMMENTS ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch comments" });
   }
 };
 
-
-// Delete a comment
-
+// ============================================================
+// DELETE OWN COMMENT (Soft Delete)
+// ============================================================
 export const deleteOwnComment = async (req, res) => {
   try {
     const userId = req.user.id;
     const { commentId } = req.params;
 
     const comment = await Comment.findByPk(commentId);
-
-    if (!comment) {
-      return res.status(404).json({
-        success: false,
-        message: "Comment not found"
-      });
+    if (!comment || comment.userId !== userId) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    // ✅ Only owner can delete
-    if (comment.userId !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: "You can only delete your own comment"
-      });
-    }
-
-    // ✅ Prevent double delete
-    if (comment.status === "deleted") {
-      return res.status(400).json({
-        success: false,
-        message: "Comment already deleted"
-      });
-    }
+    if (comment.status === "deleted") return res.status(400).json({ message: "Already deleted" });
 
     const post = await Post.findByPk(comment.postId);
-
-    // ✅ Soft delete
     await comment.update({ status: "deleted" });
 
-    // ✅ Safe decrement
     if (post && post.commentsCount > 0) {
       await post.decrement("commentsCount");
     }
 
-    return res.json({
-      success: true,
-      message: "Comment deleted successfully"
-    });
+    // 🚀 Clear Cache
+    if (redisClient?.isReady) {
+      await redisClient.del(`comments:${comment.postId}`);
+      await redisClient.del(`post:${comment.postId}`);
+    }
+
+    return res.json({ success: true, message: "Comment deleted" });
 
   } catch (error) {
-    console.error("USER DELETE COMMENT ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to delete comment"
-    });
+    return res.status(500).json({ success: false, message: "Delete failed" });
   }
 };
 
+// ============================================================
+// LIKE COMMENT (Toggle)
+// ============================================================
 export const likeComment = async (req, res) => {
   try {
     const userId = req.user.id;
     const { commentId } = req.params;
 
     const comment = await Comment.findByPk(commentId);
-    if (!comment) {
-      return res.status(404).json({ message: "Comment not found" });
-    }
+    if (!comment) return res.status(404).json({ message: "Comment not found" });
 
-    const existing = await CommentLike.findOne({
-      where: { commentId, userId }
-    });
+    const existing = await CommentLike.findOne({ where: { commentId, userId } });
 
-    // UNLIKE
     if (existing) {
       await existing.destroy();
       await comment.decrement("likesCount");
       await comment.reload();
-
-      return res.json({
-        success: true,
-        action: "unliked",
-        likesCount: comment.likesCount
-      });
+      return res.json({ success: true, action: "unliked", likesCount: comment.likesCount });
     }
 
-    // LIKE
     await CommentLike.create({ commentId, userId });
     await comment.increment("likesCount");
     await comment.reload();
 
-    // ✅ ONLY ONCE
     if (comment.userId !== userId) {
-      await createNotification({
+      createNotification({
         senderId: userId,
         receiverId: comment.userId,
         type: "LIKE_COMMENT",
         postId: comment.postId,
         commentId
-      });
+      }).catch(e => console.error(e));
     }
 
-    return res.json({
-      success: true,
-      action: "liked",
-      likesCount: comment.likesCount
-    });
+    return res.json({ success: true, action: "liked", likesCount: comment.likesCount });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Like failed" });
+    return res.status(500).json({ success: false, message: "Like failed" });
   }
 };

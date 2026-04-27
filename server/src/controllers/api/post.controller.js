@@ -7,92 +7,6 @@ import { Op } from "sequelize";
 // 🔥 REDIS & BUCKET IMPORT
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
-// export const createPost = async (req, res) => {
-//   try {
-//     const { type, content, caption, isSaved } = req.body;
-//     const userId = req.user.id;
-//     const cleanType = type?.toLowerCase();
-//     const isSavedBool = isSaved === "true" || isSaved === true;
-
-//     let mediaUrls = [];
-
-//     if (req.files && req.files.length > 0) {
-//       const uploadPromises = req.files.map((file) => {
-//         return new Promise((resolve, reject) => {
-//           const isVideo = file.mimetype.startsWith('video');
-//           const isAudio = file.mimetype.startsWith('audio');
-
-//           let folderName = 'post_images';
-//           if (isVideo) folderName = 'post_videos';
-//           if (isAudio) folderName = 'post_audios';
-
-//           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-//           const blob = bucket.file(fileName);
-
-//           // 🔥 FIX: save() use karo stream ki jagah
-//           blob.save(file.buffer, {
-//             metadata: { contentType: file.mimetype },
-//             resumable: file.size > 5 * 1024 * 1024, // 5MB se bada ho toh resumable
-//           }, (err) => {
-//             if (err) {
-//               console.error("GCS Upload Error:", err);
-//               return reject(err);
-//             }
-//             const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-//             resolve(publicUrl);
-//           });
-//         });
-//       });
-
-//       mediaUrls = await Promise.all(uploadPromises);
-//     }
-
-//     if (["image", "video", "audio"].includes(cleanType) && mediaUrls.length === 0) {
-//       return res.status(400).json({ message: "File is required" });
-//     }
-
-//     if (cleanType === "doodle" && !content) {
-//       return res.status(400).json({ message: "Doodle data required" });
-//     }
-
-//     if (cleanType === "text" && !content) {
-//       return res.status(400).json({ message: "Content required" });
-//     }
-
-//     let expiresAt = null;
-//     if (!isSavedBool) {
-//       expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-//     }
-
-//     const post = await Post.create({
-//       userId,
-//       type: cleanType,
-//       content,
-//       caption,
-//       mediaUrls,
-//       isSaved: isSavedBool,
-//       expiresAt
-//     });
-
-//     if (redisClient?.isReady) {
-//       await redisClient.del(`userPosts:${userId}`);
-//     }
-
-//     return res.status(201).json({
-//       success: true,
-//       message: "Post created successfully",
-//       post
-//     });
-
-//   } catch (error) {
-//     console.error("Create Post Error:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to create post",
-//       error: error.message
-//     });
-//   }
-// };
 
 export const createPost = async (req, res) => {
   try {
@@ -106,7 +20,7 @@ export const createPost = async (req, res) => {
     let mediaUrls = [];
 
 
-   // 🎨 AGAR DOODLE HAI
+   // 🎨 if DOODLE 
 if (cleanType === "doodle") {
   // 🔥 Content = paths JSON hai, base64 nahi
   // File (media) already req.files mein aa rahi hai — wahi use karo
@@ -230,20 +144,31 @@ export const getArchivedPosts = async (req, res) => {
   }
 };
 
+
 export const markExpiredPosts = async () => {
   try {
-    await Post.update(
-      { status: "archived" },
+    const now = new Date();
+
+    const [updatedRows] = await Post.update(
+      {
+        status: "archived",
+        expiresAt: null   // 🔥 IMPORTANT FIX
+      },
       {
         where: {
           isSaved: false,
-          expiresAt: { [Op.lt]: new Date() },
-          status: "active"
+          status: "active",
+          expiresAt: {
+            [Op.lte]: now
+          }
         }
       }
     );
+
+    console.log(`Archived ${updatedRows} posts`);
+
   } catch (error) {
-    console.error("Expire job error:", error);
+    console.error(error);
   }
 };
 
