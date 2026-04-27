@@ -14,13 +14,14 @@ import commentRoutes from "./routes/comment.routes.js";
 import postRoutes from "./routes/post.routes.js";
 import reportRoutes from "./routes/report.routes.js";
 import liveRoutes from "./routes/live.routes.js";
-import messageRoutes from "./routes/message.routes.js";
+import adminMessageRoutes from "./routes/adminMessage.routes.js"
 import analyticsRoutes from "./routes/analytics.routes.js";
 import searchRoutes from "./routes/search.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
-import profileRoutes from "./routes/profile.routes.js";
-
+import messageRoutes from './routes/message.routes.js';
+import conversationRoutes from './routes/conversation.routes.js';
+import profileRoutes from './routes/profile.routes.js';
 
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
@@ -49,7 +50,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-app.set('trust proxy', 1); // 🔥 Nginx/reverse proxy ke liye
+
 // Security
 app.use(helmet());
 app.use(hpp());
@@ -67,8 +68,9 @@ const limiter = rateLimit({
 app.use("/api", limiter);
 
 // Body parsers
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+// Apne server.js/app.js me isko update karein:
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // Logger
@@ -76,6 +78,8 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
   next();
 });
+
+app.set("trust proxy", 1);
 
 /* =========================
    HEALTH CHECK
@@ -97,25 +101,22 @@ app.get("/health", (req, res) => {
   });
 });
 
-
-//static serve 
-app.use("/uploads", express.static("uploads"));
-
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // ✅ API routes
--// ... middle of app.js
-app.use("/api/users", userRoutes);
+app.use("/api", apiRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api/messages", messageRoutes);
+app.use("/api/conversations", conversationRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
-app.use("/api/messages", messageRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use(express.static("public"));
-app.use("/api/admin", adminRoutes);
+// app.use(express.static("public"));
 
 
 
@@ -129,12 +130,14 @@ app.use("/api/admin", adminRoutes);
   // app.use("/api", apiRoutes);
 // 🔓 APK / MOBILE USER APIs
 // signup, login, profile, change-password
-app.use("/api", apiRoutes);
+
 
 // 🔐 ADMIN PANEL APIs (protected)
 app.use("/api/admin", adminAuth, adminRoutes);
 
 app.use("/admin/comments", commentRoutes);
+
+app.use("/admin/messages", adminMessageRoutes);
 
 
 // app.use("/api/admin/ads", adRoutes);
@@ -142,24 +145,12 @@ app.use("/admin/comments", commentRoutes);
 /* =========================
    ERROR HANDLING
 ========================= */
-
-// 404
-
-app.use((req, res) => {
-
-    res.status(404).json({
-        success: false,
-        message: "Route not found"
-    });
-}); 
 /* =========================
    ROUTES (IMPORTANT PART)
 ========================= */
 
 // 🔓 APK / MOBILE USER APIs
 // signup, login, profile, change-password
-app.use("/api", apiRoutes);
-app.use("/uploads", express.static("uploads"));
 
   // // 🔐 ADMIN PANEL APIs (protected)
   // app.use("/api/admin", adminAuth, adminRoutes);
@@ -168,7 +159,6 @@ app.use("/uploads", express.static("uploads"));
 
   
 archiveExpiredPosts();
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 
 /* =========================
