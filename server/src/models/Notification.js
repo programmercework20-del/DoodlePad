@@ -25,7 +25,8 @@ const Notification = sequelize.define("Notification", {
       "REPLY_COMMENT",
       "LIKE_COMMENT",
       "DOODLE_REQUEST",
-      "DOODLE_ACCEPTED"
+      "DOODLE_ACCEPTED",
+      "MESSAGE"
     ),
     allowNull: false
   },

@@ -2,7 +2,7 @@ import express from "express";
 import { protect } from "../middlewares/auth.middleware.js";
 import upload from "../middlewares/upload.js";
 import * as postController from '../controllers/post.controller.js';
-import { getUserProfile, sendDoodleRequest, acceptDoodleRequest,getDoodleRequests, updateMyProfile, getMyProfile, rejectDoodleRequest } from "../controllers/api/profile.controller.js";
+// import { getUserProfile, sendDoodleRequest, acceptDoodleRequest,getDoodleRequests, updateMyProfile, getMyProfile, rejectDoodleRequest } from "../controllers/api/profile.controller.js";
 import {
   addComment,
   getPostComments,
@@ -13,7 +13,8 @@ import { googleLogin } from "../controllers/user.controller.js";
 
 
 import { createReport } from "../controllers/api/report.controller.js";
-import { toggleLikePost } from "../controllers/api/postLike.controller.js";
+import { toggleLikePost , getPostLikes } from "../controllers/api/postLike.controller.js";
+
 
 import {
   signup,
@@ -72,34 +73,34 @@ router.patch("/users/privacy", userAuth, togglePrivacy);
 router.post("/save-fcm-token", protect, saveFcmToken);
 
 
-/* ================= PROFILE APIs ================= */
-router.get("/users/my-profile", protect, getMyProfile);
+// /* ================= PROFILE APIs ================= */
+// router.get("/users/my-profile", protect, getMyProfile);
 
-router.put(
-  "/users/update-profile",
-  protect,
-  upload.single("profilePhoto"),
-  updateMyProfile
-);
 // router.put(
 //   "/users/update-profile",
-//   userAuth,
+//   protect,
 //   upload.single("profilePhoto"),
 //   updateMyProfile
 // );
+// // router.put(
+// //   "/users/update-profile",
+// //   userAuth,
+// //   upload.single("profilePhoto"),
+// //   updateMyProfile
+// // );
 
-// router.get("/users/my-profile", userAuth, getMyProfile);
+// // router.get("/users/my-profile", userAuth, getMyProfile);
 
-router.get("/users/:id", protect, getUserProfile);
-// router.get("/users/:id", userAuth, getUserProfile);
+// router.get("/users/:id", protect, getUserProfile);
+// // router.get("/users/:id", userAuth, getUserProfile);
 
-router.post("/doodle/request", userAuth, upload.single("doodle"), sendDoodleRequest);
+// router.post("/doodle/request", userAuth, upload.single("doodle"), sendDoodleRequest);
 
-router.post("/doodle/accept/:requestId", userAuth, acceptDoodleRequest);
+// router.post("/doodle/accept/:requestId", userAuth, acceptDoodleRequest);
 
-router.post("/doodle/reject/:requestId", userAuth, rejectDoodleRequest);
+// router.post("/doodle/reject/:requestId", userAuth, rejectDoodleRequest);
 
-router.get("/doodle/request", userAuth, getDoodleRequests);
+// router.get("/doodle/request", userAuth, getDoodleRequests);
 
 
 
@@ -116,6 +117,7 @@ router.post("/posts/:id/restore", protect, restoreArchivedPost);
 
 
 router.get("/posts",protect, postController.getFeedPosts);
+router.get("/:id",protect, postController.getPostById);
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
 router.post("/comments/:commentId/like",protect, likeComment);
@@ -126,6 +128,7 @@ router.delete(
 );
 
 router.post("/posts/:id/like", protect, toggleLikePost);
+router.get("/posts/:id/likes", getPostLikes);
 router.post("/posts/:id/share", protect, sharePost);
 
 
@@ -140,7 +143,6 @@ router.get("/", (req, res) => {
   res.json({ success: true, message: "API routes working" });
 });
 
-router.get("/:id",protect, postController.getPostById);
 
 
 export default router;

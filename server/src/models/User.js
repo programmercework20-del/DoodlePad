@@ -152,9 +152,13 @@ otpAttempts: {
 otpVerified: {
   type: DataTypes.BOOLEAN,
   defaultValue: false
-}
+},
+doodleData: {
+  type: DataTypes.TEXT,
+  allowNull: true
 
-}, 
+}
+},
 {
     tableName: "users",
     timestamps: true

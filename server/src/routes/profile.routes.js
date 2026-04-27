@@ -23,7 +23,7 @@ router.get("/my-profile", protect, getMyProfile);
 router.put("/update-profile", protect, upload.single("profilePhoto"), updateMyProfile);
 
 // 3. Get Other User Profile (GET) - URL will be /api/profile/:id
-router.get("/:id", protect, getUserProfile);
+router.get("/:Uid", protect, getUserProfile);
 
 // 4. Doodle Requests logic
 router.post("/doodle/request", userAuth, upload.single("doodle"), sendDoodleRequest);

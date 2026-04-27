@@ -1,4 +1,4 @@
- import sequelize from "../config/db.js";
+import sequelize from "../config/db.js";
 
 // import models directly (NO factory calling)
 import Admin from "./Admin.js";
@@ -13,6 +13,8 @@ import CommentLike from "./CommentLike.js";
 import PostLike from "./PostLike.js";
 import Share from "./Share.js";
 import Notification from "./Notification.js";
+import Conversation from "./Conversation.js";
+import ConversationParticipant from "./ConversationParticipant.js";
 
 
 // =====================================================
@@ -145,6 +147,42 @@ Share.belongsTo(User, {
   as: "sharedTo"
 });
 
+// =====================================================
+// ================= MESSAGE ==============================
+// =====================================================
+
+// Conversation ↔ Participants
+Conversation.hasMany(ConversationParticipant, {
+  foreignKey: "conversationId",
+  as: "participants"
+});
+
+ConversationParticipant.belongsTo(Conversation, {
+  foreignKey: "conversationId"
+});
+
+User.hasMany(ConversationParticipant, {
+  foreignKey: "userId",
+  as: "userConversations"
+});
+
+// Conversation ↔ Messages
+Conversation.hasMany(Message, {
+  foreignKey: "conversationId",
+  as: "messages"
+});
+
+Message.belongsTo(Conversation, {
+  foreignKey: "conversationId"
+});
+
+
+ConversationParticipant.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user"
+});
+
+
 
 // =====================================================
 // ================= ADMIN ==============================
@@ -173,13 +211,6 @@ User.hasMany(Notification, { foreignKey: "receiverId", as: "notifications" });
 // =====================================================
 Message.belongsTo(User, { foreignKey: "senderId", as: "sender" });
 Message.belongsTo(User, { foreignKey: "receiverId", as: "receiver" });
-
-
-
-
-
-
-
 // EXPORT
 export {
   sequelize,
@@ -194,5 +225,7 @@ export {
   Follower,
   PostLike,
   Share,
-  Notification
+  Notification,
+  Conversation,              // ✅ ADD THIS
+  ConversationParticipant 
 };

@@ -64,6 +64,10 @@ export const createNotification = async ({
       case "FOLLOW_ACCEPTED":
         message = `${sender.username} accepted your follow request`;
         break;
+
+      case "MESSAGE":
+  message = `${sender.username} sent you a message`;
+  break;
       default:
         message = "You have a new notification";
     }
