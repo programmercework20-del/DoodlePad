@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
 import { authService } from '@/services/auth.service';
 
 // Async thunks
@@ -107,6 +107,7 @@ const authSlice = createSlice({
                 state.loading = false;
                 state.isAuthenticated = true;
                 state.admin = action.payload.data;
+                localStorage.setItem('admin', JSON.stringify(action.payload.data));
                 // Verify assumes token is valid, so we don't need to update it unless it changed
             })
             .addCase(verifyAuth.rejected, (state, action) => {
@@ -140,5 +141,19 @@ const authSlice = createSlice({
     },
 });
 
+// Selectors
+const selectAuthBase = (state) => state.auth;
+
+export const selectAuth = createSelector(
+    [selectAuthBase],
+    (auth) => ({
+        admin: auth.admin,
+        isAuthenticated: auth.isAuthenticated,
+        loading: auth.loading,
+        error: auth.error,
+    })
+);
+
 export const { clearError, resetAuth } = authSlice.actions;
 export default authSlice.reducer;
+

@@ -1,4 +1,4 @@
-import { Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, FileText } from 'lucide-react';
 import { useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { useFetch } from '@/hooks/useFetch';
@@ -6,10 +6,17 @@ import { postService } from '@/services/post.service';
 import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Button as Button1 } from '@/components/ui/button-1';
-import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
 import EmptyState from '@/components/common/EmptyState';
+import DataTable from '@/components/common/DataTable';
+import Avatar from '@/components/common/Avatar';
+
+const STATUS_VARIANTS = {
+    active: 'default',
+    hidden: 'secondary',
+    deleted: 'destructive',
+    sensitive: 'outline',
+};
 
 export default function Posts() {
     const [searchQuery, setSearchQuery] = useState('');
@@ -17,29 +24,66 @@ export default function Posts() {
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
 
-    const { data, loading, refetch } = useFetch(
+    const { data, loading, error, refetch } = useFetch(
         () => postService.getAllPosts({ search: searchQuery, type: typeFilter, status: statusFilter, page, limit: 10 }),
         [searchQuery, typeFilter, statusFilter, page]
     );
 
+    const POST_COLUMNS = [
+        {
+            key: 'author',
+            label: 'Author',
+            render: (post) => (
+                <div className="flex items-center gap-3">
+                    <Avatar src={post.author?.profilePhoto} name={post.author?.name} size="h-8 w-8" />
+                    <span className="text-sm font-medium">{post.author?.name}</span>
+                </div>
+            )
+        },
+        {
+            key: 'type',
+            label: 'Type',
+            render: (post) => <Badge variant="outline">{post.type}</Badge>
+        },
+        {
+            key: 'caption',
+            label: 'Caption',
+            render: (post) => (
+                <div className="max-w-xs truncate text-sm">
+                    {post.caption || <span className="text-gray-400 italic">No caption</span>}
+                </div>
+            )
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            render: (post) => (
+                <Badge variant={STATUS_VARIANTS[post.status] || 'default'}>
+                    {post.status}
+                </Badge>
+            )
+        },
+        {
+            key: 'actions',
+            label: 'Actions',
+            render: (post) => (
+                <div className="flex gap-2">
+                    {post.status === 'active' && (
+                        <Button size="sm" variant="outline" onClick={() => postService.hidePost(post.id).then(refetch)}>
+                            Hide
+                        </Button>
+                    )}
+                    <Button size="sm" variant="destructive" onClick={() => postService.deletePost(post.id).then(refetch)}>
+                        Delete
+                    </Button>
+                </div>
+            )
+        }
+    ];
+
     const handleSearch = (e) => {
         e.preventDefault();
         setPage(1);
-        refetch();
-    };
-
-    const getStatusBadge = (status) => {
-        const variants = {
-            active: 'default',
-            hidden: 'secondary',
-            deleted: 'destructive',
-            sensitive: 'outline',
-        };
-        return <Badge variant={variants[status] || 'default'}>{status}</Badge>;
-    };
-
-    const getTypeBadge = (type) => {
-        return <Badge variant="outline">{type}</Badge>;
     };
 
     return (
@@ -58,174 +102,85 @@ export default function Posts() {
                                 type="text"
                                 placeholder="Search posts..."
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
                                 className="pl-10"
                             />
                         </div>
-                        <Button type="submit">Search</Button>
                     </form>
 
-                    <div className="flex gap-2">
-                        <div className="space-x-2">
-                            <span className="text-sm font-medium">Type:</span>
-                            {['', 'image', 'video', 'audio', 'text', 'doodle', 'live'].map((type) => (
-                                <Button
-                                    key={type}
-                                    variant={typeFilter === type ? 'default' : 'outline'}
-                                    size="sm"
-                                    onClick={() => setTypeFilter(type)}
-                                >
-                                    {type || 'All'}
-                                </Button>
-                            ))}
+                    <div className="flex flex-wrap gap-4">
+                        <div className="space-y-2">
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</span>
+                            <div className="flex flex-wrap gap-2">
+                                {['', 'image', 'video', 'audio', 'text', 'doodle', 'live'].map((type) => (
+                                    <Button
+                                        key={type}
+                                        variant={typeFilter === type ? 'default' : 'outline'}
+                                        size="sm"
+                                        onClick={() => { setTypeFilter(type); setPage(1); }}
+                                    >
+                                        {type || 'All'}
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</span>
+                            <div className="flex flex-wrap gap-2">
+                                {['', 'active', 'hidden', 'deleted', 'sensitive'].map((status) => (
+                                    <Button
+                                        key={status}
+                                        variant={statusFilter === status ? 'default' : 'outline'}
+                                        size="sm"
+                                        onClick={() => { setStatusFilter(status); setPage(1); }}
+                                    >
+                                        {status || 'All'}
+                                    </Button>
+                                ))}
+                            </div>
                         </div>
                     </div>
-
-                    <div className="flex gap-2">
-                        <span className="text-sm font-medium">Status:</span>
-                        {['', 'active', 'hidden', 'deleted', 'sensitive'].map((status) => (
-                            <Button
-                                key={status}
-                                variant={statusFilter === status ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => setStatusFilter(status)}
-                            >
-                                {status || 'All'}
-                            </Button>
-                        ))}
-                    </div>
                 </div>
+
+                {error && (
+                    <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
+                        Error loading posts: {typeof error === 'string' ? error : 'Unknown error'}
+                    </div>
+                )}
 
                 {loading && <Loader size="lg" className="py-12" />}
 
                 {!loading && data?.posts && (
-                    <>
-                        {data.posts.length === 0 ? (
-                            <EmptyState
-                                icon={FileText}
-                                title="No posts found"
-                                description={
-                                    searchQuery || typeFilter || statusFilter
-                                        ? "No posts match your current search filters."
-                                        : "No posts found."
-                                }
-                                actionLabel={
-                                    (searchQuery || typeFilter || statusFilter) ? "Clear Filters" : undefined
-                                }
-                                onAction={() => {
-                                    setSearchQuery('');
-                                    setTypeFilter('');
-                                    setStatusFilter('');
-                                    setPage(1);
-                                }}
-                            />
-                        ) : (
-                            <div className="bg-white rounded-lg border overflow-hidden">
-                                <table className="w-full">
-                                    <thead className="bg-gray-50 border-b">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Author</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Caption</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {data.posts.map((post) => (
-                                            <tr key={post.id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 text-sm">{post.author?.name}</td>
-                                                <td className="px-6 py-4">{getTypeBadge(post.type)}</td>
-                                                <td className="px-6 py-4 text-sm max-w-xs truncate">{post.caption || '-'}</td>
-                                                <td className="px-6 py-4">{getStatusBadge(post.status)}</td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex gap-2">
-                                                        {post.status === 'active' && (
-                                                            <Button size="sm" variant="outline" onClick={() => postService.hidePost(post.id).then(refetch)}>
-                                                                Hide
-                                                            </Button>
-                                                        )}
-                                                        <Button size="sm" variant="destructive" onClick={() => postService.deletePost(post.id).then(refetch)}>
-                                                            Delete
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {data.pagination && data.pagination.pages > 1 && (
-                            <div className="flex flex-col md:flex-row items-center justify-between mt-6 gap-4 border-t pt-6 px-2">
-                                <p className="text-sm text-gray-500">
-                                    Showing {data.posts.length} of {data.pagination.total} posts (Page {page} of {data.pagination.pages})
-                                </p>
-                                <Pagination>
-                                    <PaginationContent>
-                                        <PaginationItem>
-                                            <Button1
-                                                variant="ghost"
-                                                disabled={page === 1}
-                                                onClick={() => setPage(page - 1)}
-                                                className="gap-1 px-3"
-                                            >
-                                                <ChevronLeft className="h-4 w-4" />
-                                                Previous
-                                            </Button1>
-                                        </PaginationItem>
-
-                                        {[...Array(data.pagination.pages)].map((_, index) => {
-                                            const pageNum = index + 1;
-                                            if (
-                                                data.pagination.pages <= 7 ||
-                                                pageNum === 1 ||
-                                                pageNum === data.pagination.pages ||
-                                                (pageNum >= page - 1 && pageNum <= page + 1)
-                                            ) {
-                                                return (
-                                                    <PaginationItem key={pageNum}>
-                                                        <Button1
-                                                            variant={page === pageNum ? "outline" : "ghost"}
-                                                            size="icon"
-                                                            onClick={() => setPage(pageNum)}
-                                                        >
-                                                            {pageNum}
-                                                        </Button1>
-                                                    </PaginationItem>
-                                                );
-                                            } else if (
-                                                (pageNum === page - 2 && pageNum > 1) ||
-                                                (pageNum === page + 2 && pageNum < data.pagination.pages)
-                                            ) {
-                                                return (
-                                                    <PaginationItem key={pageNum}>
-                                                        <PaginationEllipsis />
-                                                    </PaginationItem>
-                                                );
-                                            }
-                                            return null;
-                                        })}
-
-                                        <PaginationItem>
-                                            <Button1
-                                                variant="ghost"
-                                                disabled={page === data.pagination.pages}
-                                                onClick={() => setPage(page + 1)}
-                                                className="gap-1 px-3"
-                                            >
-                                                Next
-                                                <ChevronRight className="h-4 w-4" />
-                                            </Button1>
-                                        </PaginationItem>
-                                    </PaginationContent>
-                                </Pagination>
-                            </div>
-                        )}
-                    </>
+                    data.posts.length === 0 ? (
+                        <EmptyState
+                            icon={FileText}
+                            title="No posts found"
+                            description={
+                                searchQuery || typeFilter || statusFilter
+                                    ? "No posts match your current search filters."
+                                    : "No posts found."
+                            }
+                            actionLabel={(searchQuery || typeFilter || statusFilter) ? "Clear Filters" : undefined}
+                            onAction={() => {
+                                setSearchQuery('');
+                                setTypeFilter('');
+                                setStatusFilter('');
+                                setPage(1);
+                            }}
+                        />
+                    ) : (
+                        <DataTable
+                            columns={POST_COLUMNS}
+                            data={data.posts}
+                            pagination={data.pagination}
+                            page={page}
+                            onPageChange={setPage}
+                        />
+                    )
                 )}
             </div>
         </AdminLayout>
     );
 }
+

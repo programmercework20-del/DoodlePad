@@ -1,25 +1,22 @@
-import { AlertCircle, Trash2, Flag, Lock, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { AlertCircle, Trash2, Flag, Lock } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     fetchMessages,
     flagMessage,
-    deleteMessage
+    deleteMessage,
+    selectMessages
 } from '@/store/slices/messageSlice';
 
 import AdminLayout from '@/components/layout/AdminLayout';
-import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Button as Button1 } from '@/components/ui/button-1';
-import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
 import PageAnimation from '@/components/common/PageAnimation';
-import EmptyState from '@/components/common/EmptyState';
+import DataTable from '@/components/common/DataTable';
 
 export default function Messages() {
     const dispatch = useDispatch();
-    const { messages, pagination, loading, error } = useSelector((state) => state.messages);
-
+    const { messages, pagination, loading, error } = useSelector(selectMessages);
     const [page, setPage] = useState(1);
 
     useEffect(() => {
@@ -42,6 +39,58 @@ export default function Messages() {
         }
     };
 
+    const COLUMNS = useMemo(() => [
+        {
+            key: 'sender',
+            label: 'Sender',
+            render: (row) => (
+                <div>
+                    <p className="font-medium text-sm text-gray-900">{row.sender?.name}</p>
+                    <p className="text-xs text-gray-500">To: {row.receiver?.name || 'Unknown'}</p>
+                </div>
+            )
+        },
+        {
+            key: 'type',
+            label: 'Type',
+            render: (row) => (
+                <div className="flex gap-2">
+                    <Badge variant="outline">{row.type}</Badge>
+                    {row.hasMedia && <Badge variant="secondary">Media</Badge>}
+                </div>
+            )
+        },
+        {
+            key: 'issues',
+            label: 'Issues',
+            render: (row) => (
+                <div className="flex items-center text-red-600 font-medium">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {row.reportCount} Reports
+                </div>
+            )
+        },
+        {
+            key: 'createdAt',
+            label: 'Date',
+            render: (row) => new Date(row.createdAt).toLocaleDateString()
+        },
+        {
+            key: 'actions',
+            label: 'Actions',
+            render: (row) => (
+                <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => handleFlagMessage(row.id)}>
+                        <Flag className="h-4 w-4 mr-1" /> Flag
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleDeleteMessage(row.id)}>
+                        <Trash2 className="h-4 w-4 mr-1" /> Delete
+                    </Button>
+                </div>
+            )
+        }
+    ], []);
+
     return (
         <AdminLayout>
             <PageAnimation className="space-y-6">
@@ -61,135 +110,21 @@ export default function Messages() {
                     </div>
                 </div>
 
-                {loading && <Loader size="lg" className="py-12" />}
-
-                {!loading && messages && (
-                    <>
-                        {messages.length === 0 ? (
-                            <EmptyState
-                                icon={Mail}
-                                title="No flagged messages"
-                                description="There are no reported messages to review at this time."
-                            />
-                        ) : (
-                            <div className="bg-white rounded-lg border overflow-hidden transition-all duration-300 hover:shadow-md">
-                                <table className="w-full">
-                                    <thead className="bg-gray-50 border-b">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sender</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Issues</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {messages.map((message) => (
-                                            <tr key={message.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4">
-                                                    <div>
-                                                        <p className="font-medium text-sm">{message.sender?.name}</p>
-                                                        <p className="text-xs text-gray-500">To: {message.receiver?.name || 'Unknown'}</p>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <Badge variant="outline">{message.type}</Badge>
-                                                    {message.hasMedia && <Badge variant="secondary" className="ml-2">Media</Badge>}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center text-red-600 text-sm">
-                                                        <AlertCircle className="h-4 w-4 mr-1" />
-                                                        {message.reportCount} Reports
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 text-sm text-gray-500">
-                                                    {new Date(message.createdAt).toLocaleDateString()}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex gap-2">
-                                                        <Button size="sm" variant="outline" onClick={() => handleFlagMessage(message.id)}>
-                                                            <Flag className="h-4 w-4 mr-1" /> Flag
-                                                        </Button>
-                                                        <Button size="sm" variant="destructive" onClick={() => handleDeleteMessage(message.id)}>
-                                                            <Trash2 className="h-4 w-4 mr-1" /> Delete
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {pagination && pagination.pages > 1 && (
-                            <div className="flex flex-col md:flex-row items-center justify-between mt-6 gap-4 border-t pt-6 px-2">
-                                <p className="text-sm text-gray-500">
-                                    Showing {messages.length} of {pagination.total} messages (Page {page} of {pagination.pages})
-                                </p>
-                                <Pagination>
-                                    <PaginationContent>
-                                        <PaginationItem>
-                                            <Button1
-                                                variant="ghost"
-                                                disabled={page === 1}
-                                                onClick={() => setPage(page - 1)}
-                                                className="gap-1 px-3"
-                                            >
-                                                <ChevronLeft className="h-4 w-4" />
-                                                Previous
-                                            </Button1>
-                                        </PaginationItem>
-
-                                        {[...Array(pagination.pages)].map((_, index) => {
-                                            const pageNum = index + 1;
-                                            if (
-                                                pagination.pages <= 7 ||
-                                                pageNum === 1 ||
-                                                pageNum === pagination.pages ||
-                                                (pageNum >= page - 1 && pageNum <= page + 1)
-                                            ) {
-                                                return (
-                                                    <PaginationItem key={pageNum}>
-                                                        <Button1
-                                                            variant={page === pageNum ? "outline" : "ghost"}
-                                                            size="icon"
-                                                            onClick={() => setPage(pageNum)}
-                                                        >
-                                                            {pageNum}
-                                                        </Button1>
-                                                    </PaginationItem>
-                                                );
-                                            } else if (
-                                                (pageNum === page - 2 && pageNum > 1) ||
-                                                (pageNum === page + 2 && pageNum < pagination.pages)
-                                            ) {
-                                                return (
-                                                    <PaginationItem key={pageNum}>
-                                                        <PaginationEllipsis />
-                                                    </PaginationItem>
-                                                );
-                                            }
-                                            return null;
-                                        })}
-
-                                        <PaginationItem>
-                                            <Button1
-                                                variant="ghost"
-                                                disabled={page === pagination.pages}
-                                                onClick={() => setPage(page + 1)}
-                                                className="gap-1 px-3"
-                                            >
-                                                Next
-                                                <ChevronRight className="h-4 w-4" />
-                                            </Button1>
-                                        </PaginationItem>
-                                    </PaginationContent>
-                                </Pagination>
-                            </div>
-                        )}
-                    </>
+                {error && (
+                    <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
+                        Error loading messages: {typeof error === 'string' ? error : 'Unknown error'}
+                    </div>
                 )}
+
+                <DataTable
+                    columns={COLUMNS}
+                    data={messages || []}
+                    loading={loading}
+                    pagination={pagination}
+                    page={page}
+                    onPageChange={setPage}
+                    emptyMessage="There are no reported messages to review at this time."
+                />
             </PageAnimation>
         </AdminLayout>
     );

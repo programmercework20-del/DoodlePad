@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { fetchDashboardStats } from '@/store/slices/analyticsSlice';
+import { fetchDashboardStats, selectAnalyticsState } from '@/store/slices/analyticsSlice';
+import { selectAuth } from '@/store/slices/authSlice';
 
 import AdminLayout from '@/components/layout/AdminLayout';
 import StatCard from '@/components/cards/StatCard';
@@ -18,9 +19,10 @@ export default function Dashboard() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
 
-    // Redux Selectors
-    const { isAuthenticated, loading: authLoading } = useSelector((state) => state.auth);
-    const { stats, loading: statsLoading, error } = useSelector((state) => state.analytics);
+    const { isAuthenticated, loading: authLoading } = useSelector(selectAuth);
+    const { stats, loading: statsLoading, error } = useSelector(selectAnalyticsState);
+
+    const hasAnimated = useRef(false);
 
     /* 🔐 Auth Guard */
     useEffect(() => {
@@ -36,25 +38,27 @@ export default function Dashboard() {
         }
     }, [dispatch, isAuthenticated]);
 
-    /* 🎬 GSAP Animation */
+    /* 🎬 GSAP Animation — runs only once on first data load */
     useEffect(() => {
-        if (stats) {
-            const ctx = gsap.context(() => {
-                gsap.from('.stat-card', {
-                    y: 30,
-                    opacity: 0,
-                    stagger: 0.12,
-                    duration: 0.6,
-                    ease: 'power3.out',
-                });
+        if (!stats || hasAnimated.current) return;
+
+        const ctx = gsap.context(() => {
+            gsap.from('.stat-card', {
+                y: 30,
+                opacity: 0,
+                stagger: 0.12,
+                duration: 0.6,
+                ease: 'power3.out',
             });
-            return () => ctx.revert();
-        }
+        });
+
+        hasAnimated.current = true;
+
+        return () => ctx.revert();
     }, [stats]);
 
-    const isLoading = authLoading || (statsLoading && !stats); // Only show loader if no stats yet
+    const isLoading = authLoading || (statsLoading && !stats);
 
-    /* 🚫 Loading */
     if (isLoading) {
         return (
             <AdminLayout>
@@ -63,7 +67,6 @@ export default function Dashboard() {
         );
     }
 
-    /* ❌ Error */
     if (error && !stats) {
         return (
             <AdminLayout>
@@ -83,22 +86,17 @@ export default function Dashboard() {
     return (
         <AdminLayout>
             <PageAnimation className="space-y-6 animate-in fade-in duration-500">
-                {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-                        <p className="text-gray-500 mt-1">
-                            Monitor and manage your platform
-                        </p>
+                        <p className="text-gray-500 mt-1">Monitor and manage your platform</p>
                     </div>
-
                     <Button variant="outline" size="sm" onClick={() => dispatch(fetchDashboardStats())}>
                         <RefreshCcw className="w-4 h-4 mr-2" />
                         Refresh
                     </Button>
                 </div>
 
-                {/* Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatCard
                         className="stat-card"
@@ -108,14 +106,12 @@ export default function Dashboard() {
                         trend="up"
                         trendValue={`+${stats?.users?.newToday || 0} today`}
                     />
-
                     <StatCard
                         className="stat-card"
                         title="Total Posts"
                         value={formatNumber(stats?.posts?.total)}
                         icon={FileText}
                     />
-
                     <StatCard
                         className="stat-card"
                         title="Pending Reports"
@@ -124,7 +120,6 @@ export default function Dashboard() {
                         trend="up"
                         trendValue={`${stats?.reports?.highPriority || 0} high priority`}
                     />
-
                     <StatCard
                         className="stat-card"
                         title="Active Lives"
@@ -133,48 +128,23 @@ export default function Dashboard() {
                     />
                 </div>
 
-                {/* Details */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* User Status */}
                     <div className="bg-white rounded-lg border p-6">
                         <h3 className="text-lg font-semibold mb-4">User Status</h3>
-
                         <div className="space-y-3">
                             <StatusRow label="Active Users" value={stats?.users?.active} />
-                            <StatusRow
-                                label="Warned Users"
-                                value={stats?.users?.warned}
-                                color="text-yellow-600"
-                            />
-                            <StatusRow
-                                label="Blocked Users"
-                                value={stats?.users?.blocked}
-                                color="text-orange-600"
-                            />
-                            <StatusRow
-                                label="Banned Users"
-                                value={stats?.users?.banned}
-                                color="text-red-600"
-                            />
+                            <StatusRow label="Warned Users" value={stats?.users?.warned} color="text-yellow-600" />
+                            <StatusRow label="Blocked Users" value={stats?.users?.blocked} color="text-orange-600" />
+                            <StatusRow label="Banned Users" value={stats?.users?.banned} color="text-red-600" />
                         </div>
                     </div>
 
-                    {/* Content Overview */}
                     <div className="bg-white rounded-lg border p-6">
                         <h3 className="text-lg font-semibold mb-4">Content Overview</h3>
-
                         <div className="space-y-3">
                             <StatusRow label="Active Posts" value={stats?.posts?.active} />
-                            <StatusRow
-                                label="Hidden Posts"
-                                value={stats?.posts?.hidden}
-                                color="text-orange-600"
-                            />
-                            <StatusRow
-                                label="Deleted Posts"
-                                value={stats?.posts?.deleted}
-                                color="text-red-600"
-                            />
+                            <StatusRow label="Hidden Posts" value={stats?.posts?.hidden} color="text-orange-600" />
+                            <StatusRow label="Deleted Posts" value={stats?.posts?.deleted} color="text-red-600" />
                             <StatusRow label="Total Lives" value={stats?.live?.total} />
                         </div>
                     </div>
@@ -184,7 +154,6 @@ export default function Dashboard() {
     );
 }
 
-/* 🔁 Reusable row */
 function StatusRow({ label, value, color = '' }) {
     return (
         <div className="flex justify-between items-center">
@@ -194,4 +163,4 @@ function StatusRow({ label, value, color = '' }) {
             </span>
         </div>
     );
-}
+}

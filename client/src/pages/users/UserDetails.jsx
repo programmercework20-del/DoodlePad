@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     fetchUserById,
     warnUser,
     blockUser,
+    banUser,
     unblockUser,
-    banUser
+    selectCurrentUserState
 } from '@/store/slices/userSlice';
 
 import AdminLayout from '@/components/layout/AdminLayout';
@@ -17,14 +18,15 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, AlertTriangle, Ban, XCircle, CheckCircle } from 'lucide-react';
 import PageAnimation from '@/components/common/PageAnimation';
+import Avatar from '@/components/common/Avatar';
 
 export default function UserDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
     const dispatch = useDispatch();
 
-    // Redux State
-    const { currentUser: user, stats, loading, error } = useSelector((state) => state.users);
+    // Redux State - Optimized with memoized selector
+    const { currentUser: user, stats, loading, error } = useSelector(selectCurrentUserState);
 
     const [confirmDialog, setConfirmDialog] = useState(null);
 
@@ -35,22 +37,17 @@ export default function UserDetails() {
         }
     }, [dispatch, id]);
 
-    const handleAction = async (action, confirmConfig) => {
+    const handleAction = useCallback((confirmConfig) => {
         setConfirmDialog(confirmConfig);
-    };
+    }, []);
 
-    const executeAction = async (actionFn) => {
+    const executeAction = useCallback(async (action) => {
         try {
-            await dispatch(actionFn).unwrap();
-            // Refetch can be skipped if Redux state is updated optimistically, 
-            // but for safety we can refetch or just rely on state update from thunk
-            // dispatch(fetchUserById(id)); 
-            // The thunks inside userSlice already return updated status, 
-            // and the reducer updates currentUser, so no refetch needed!
+            await dispatch(action).unwrap();
         } catch (err) {
             console.error('Action failed:', err);
         }
-    };
+    }, [dispatch]);
 
     if (loading && !user) {
         return (
@@ -90,21 +87,11 @@ export default function UserDetails() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="flex items-center gap-4">
-                                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
-                                    <div className="flex items-center justify-center rounded-full bg-gray-200 overflow-hidden text-gray-700 w-full h-full">
-                                        {user.profilePhoto ? (
-                                            <img
-                                                className='rounded-full h-full w-full object-cover'
-                                                src={user.profilePhoto}
-                                                alt="User Profile"
-                                            />
-                                        ) : (
-                                            <span className="text-xl font-bold uppercase">
-                                                {user.name?.charAt(0)}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
+                                <Avatar 
+                                    src={user.profilePhoto} 
+                                    name={user.name} 
+                                    className="h-20 w-20 text-xl" 
+                                />
                                 <div>
                                     <h2 className="text-2xl font-bold">{user.name}</h2>
                                     <p className="text-gray-500">@{user.username}</p>
@@ -170,11 +157,11 @@ export default function UserDetails() {
                             <Button
                                 variant="outline"
                                 onClick={() =>
-                                    handleAction('warn', {
+                                    handleAction({
                                         title: 'Warn User',
                                         description: 'This will send a warning to the user.',
                                         confirmText: 'Warn',
-                                        onConfirm: () => executeAction(() => warnUser({ id, reason: 'Admin warning' })),
+                                        onConfirm: () => executeAction(warnUser({ id, reason: 'Admin warning' })),
                                         variant: 'default',
                                     })
                                 }
@@ -188,11 +175,11 @@ export default function UserDetails() {
                             <Button
                                 variant="outline"
                                 onClick={() =>
-                                    handleAction('block', {
+                                    handleAction({
                                         title: 'Block User',
                                         description: 'This will temporarily block the user from accessing the platform.',
                                         confirmText: 'Block',
-                                        onConfirm: () => executeAction(() => blockUser({ id, reason: 'Admin block' })),
+                                        onConfirm: () => executeAction(blockUser({ id, reason: 'Admin block' })),
                                         variant: 'destructive',
                                     })
                                 }
@@ -206,11 +193,11 @@ export default function UserDetails() {
                             <Button
                                 variant="destructive"
                                 onClick={() =>
-                                    handleAction('ban', {
+                                    handleAction({
                                         title: 'Ban User Permanently',
                                         description: 'This will permanently ban the user. This action is severe.',
                                         confirmText: 'Ban Permanently',
-                                        onConfirm: () => executeAction(() => banUser({ id, reason: 'Admin ban' })),
+                                        onConfirm: () => executeAction(banUser({ id, reason: 'Admin ban' })),
                                         variant: 'destructive',
                                     })
                                 }
@@ -224,11 +211,11 @@ export default function UserDetails() {
                             <Button
                                 variant="outline"
                                 onClick={() =>
-                                    handleAction('unblock', {
+                                    handleAction({
                                         title: 'Unblock User',
                                         description: 'This will restore the user\'s access.',
                                         confirmText: 'Unblock',
-                                        onConfirm: () => executeAction(() => unblockUser(id)),
+                                        onConfirm: () => executeAction(unblockUser(id)),
                                         variant: 'default',
                                     })
                                 }

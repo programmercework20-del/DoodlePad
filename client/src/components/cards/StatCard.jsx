@@ -28,3 +28,4 @@ export default function StatCard({ title, value, icon: Icon, trend, trendValue, 
         </Card>
     );
 }
+

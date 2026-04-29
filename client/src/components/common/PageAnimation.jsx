@@ -17,7 +17,7 @@ export default function PageAnimation({ children, className = "" }) {
                     clearProps: 'all' // Clear styles after animation to avoid conflicts
                 }
             );
-        }, el);
+        }, el.current);
 
         return () => ctx.revert();
     }, []);

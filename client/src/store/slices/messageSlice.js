@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
 import { messageService } from '@/services/message.service';
 
 export const fetchMessages = createAsyncThunk(
@@ -39,6 +39,7 @@ export const deleteMessage = createAsyncThunk(
 
 const initialState = {
     messages: [],
+    deletedBackup: {}, // 🔥 Added for rollback
     pagination: {
         page: 1,
         limit: 10,
@@ -72,11 +73,37 @@ const messageSlice = createSlice({
                 state.loading = false;
                 state.error = action.payload;
             })
-            .addCase(deleteMessage.fulfilled, (state, action) => {
-                state.messages = state.messages.filter(m => m.id !== action.payload);
+            // 🔥 Optimistic Delete
+            .addCase(deleteMessage.pending, (state, action) => {
+                const id = action.meta.arg;
+                const message = state.messages.find(m => m.id === id);
+                if (message) {
+                    state.deletedBackup[id] = message;
+                    state.messages = state.messages.filter(m => m.id !== id);
+                }
+            })
+            .addCase(deleteMessage.rejected, (state, action) => {
+                const id = action.meta.arg;
+                if (state.deletedBackup[id]) {
+                    state.messages.push(state.deletedBackup[id]);
+                    delete state.deletedBackup[id];
+                }
             });
     },
 });
+
+
+// Selectors
+export const selectMessagesState = (state) => state.messages;
+export const selectMessages = createSelector(
+    [selectMessagesState],
+    (messageState) => ({
+        messages: messageState.messages,
+        pagination: messageState.pagination,
+        loading: messageState.loading,
+        error: messageState.error,
+    })
+);
 
 export const { clearMessageError } = messageSlice.actions;
 export default messageSlice.reducer;

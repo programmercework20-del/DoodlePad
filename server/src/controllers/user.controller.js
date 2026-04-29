@@ -129,7 +129,8 @@ export const warnUser = async (req, res) => {
         res.json({
             success: true,
             message: "User warned successfully",
-            data: { warningCount: user.warningCount }
+            data: { warningCount: user.warningCount },
+            user
         });
     } catch (error) {
         console.error("Warn user error:", error);
@@ -141,18 +142,14 @@ export const warnUser = async (req, res) => {
 };
 
 // Block user temporarily
+// Block user
 export const blockUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { reason, duration } = req.body;
-
         const user = await User.findByPk(id);
 
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found"
-            });
+            return res.status(404).json({ success: false, message: "User not found" });
         }
 
         user.status = "blocked";
@@ -160,14 +157,13 @@ export const blockUser = async (req, res) => {
 
         res.json({
             success: true,
-            message: "User blocked successfully"
+            message: "User blocked successfully",
+            user // ✅ FIX
         });
+
     } catch (error) {
         console.error("Block user error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Server error"
-        });
+        res.status(500).json({ success: false, message: "Server error" });
     }
 };
 
@@ -191,7 +187,8 @@ export const banUser = async (req, res) => {
 
         res.json({
             success: true,
-            message: "User banned permanently"
+            message: "User banned permanently",
+            user
         });
     } catch (error) {
         console.error("Ban user error:", error);
@@ -221,7 +218,8 @@ export const unblockUser = async (req, res) => {
 
         res.json({
             success: true,
-            message: "User unblocked successfully"
+            message: "User unblocked successfully",
+            user
         });
     } catch (error) {
         console.error("Unblock user error:", error);

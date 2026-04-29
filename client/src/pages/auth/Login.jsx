@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { loginAdmin, clearError } from '@/store/slices/authSlice';
+import { loginAdmin, clearError, selectAuth } from '@/store/slices/authSlice';
 import PageAnimation from '@/components/common/PageAnimation';
 
 import {
@@ -24,7 +24,7 @@ export default function Login() {
 
     const dispatch = useDispatch();
     const navigate = useNavigate();
-    const { loading, error } = useSelector((state) => state.auth);
+    const { loading, error } = useSelector(selectAuth);
 
     useEffect(() => {
         return () => {

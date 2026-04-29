@@ -1,24 +1,38 @@
-import { Flag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Flag } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     fetchReports,
-    updateReportStatus
+    updateReportStatus,
+    selectReports
 } from '@/store/slices/reportSlice';
 
 import AdminLayout from '@/components/layout/AdminLayout';
 import Loader from '@/components/common/Loader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Button as Button1 } from '@/components/ui/button-1';
-import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import PageAnimation from '@/components/common/PageAnimation';
 import EmptyState from '@/components/common/EmptyState';
+import DataTable from '@/components/common/DataTable';
+import Avatar from '@/components/common/Avatar';
+
+const STATUS_VARIANTS = {
+    pending: 'secondary',
+    reviewing: 'default',
+    resolved: 'outline',
+    rejected: 'destructive',
+};
+
+const PRIORITY_VARIANTS = {
+    low: 'outline',
+    medium: 'secondary',
+    high: 'destructive',
+};
 
 export default function Reports() {
     const dispatch = useDispatch();
-    const { reports, pagination, loading, error } = useSelector((state) => state.reports);
+    const { reports, pagination, loading, error } = useSelector(selectReports);
 
     const [statusFilter, setStatusFilter] = useState('pending');
     const [priorityFilter, setPriorityFilter] = useState('');
@@ -33,31 +47,93 @@ export default function Reports() {
         try {
             await dispatch(updateReportStatus({ id, status })).unwrap();
             setConfirmDialog(null);
-            // No need to manual refetch if optimistic update or re-fetch logic is not critical immediately 
-            // (or if thunk updates state). My reportSlice updates state locally on fulfill.
         } catch (err) {
             console.error('Error updating status:', err);
         }
     };
 
-    const getStatusBadge = (status) => {
-        const variants = {
-            pending: 'secondary',
-            reviewing: 'default',
-            resolved: 'outline',
-            rejected: 'destructive',
-        };
-        return <Badge variant={variants[status] || 'default'}>{status}</Badge>;
-    };
-
-    const getPriorityBadge = (priority) => {
-        const variants = {
-            low: 'outline',
-            medium: 'secondary',
-            high: 'destructive',
-        };
-        return <Badge variant={variants[priority] || 'default'}>{priority}</Badge>;
-    };
+    const REPORT_COLUMNS = [
+        {
+            key: 'reporter',
+            label: 'Reporter',
+            render: (report) => (
+                <div className="flex items-center gap-3">
+                    <Avatar src={report.reporter?.profilePhoto} name={report.reporter?.name} size="h-8 w-8" />
+                    <span className="text-sm font-medium">{report.reporter?.name}</span>
+                </div>
+            )
+        },
+        {
+            key: 'targetType',
+            label: 'Type',
+            render: (report) => <Badge variant="outline">{report.targetType}</Badge>
+        },
+        {
+            key: 'reason',
+            label: 'Reason',
+            render: (report) => <span className="text-sm">{report.reason}</span>
+        },
+        {
+            key: 'priority',
+            label: 'Priority',
+            render: (report) => (
+                <Badge variant={PRIORITY_VARIANTS[report.priority] || 'default'}>
+                    {report.priority}
+                </Badge>
+            )
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            render: (report) => (
+                <Badge variant={STATUS_VARIANTS[report.status] || 'default'}>
+                    {report.status}
+                </Badge>
+            )
+        },
+        {
+            key: 'actions',
+            label: 'Actions',
+            render: (report) => (
+                <div className="flex gap-2">
+                    {report.status === 'pending' && (
+                        <>
+                            <Button
+                                size="sm"
+                                variant="default"
+                                onClick={() =>
+                                    setConfirmDialog({
+                                        title: 'Resolve Report',
+                                        description: 'Mark this report as resolved?',
+                                        confirmText: 'Resolve',
+                                        onConfirm: () => handleUpdateStatus(report.id, 'resolved'),
+                                        variant: 'default',
+                                    })
+                                }
+                            >
+                                Resolve
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                    setConfirmDialog({
+                                        title: 'Reject Report',
+                                        description: 'Reject this report as invalid?',
+                                        confirmText: 'Reject',
+                                        onConfirm: () => handleUpdateStatus(report.id, 'rejected'),
+                                        variant: 'destructive',
+                                    })
+                                }
+                            >
+                                Reject
+                            </Button>
+                        </>
+                    )}
+                </div>
+            )
+        }
+    ];
 
     return (
         <AdminLayout>
@@ -106,160 +182,33 @@ export default function Reports() {
                 )}
 
                 {!loading && reports && (
-                    <>
-                        {reports.length === 0 ? (
-                            <EmptyState
-                                icon={Flag}
-                                title="No reports found"
-                                description={
-                                    statusFilter || priorityFilter
-                                        ? "No reports match your current filters."
-                                        : "No reports found."
-                                }
-                                actionLabel={
-                                    (statusFilter !== 'pending' || priorityFilter) ? "Reset Filters" : undefined
-                                }
-                                onAction={() => {
-                                    setStatusFilter('pending');
-                                    setPriorityFilter('');
-                                    setPage(1);
-                                }}
-                            />
-                        ) : (
-                            <div className="bg-white rounded-lg border overflow-hidden transition-all duration-300 hover:shadow-md">
-                                <table className="w-full">
-                                    <thead className="bg-gray-50 border-b">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reporter</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {reports.map((report) => (
-                                            <tr key={report.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4 text-sm">{report.reporter?.name}</td>
-                                                <td className="px-6 py-4">
-                                                    <Badge variant="outline">{report.targetType}</Badge>
-                                                </td>
-                                                <td className="px-6 py-4 text-sm">{report.reason}</td>
-                                                <td className="px-6 py-4">{getPriorityBadge(report.priority)}</td>
-                                                <td className="px-6 py-4">{getStatusBadge(report.status)}</td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex gap-2">
-                                                        {report.status === 'pending' && (
-                                                            <>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="default"
-                                                                    onClick={() =>
-                                                                        setConfirmDialog({
-                                                                            title: 'Resolve Report',
-                                                                            description: 'Mark this report as resolved?',
-                                                                            confirmText: 'Resolve',
-                                                                            onConfirm: () => handleUpdateStatus(report.id, 'resolved'),
-                                                                            variant: 'default',
-                                                                        })
-                                                                    }
-                                                                >
-                                                                    Resolve
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    onClick={() =>
-                                                                        setConfirmDialog({
-                                                                            title: 'Reject Report',
-                                                                            description: 'Reject this report as invalid?',
-                                                                            confirmText: 'Reject',
-                                                                            onConfirm: () => handleUpdateStatus(report.id, 'rejected'),
-                                                                            variant: 'destructive',
-                                                                        })
-                                                                    }
-                                                                >
-                                                                    Reject
-                                                                </Button>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {pagination && pagination.pages > 1 && (
-                            <div className="flex flex-col md:flex-row items-center justify-between mt-6 gap-4 border-t pt-6 px-2">
-                                <p className="text-sm text-gray-500">
-                                    Showing {reports.length} of {pagination.total} reports (Page {page} of {pagination.pages})
-                                </p>
-                                <Pagination>
-                                    <PaginationContent>
-                                        <PaginationItem>
-                                            <Button1
-                                                variant="ghost"
-                                                disabled={page === 1}
-                                                onClick={() => setPage(page - 1)}
-                                                className="gap-1 px-3"
-                                            >
-                                                <ChevronLeft className="h-4 w-4" />
-                                                Previous
-                                            </Button1>
-                                        </PaginationItem>
-
-                                        {[...Array(pagination.pages)].map((_, index) => {
-                                            const pageNum = index + 1;
-                                            if (
-                                                pagination.pages <= 7 ||
-                                                pageNum === 1 ||
-                                                pageNum === pagination.pages ||
-                                                (pageNum >= page - 1 && pageNum <= page + 1)
-                                            ) {
-                                                return (
-                                                    <PaginationItem key={pageNum}>
-                                                        <Button1
-                                                            variant={page === pageNum ? "outline" : "ghost"}
-                                                            size="icon"
-                                                            onClick={() => setPage(pageNum)}
-                                                        >
-                                                            {pageNum}
-                                                        </Button1>
-                                                    </PaginationItem>
-                                                );
-                                            } else if (
-                                                (pageNum === page - 2 && pageNum > 1) ||
-                                                (pageNum === page + 2 && pageNum < pagination.pages)
-                                            ) {
-                                                return (
-                                                    <PaginationItem key={pageNum}>
-                                                        <PaginationEllipsis />
-                                                    </PaginationItem>
-                                                );
-                                            }
-                                            return null;
-                                        })}
-
-                                        <PaginationItem>
-                                            <Button1
-                                                variant="ghost"
-                                                disabled={page === pagination.pages}
-                                                onClick={() => setPage(page + 1)}
-                                                className="gap-1 px-3"
-                                            >
-                                                Next
-                                                <ChevronRight className="h-4 w-4" />
-                                            </Button1>
-                                        </PaginationItem>
-                                    </PaginationContent>
-                                </Pagination>
-                            </div>
-                        )}
-                    </>
+                    reports.length === 0 ? (
+                        <EmptyState
+                            icon={Flag}
+                            title="No reports found"
+                            description={
+                                statusFilter || priorityFilter
+                                    ? "No reports match your current filters."
+                                    : "No reports found."
+                            }
+                            actionLabel={
+                                (statusFilter !== 'pending' || priorityFilter) ? "Reset Filters" : undefined
+                            }
+                            onAction={() => {
+                                setStatusFilter('pending');
+                                setPriorityFilter('');
+                                setPage(1);
+                            }}
+                        />
+                    ) : (
+                        <DataTable
+                            columns={REPORT_COLUMNS}
+                            data={reports}
+                            pagination={pagination}
+                            page={page}
+                            onPageChange={setPage}
+                        />
+                    )
                 )}
 
                 {confirmDialog && (
@@ -273,3 +222,4 @@ export default function Reports() {
         </AdminLayout>
     );
 }
+
