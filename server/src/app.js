@@ -103,7 +103,6 @@ app.get("/health", (req, res) => {
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // ✅ API routes
-app.use("/api", apiRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
@@ -115,6 +114,7 @@ app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api", apiRoutes);
 // app.use(express.static("public"));
 
 
