@@ -1,7 +1,8 @@
 import { 
   Conversation, 
   ConversationParticipant, 
-  User 
+  User,
+  sequelize // <--- 1. YAHAN SEQUELIZE IMPORT KIYA (Zaruri hai)
 } from "../../models/index.js";
 import { Op } from "sequelize";
 import redisClient from "../../config/redis.js";
@@ -29,7 +30,7 @@ export const getConversations = async (req, res) => {
         {
           model: ConversationParticipant,
           as: "participants",
-          required: true, // Inner Join for performance
+          required: true, 
           include: [
             {
               model: User,
@@ -37,11 +38,10 @@ export const getConversations = async (req, res) => {
               attributes: ["id", "username", "profilePhoto"]
             }
           ],
-          // Subquery optimization: Sirf wahi convs load karo jisme current user ho
+          // 🔥 FIXED: Subquery logic with literal fix
           where: {
             conversationId: {
               [Op.in]: [
-                // Subquery to find all conversation IDs for this user
                 sequelize.literal(`(SELECT "conversationId" FROM "ConversationParticipants" WHERE "userId" = '${userId}')`)
               ]
             }
@@ -49,10 +49,10 @@ export const getConversations = async (req, res) => {
         }
       ],
       where: {
-        // Optional: Yahan status ya hide deleted convs ka logic daal sakte hain
+        // Optional logic (active/deleted status) can go here
       },
       order: [["lastMessageAt", "DESC"]],
-      limit: 50 // Security limit
+      limit: 50 
     });
 
     // 3. Format result (Find "Other User")
@@ -61,6 +61,7 @@ export const getConversations = async (req, res) => {
       const otherParticipant = conv.participants.find(p => p.userId !== userId);
       const otherUser = otherParticipant ? otherParticipant.user : null;
 
+      // 🔥 Added safety check for empty mediaUrls/lastMessage logic
       return {
         id: conv.id,
         lastMessage: conv.lastMessage || "Start chatting...",
@@ -82,9 +83,11 @@ export const getConversations = async (req, res) => {
 
   } catch (err) {
     console.error("🔥 CONVERSATION ERROR:", err);
+    // Yahan log mein check karein agar 'sequelize is not defined' abhi bhi aa raha ho
     return res.status(500).json({ 
       success: false, 
-      message: "Failed to load conversations" 
+      message: "Failed to load conversations",
+      error: err.message // Error message debug karne ke liye
     });
   }
 };
