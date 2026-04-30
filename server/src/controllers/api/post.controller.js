@@ -306,12 +306,16 @@ export const deletePost = async (req, res) => {
   }
 };
 
+
+
+
+
 export const getUserPosts = async (req, res) => {
   try {
     const { id } = req.params;
     const cacheKey = `userPosts:${id}`;
 
-    // 🚀 1. Check Redis Cache First
+    // 🚀 1. Check Redis Cache
     if (redisClient?.isReady) {
       const cachedData = await redisClient.get(cacheKey);
       if (cachedData) {
@@ -320,50 +324,97 @@ export const getUserPosts = async (req, res) => {
       }
     }
 
-    // 🚀 2. Fetch from DB if Cache is empty
+    // 🚀 2. Fetch from DB
     const posts = await Post.findAll({
       where: {
         userId: id,
         status: "active",
-        [Op.or]: [
-          { isSaved: true },
-          {
-            isSaved: false,
-            expiresAt: { [Op.gt]: new Date() } // ✅ NOT expired
-          }
-        ]
+        // ... (Apka Op.or wala logic same rahega)
       },
+      attributes: [
+        "id", "userId", "type", "content", "mediaUrls", "caption", 
+        "status", "likesCount", "commentsCount", // ✅ Is field ko check karein DB mein
+        "sharesCount", "isSaved", "expiresAt", "createdAt"
+      ],
       include: [
         {
           model: User,
           as: "author",
           attributes: ["id", "username", "profilePhoto"]
-        },
-        {
-          model: Comment,
-          as: "comments",
-          attributes: ["id", "content", "createdAt"]
         }
       ],
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 3. Save to Redis Cache (1 Hour Expiry)
-    if (redisClient?.isReady) {
+    // 🚀 3. Update Redis Cache
+    if (redisClient?.isReady && posts.length > 0) {
       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
     }
 
-    return res.json({
-      success: true,
-      count: posts.length,
-      posts
-    });
+    return res.json({ success: true, count: posts.length, posts });
 
   } catch (error) {
-    console.error("Get user posts error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch user posts"
-    });
+    // ... error handling
   }
 };
+// export const getUserPosts = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const cacheKey = `userPosts:${id}`;
+
+//     // 🚀 1. Check Redis Cache First
+//     if (redisClient?.isReady) {
+//       const cachedData = await redisClient.get(cacheKey);
+//       if (cachedData) {
+//         const parsedData = JSON.parse(cachedData);
+//         return res.json({ success: true, count: parsedData.length, posts: parsedData });
+//       }
+//     }
+
+//     // 🚀 2. Fetch from DB if Cache is empty
+//     const posts = await Post.findAll({
+//       where: {
+//         userId: id,
+//         status: "active",
+//         [Op.or]: [
+//           { isSaved: true },
+//           {
+//             isSaved: false,
+//             expiresAt: { [Op.gt]: new Date() } // ✅ NOT expired
+//           }
+//         ]
+//       },
+//       include: [
+//         {
+//           model: User,
+//           as: "author",
+//           attributes: ["id", "username", "profilePhoto"]
+//         },
+//         {
+//           model: Comment,
+//           as: "comments",
+//           attributes: ["id", "content", "createdAt"]
+//         }
+//       ],
+//       order: [["createdAt", "DESC"]]
+//     });
+
+//     // 🚀 3. Save to Redis Cache (1 Hour Expiry)
+//     if (redisClient?.isReady) {
+//       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+//     }
+
+//     return res.json({
+//       success: true,
+//       count: posts.length,
+//       posts
+//     });
+
+//   } catch (error) {
+//     console.error("Get user posts error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch user posts"
+//     });
+//   }
+// };

@@ -9,6 +9,72 @@ import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket
 // ============================================================
 // ADD COMMENT / REPLY (With GCS & Cache Clear)
 // ============================================================
+// export const addComment = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const { postId } = req.params;
+//     const { type, content, parentId } = req.body;
+
+//     let mediaUrl = null;
+
+//     // 🔥 GCS Bucket Upload logic
+//     if (req.file) {
+//       const fileName = `comments/comment_${userId}_${Date.now()}`;
+//       const blob = bucket.file(fileName);
+//       await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+//       mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+//     }
+
+//     const post = await Post.findByPk(postId);
+//     if (!post) return res.status(404).json({ success: false, message: "Post not found" });
+
+//     const comment = await Comment.create({
+//       postId,
+//       userId,
+//       type: type || "text",
+//       content,
+//       mediaUrl,
+//       parentId: parentId || null
+//     });
+
+//     await post.increment("commentsCount");
+
+//     // 🚀 Clear Redis Cache for this post's comments
+//     if (redisClient?.isReady) {
+//       await redisClient.del(`comments:${postId}`);
+//       await redisClient.del(`post:${postId}`);
+//     }
+
+//     // 🔔 Notification Logic
+//     let receiverId = post.userId;
+//     if (parentId) {
+//       const parentComment = await Comment.findByPk(parentId);
+//       if (parentComment && parentComment.userId !== userId) {
+//         receiverId = parentComment.userId;
+//       }
+//     }
+
+//     if (receiverId !== userId) {
+//       createNotification({
+//         senderId: userId,
+//         receiverId,
+//         type: parentId ? "REPLY_COMMENT" : "COMMENT_POST",
+//         postId,
+//         commentId: comment.id
+//       }).catch(e => console.error(e));
+//     }
+
+//     return res.status(201).json({
+//       success: true,
+//       message: parentId ? "Reply added" : "Comment added",
+//       comment
+//     });
+
+//   } catch (error) {
+//     console.error("ADD COMMENT ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to add comment" });
+//   }
+// };
 export const addComment = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -17,17 +83,23 @@ export const addComment = async (req, res) => {
 
     let mediaUrl = null;
 
-    // 🔥 GCS Bucket Upload logic
+    // 🔥 1. GCS Bucket Upload logic
     if (req.file) {
       const fileName = `comments/comment_${userId}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      
+      // Resumable false rakha hai fast processing ke liye
+      await blob.save(req.file.buffer, { 
+        metadata: { contentType: req.file.mimetype },
+        resumable: false 
+      });
       mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
     const post = await Post.findByPk(postId);
     if (!post) return res.status(404).json({ success: false, message: "Post not found" });
 
+    // 2. Database mein Comment create karein
     const comment = await Comment.create({
       postId,
       userId,
@@ -37,15 +109,26 @@ export const addComment = async (req, res) => {
       parentId: parentId || null
     });
 
+    // 3. Post table mein commentsCount ko update karein
     await post.increment("commentsCount");
 
-    // 🚀 Clear Redis Cache for this post's comments
+    // 🚀 4. REDIS CACHE MANAGEMENT (Production Level)
     if (redisClient?.isReady) {
+      // Is post ki comments list delete karein
       await redisClient.del(`comments:${postId}`);
+      
+      // Is individual post ki cache delete karein
       await redisClient.del(`post:${postId}`);
+
+      // 🔥 CRITICAL: Jis user ki post hai uski profile cache (userPosts) delete karein
+      // Taki profile page par updated commentsCount (e.g., 2 comments) dikhe
+      await redisClient.del(`userPosts:${post.userId}`);
+      
+      // Agar aap global feed cache use karte hain toh use bhi clear karein
+      // await redisClient.del(`feed:*`); 
     }
 
-    // 🔔 Notification Logic
+    // 🔔 5. Notification Logic
     let receiverId = post.userId;
     if (parentId) {
       const parentComment = await Comment.findByPk(parentId);
@@ -61,7 +144,7 @@ export const addComment = async (req, res) => {
         type: parentId ? "REPLY_COMMENT" : "COMMENT_POST",
         postId,
         commentId: comment.id
-      }).catch(e => console.error(e));
+      }).catch(e => console.error("Notification delivery failed:", e));
     }
 
     return res.status(201).json({
@@ -75,7 +158,6 @@ export const addComment = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to add comment" });
   }
 };
-
 // ============================================================
 // GET POST COMMENTS (Top-level + Replies)
 // ============================================================

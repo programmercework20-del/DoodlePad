@@ -25,8 +25,6 @@ export const toggleLikePost = async (req, res) => {
       where: { postId, userId }
     });
 
-    // 🚀 Redis Cache Invalidation logic
-    // Jab like/unlike ho, toh post ka cache clear karna zaroori hai
     const clearCache = async () => {
       if (redisClient?.isReady) {
         await redisClient.del(`post:${postId}`);
