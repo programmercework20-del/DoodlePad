@@ -344,7 +344,7 @@ export const getUserPosts = async (req, res) => {
               FROM "comments" AS c
               WHERE c."postId" = "Post"."id"
               AND c."status" = 'active'
-              AND c."deletedAt" IS NULL
+             
             )`),
             "commentsCount"
           ]
