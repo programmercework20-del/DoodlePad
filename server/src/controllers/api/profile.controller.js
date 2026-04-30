@@ -108,145 +108,69 @@ export const getUserProfile = async (req, res) => {
 };
 
 // ============================================================
-// UPDATE MY PROFILE (With GCS & Cache Clear)
+// UPDATE MY PROFILE (With GCS Fixed URL)
 // ============================================================
-// export const updateMyProfile = async (req, res) => {
-//   try {
-//     const user = await User.findByPk(req.user.id);
-//     if (!user) return res.status(404).json({ message: "User not found" });
-
-//     let { name, bio, dateOfBirth, gender, username } = req.body;
-//     username = username?.trim();
-
-//     if (username && username !== user.username) {
-//       const existing = await User.findOne({ where: { username } });
-//       if (existing) return res.status(400).json({ message: "Username taken" });
-//     }
-
-//     let profilePhoto = user.profilePhoto;
-//     if (req.file) {
-//       const fileName = `profile_images/user_${req.user.id}_${Date.now()}`;
-//       const blob = bucket.file(fileName);
-      
-//       // Using blob.save for better stability with JWT
-//       await blob.save(req.file.buffer, {
-//         metadata: { contentType: req.file.mimetype },
-//         resumable: false
-//       });
-      
-//       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-//     }
-
-//     await user.update({
-//       name: name ?? user.name,
-//       username: username ?? user.username,
-//       bio: bio ?? user.bio,
-//       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
-//       gender: gender || null,
-//       profilePhoto
-//     });
-
-//     // Clean Redis Cache
-//     if (redisClient?.isReady) {
-//       const keys = await redisClient.keys(`userProfile:${req.user.id}:*`);
-//       if (keys.length > 0) await redisClient.del(keys);
-//       await redisClient.del(`myProfile:${req.user.id}`);
-//     }
-
-//     return res.json({ success: true, message: "Profile updated", user });
-//   } catch (error) {
-//     console.error("UPDATE PROFILE ERROR:", error);
-//     res.status(500).json({ message: "Update failed" });
-//   }
-// };
 export const updateMyProfile = async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     let { name, bio, dateOfBirth, gender, username } = req.body;
-
-    // 🔥 Normalize input (important)
+    
     username = username?.trim();
     name = name?.trim();
     bio = bio?.trim();
 
-    /* ================= USERNAME CHECK ================= */
     if (username && username !== user.username) {
-      const existingUsername = await User.findOne({
-        where: { username }
-      });
-
-      if (existingUsername) {
-        return res.status(400).json({
-          message: "Username already taken"
-        });
-      }
+      const existing = await User.findOne({ where: { username } });
+      if (existing) return res.status(400).json({ message: "Username already taken" });
     }
 
-    /* ================= PROFILE PHOTO ================= */
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    let profilePhoto = user.profilePhoto;
+    if (req.file) {
+      const fileName = `profile_images/user_${req.user.id}_${Date.now()}`;
+      const blob = bucket.file(fileName);
+      
+      await blob.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype },
+        resumable: false
+      });
+      
+      // ✅ Live GCS URL Format
+      profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    }
 
-    const profilePhoto = req.file
-      ? `${baseUrl}/uploads/stories/${req.file.filename}`
-      : user.profilePhoto;
-
-    /* ================= UPDATE ONLY PROVIDED FIELDS ================= */
     await user.update({
       name: name ?? user.name,
       username: username ?? user.username,
-      bio: bio ?? user.bio, // ✅ editable bio
+      bio: bio ?? user.bio,
       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
-      gender: gender || null, // ✅ optional gender (important fix)
+      gender: gender || null,
       profilePhoto
     });
 
-    return res.json({
-      success: true,
-      message: "Profile updated successfully",
-      user
-    });
+    // Clean Redis Cache
+    if (redisClient?.isReady) {
+      const keys = await redisClient.keys(`userProfile:${req.user.id}:*`);
+      if (keys.length > 0) await redisClient.del(keys);
+      await redisClient.del(`myProfile:${req.user.id}`);
+    }
 
+    return res.json({ success: true, message: "Profile updated successfully", user });
   } catch (error) {
     console.error("UPDATE PROFILE ERROR:", error);
     res.status(500).json({ message: "Profile update failed" });
   }
 };
-//updated
-// export const getMyProfile = async (req, res) => {
-//   try {
-//     const cacheKey = `myProfile:${req.user.id}`;
-    
-//     // Redis clear karke fresh data mangwao
-//     const user = await User.findByPk(req.user.id, {
-//       attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData"]
-//     });
 
-//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-//     // Response structure ko App ke hisaab se set karo
-//     res.json({ 
-//       success: true, 
-//       data: {
-//         profile: {
-//           user: user
-//         }
-//       }
-//     });
-//   } catch (error) {
-//     console.error("GET MY PROFILE ERROR:", error);
-//     res.status(500).json({ success: false, message: "Failed to fetch profile" });
-//   }
-// };
+// ============================================================
+// GET MY PROFILE
+// ============================================================
 export const getMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const cacheKey = `myProfile:${userId}`;
 
-    // Redis Check
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
       if (cached) {
@@ -258,14 +182,13 @@ export const getMyProfile = async (req, res) => {
     }
 
     const user = await User.findByPk(userId, {
-      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId"]
+      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData"]
     });
 
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user));
 
-    // 🔥 App structure: data.profile.user
     res.json({
       success: true,
       data: {
@@ -274,73 +197,15 @@ export const getMyProfile = async (req, res) => {
         }
       }
     });
-
   } catch (error) {
     console.error("GET PROFILE ERROR:", error);
     res.status(500).json({ message: "Failed to fetch profile" });
   }
 };
+
 // ============================================================
-// SEND DOODLE REQUEST (GCS Base64 Fix)
+// SEND DOODLE REQUEST (GCS Fixed URL)
 // ============================================================
-// export const sendDoodleRequest = async (req, res) => {
-//   try {
-//     const senderId = req.user.id;
-//     const { receiverId, base64Image, doodleData } = req.body;
-
-//     let finalDoodleImage = null;
-
-//     // Case 1: Base64 Canvas
-//     if (base64Image) {
-//       const base64Clean = base64Image.includes('base64,') ? base64Image.split('base64,')[1] : base64Image;
-//       const buffer = Buffer.from(base64Clean, "base64");
-      
-//       if (buffer.length < 500) throw new Error("Invalid image data");
-
-//       const fileName = `doodle_images/doodle_${senderId}_${Date.now()}.png`;
-//       const blob = bucket.file(fileName);
-
-//       await blob.save(buffer, {
-//         metadata: { contentType: "image/png" },
-//         resumable: false
-//       });
-
-//       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-//     } 
-//     // Case 2: Multi-part File
-//     else if (req.file) {
-//       const fileName = `doodle_images/doodle_${senderId}_${Date.now()}`;
-//       const blob = bucket.file(fileName);
-//       await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
-//       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-//     }
-
-//     const request = await DoodleRequest.create({
-//       senderId,
-//       receiverId,
-//       doodleImage: finalDoodleImage,
-//       doodleData: doodleData || null,
-//       status: "pending",
-//     });
-
-//     await createNotification({ senderId, receiverId, type: "DOODLE_REQUEST", doodleRequestId: request.id });
-
-//     return res.status(201).json({ success: true, message: "Doodle request sent", request });
-//   } catch (error) {
-//     console.error("DOODLE SEND ERROR:", error);
-//     return res.status(500).json({ message: "Failed to send request" });
-//   }
-// };
-
-const buildUploadedFileUrl = (req, file) => {
-  if (!file) return null;
-
-  const filename = file.filename || path.basename(file.path || "");
-  if (!filename) return null;
-
-  return `${req.protocol}://${req.get("host")}/uploads/doodles/${filename}`;
-};
-
 export const sendDoodleRequest = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -351,18 +216,23 @@ export const sendDoodleRequest = async (req, res) => {
     let finalDoodleImage = null;
     let finalDoodleData = (Array.isArray(paths) && paths.length > 0) ? JSON.stringify(paths) : doodleData;
 
-    // 🔥 GCS Upload Logic (Local Storage ki jagah Bucket use ho raha hai)
     if (req.file) {
       const fileName = `doodles/doodle_${senderId}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      await blob.save(req.file.buffer, { 
+        metadata: { contentType: req.file.mimetype },
+        resumable: false 
+      });
       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     } else if (base64Image) {
       const base64Clean = base64Image.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Clean, "base64");
       const fileName = `doodles/doodle_${senderId}_${Date.now()}.png`;
       const blob = bucket.file(fileName);
-      await blob.save(buffer, { metadata: { contentType: "image/png" } });
+      await blob.save(buffer, { 
+        metadata: { contentType: "image/png" },
+        resumable: false 
+      });
       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
@@ -387,61 +257,10 @@ export const sendDoodleRequest = async (req, res) => {
     return res.status(500).json({ message: "Failed to send request" });
   }
 };
+
 // ============================================================
 // ACCEPT / REJECT / GET DOODLE REQUESTS
 // ============================================================
-// export const acceptDoodleRequest = async (req, res) => {
-//   try {
-//     const { requestId } = req.params;
-//     const userId = req.user.id;
-
-//     const request = await DoodleRequest.findByPk(requestId);
-//     if (!request || request.receiverId !== userId) return res.status(403).json({ message: "Not allowed" });
-
-//     await request.update({ status: "accepted" });
-//     await User.update(
-//       { doodleImage: request.doodleImage, doodleData: request.doodleData, doodleOwnerId: request.senderId },
-//       { where: { id: userId } }
-//     );
-
-//     if (redisClient?.isReady) {
-//        const keys = await redisClient.keys(`userProfile:${userId}:*`);
-//        if (keys.length > 0) await redisClient.del(keys);
-//        await redisClient.del(`myProfile:${userId}`);
-//     }
-
-//     await createNotification({ senderId: userId, receiverId: request.senderId, type: "DOODLE_ACCEPTED", doodleRequestId: request.id });
-//     res.json({ success: true, message: "Doodle applied" });
-//   } catch (error) {
-//     res.status(500).json({ message: "Accept failed" });
-//   }
-// };
-
-// export const rejectDoodleRequest = async (req, res) => {
-//   try {
-//     const { requestId } = req.params;
-//     const request = await DoodleRequest.findByPk(requestId);
-//     if (!request || request.receiverId !== req.user.id) return res.status(403).json({ message: "Not allowed" });
-
-//     await request.update({ status: "rejected" });
-//     res.json({ success: true, message: "Rejected" });
-//   } catch (error) {
-//     res.status(500).json({ message: "Reject failed" });
-//   }
-// };
-
-// export const getDoodleRequests = async (req, res) => {
-//   try {
-//     const requests = await DoodleRequest.findAll({
-//       where: { receiverId: req.user.id, status: "pending" },
-//       order: [["createdAt", "DESC"]]
-//     });
-//     res.json({ success: true, requests });
-//   } catch (error) {
-//     res.status(500).json({ message: "Fetch failed" });
-//   }
-// };
-
 export const acceptDoodleRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -468,7 +287,7 @@ export const acceptDoodleRequest = async (req, res) => {
       { where: { id: userId } }
     );
 
-    // 🔥 Redis Cache Clear
+    // Redis Cache Clear
     if (redisClient?.isReady) {
       const keys = await redisClient.keys(`userProfile:${userId}:*`);
       if (keys.length > 0) await redisClient.del(keys);
@@ -506,6 +325,7 @@ export const rejectDoodleRequest = async (req, res) => {
     return res.status(500).json({ message: "Failed to reject request" });
   }
 };
+
 export const getDoodleRequests = async (req, res) => {
   try {
     const requests = await DoodleRequest.findAll({
