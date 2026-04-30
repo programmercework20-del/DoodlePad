@@ -313,16 +313,7 @@ export const getUserPosts = async (req, res) => {
     const { id } = req.params;
     const cacheKey = `userPosts:${id}`;
 
-    // 1. Redis Cache Check
-    if (redisClient?.isReady) {
-      const cachedData = await redisClient.get(cacheKey);
-      if (cachedData) {
-        const parsedData = JSON.parse(cachedData);
-        return res.json({ success: true, count: parsedData.length, posts: parsedData });
-      }
-    }
-
-    // 2. Fetch from DB
+    // 🚀 1. Database se Fresh Data nikalna (Redis ko bypass kar rahe hain for count accuracy)
     const posts = await Post.findAll({
       where: {
         userId: id,
@@ -337,14 +328,13 @@ export const getUserPosts = async (req, res) => {
       },
       attributes: {
         include: [
-          // ✅ Yahan Sequelize.literal tabhi chalega jab upar import hoga
+          // ✅ Real-time Accurate Count (Database se live calculate karega)
           [
             Sequelize.literal(`(
-              SELECT COUNT(*)
+              SELECT COUNT(*)::int
               FROM "comments" AS c
               WHERE c."postId" = "Post"."id"
               AND c."status" = 'active'
-             
             )`),
             "commentsCount"
           ]
@@ -360,9 +350,9 @@ export const getUserPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    // 3. Save to Redis
+    // 🚀 2. Update Redis with this fresh data
     if (redisClient?.isReady && posts.length > 0) {
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(posts)); // Expiry 5 mins kar di hai
     }
 
     return res.json({
