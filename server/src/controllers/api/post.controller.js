@@ -1,8 +1,9 @@
+import { Op, Sequelize } from "sequelize";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import Comment from "../../models/Comment.js";
 import { processHashtags } from "../../utils/hashtag.util.js";
-import { Op } from "sequelize";
+
 
 // 🔥 REDIS & BUCKET IMPORT
 import redisClient from "../../config/redis.js"; 
@@ -312,7 +313,7 @@ export const getUserPosts = async (req, res) => {
     const { id } = req.params;
     const cacheKey = `userPosts:${id}`;
 
-    // 🚀 1. Check Redis Cache First
+    // 1. Redis Cache Check
     if (redisClient?.isReady) {
       const cachedData = await redisClient.get(cacheKey);
       if (cachedData) {
@@ -321,7 +322,7 @@ export const getUserPosts = async (req, res) => {
       }
     }
 
-    // 🚀 2. Fetch from DB with "Live Accurate Count"
+    // 2. Fetch from DB
     const posts = await Post.findAll({
       where: {
         userId: id,
@@ -336,7 +337,7 @@ export const getUserPosts = async (req, res) => {
       },
       attributes: {
         include: [
-          // ✅ Ye query sirf un comments ko ginegi jo delete nahi hue hain
+          // ✅ Yahan Sequelize.literal tabhi chalega jab upar import hoga
           [
             Sequelize.literal(`(
               SELECT COUNT(*)
@@ -345,7 +346,7 @@ export const getUserPosts = async (req, res) => {
               AND c."status" = 'active'
               AND c."deletedAt" IS NULL
             )`),
-            "commentsCount" // Purane "commentsCount" column ko overwrite kar dega accurate data se
+            "commentsCount"
           ]
         ]
       },
@@ -359,7 +360,7 @@ export const getUserPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 3. Save to Redis Cache (1 Hour Expiry)
+    // 3. Save to Redis
     if (redisClient?.isReady && posts.length > 0) {
       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
     }
@@ -378,7 +379,6 @@ export const getUserPosts = async (req, res) => {
     });
   }
 };
-
 
 // export const getUserPosts = async (req, res) => {
 //   try {
