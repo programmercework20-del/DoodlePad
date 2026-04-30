@@ -307,15 +307,12 @@ export const deletePost = async (req, res) => {
 };
 
 
-
-
-
 export const getUserPosts = async (req, res) => {
   try {
     const { id } = req.params;
     const cacheKey = `userPosts:${id}`;
 
-    // 🚀 1. Check Redis Cache
+    // 🚀 1. Check Redis Cache First
     if (redisClient?.isReady) {
       const cachedData = await redisClient.get(cacheKey);
       if (cachedData) {
@@ -324,18 +321,34 @@ export const getUserPosts = async (req, res) => {
       }
     }
 
-    // 🚀 2. Fetch from DB
+    // 🚀 2. Fetch from DB with "Live Accurate Count"
     const posts = await Post.findAll({
       where: {
         userId: id,
         status: "active",
-        // ... (Apka Op.or wala logic same rahega)
+        [Op.or]: [
+          { isSaved: true },
+          {
+            isSaved: false,
+            expiresAt: { [Op.gt]: new Date() } 
+          }
+        ]
       },
-      attributes: [
-        "id", "userId", "type", "content", "mediaUrls", "caption", 
-        "status", "likesCount", "commentsCount", // ✅ Is field ko check karein DB mein
-        "sharesCount", "isSaved", "expiresAt", "createdAt"
-      ],
+      attributes: {
+        include: [
+          // ✅ Ye query sirf un comments ko ginegi jo delete nahi hue hain
+          [
+            Sequelize.literal(`(
+              SELECT COUNT(*)
+              FROM "comments" AS c
+              WHERE c."postId" = "Post"."id"
+              AND c."status" = 'active'
+              AND c."deletedAt" IS NULL
+            )`),
+            "commentsCount" // Purane "commentsCount" column ko overwrite kar dega accurate data se
+          ]
+        ]
+      },
       include: [
         {
           model: User,
@@ -346,17 +359,27 @@ export const getUserPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 3. Update Redis Cache
+    // 🚀 3. Save to Redis Cache (1 Hour Expiry)
     if (redisClient?.isReady && posts.length > 0) {
       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
     }
 
-    return res.json({ success: true, count: posts.length, posts });
+    return res.json({
+      success: true,
+      count: posts.length,
+      posts
+    });
 
   } catch (error) {
-    // ... error handling
+    console.error("Get user posts error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch user posts"
+    });
   }
 };
+
+
 // export const getUserPosts = async (req, res) => {
 //   try {
 //     const { id } = req.params;
