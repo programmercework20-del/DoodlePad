@@ -6,14 +6,19 @@ import config from './src/config/env.js';
 import http from "http";
 import { initSocket } from "./src/socket/socket.js";
 import { markExpiredPosts } from "./src/controllers/api/post.controller.js";
+import express from 'express'; // 
+
 
 const PORT = config.port || 5000;
 
 // 🔥 1. TRUST PROXY: GCP/Cloud deployment ke liye mandatory hai
 app.set('trust proxy', 1);
 
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 // CRON JOB
-cron.schedule("0 * * * *", async () => {
+cron.schedule("* * * * *", async () => {
   try {
     console.log("⏳ Checking expired posts (every 1 hour)...");
     await markExpiredPosts();
