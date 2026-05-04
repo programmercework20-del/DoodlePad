@@ -2,15 +2,25 @@ import multer from "multer";
 import path from "path";
 
 const fileFilter = (req, file, cb) => {
-  console.log("FILE:", file.originalname, file.mimetype);
+  console.log("📥 Incoming File:", file.originalname, "Mime:", file.mimetype);
+  
   const ext = path.extname(file.originalname).toLowerCase();
   const allowedExtensions = [
     ".jpg", ".jpeg", ".png", ".webp",
-    ".mp4", ".mp3", ".wav"
+    ".mp4", ".mp3", ".wav",
+    "" // ✅ Khali extension allow karein (kuch blobs bina extension ke aate hain)
   ];
-  if (allowedExtensions.includes(ext)) {
+
+  // Agar extension match ho ya MimeType image/video ho
+  if (
+    allowedExtensions.includes(ext) || 
+    file.mimetype.startsWith("image/") || 
+    file.mimetype.startsWith("video/") ||
+    file.mimetype === "application/octet-stream" // ✅ Doodle data blobs ke liye
+  ) {
     cb(null, true);
   } else {
+    console.error("❌ Rejected Extension:", ext, "Mime:", file.mimetype);
     cb(new Error("Invalid file type"), false);
   }
 };
