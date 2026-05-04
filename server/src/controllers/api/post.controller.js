@@ -145,15 +145,29 @@ export const createPost = async (req, res) => {
 
     // 🔥 2. FINAL VALIDATION CHECK
     // In types ke liye mediaUrls hona hi chahiye
-    const mediaRequiredTypes = ["image", "video", "audio", "doodle"];
+    // const mediaRequiredTypes = ["image", "video", "audio", "doodle"];
     
-    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
-       console.error("❌ Validation Failed: No mediaUrls generated for type:", cleanType);
-       return res.status(400).json({ 
-         success: false, 
-         message: `Media file or Doodle data is missing for type: ${cleanType}` 
-       });
-    }
+    // if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
+    //    console.error("❌ Validation Failed: No mediaUrls generated for type:", cleanType);
+    //    return res.status(400).json({ 
+    //      success: false, 
+    //      message: `Media file or Doodle data is missing for type: ${cleanType}` 
+    //    });
+    // }
+
+    // Is line ko controller mein update karein
+const mediaRequiredTypes = ["image", "video", "audio"]; // 'doodle' ko yahan se hata dein
+
+if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
+   console.error("❌ Validation Failed: No mediaUrls generated for type:", cleanType);
+   return res.status(400).json({ success: false, message: "Media file missing" });
+}
+
+// Doodle ke liye alag check: File ho ya fir Content (JSON) ho
+if (cleanType === "doodle" && mediaUrls.length === 0 && !content) {
+   return res.status(400).json({ success: false, message: "Doodle data missing" });
+}
+
 
     // 🕒 3. EXPIRY LOGIC
     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
