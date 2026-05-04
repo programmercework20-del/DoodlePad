@@ -9,6 +9,97 @@ import { processHashtags } from "../../utils/hashtag.util.js";
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
 
+// export const createPost = async (req, res) => {
+//   try {
+//     const { type, content, caption, isSaved } = req.body;
+//     const userId = req.user.id;
+//     const cleanType = type?.toLowerCase();
+//     const isSavedBool = isSaved === "true" || isSaved === true;
+
+//     console.log(`🚀 Creating Post: Type=${cleanType}, ContentLength=${content?.length || 0}`);
+
+//     let mediaUrls = [];
+
+
+//    // 🎨 if DOODLE 
+// if (cleanType === "doodle") {
+//   // 🔥 Content = paths JSON hai, base64 nahi
+//   // File (media) already req.files mein aa rahi hai — wahi use karo
+//   // Koi alag GCS upload mat karo doodle ke liye
+  
+//   if (req.files && req.files.length > 0) {
+//     const file = req.files[0]; // doodle JPEG file
+    
+//     const fileName = `post_doodles/doodle_${userId}_${Date.now()}.jpg`;
+//     const blob = bucket.file(fileName);
+
+//     await new Promise((resolve, reject) => {
+//       const stream = blob.createWriteStream({
+//         metadata: { contentType: file.mimetype },
+//         resumable: false,
+//       });
+//       stream.on("error", reject);
+//       stream.on("finish", resolve);
+//       stream.end(file.buffer);
+//     });
+
+//     mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
+//     console.log("✅ Doodle file uploaded:", fileName);
+//   }
+// }
+
+//     // 📂 AGAR REGULAR FILES HAIN
+//     if (req.files && req.files.length > 0) {
+//       const uploadPromises = req.files.map((file) => {
+//         return new Promise((resolve, reject) => {
+//           let folderName = 'post_images';
+//           if (file.mimetype.startsWith('video')) folderName = 'post_videos';
+//           else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
+
+//           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+//           const blob = bucket.file(fileName);
+
+//           blob.save(file.buffer, {
+//             metadata: { contentType: file.mimetype },
+//             resumable: file.size > 5 * 1024 * 1024,
+//           }, (err) => {
+//             if (err) return reject(err);
+//             resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
+//           });
+//         });
+//       });
+//       const uploadedFiles = await Promise.all(uploadPromises);
+//       mediaUrls = [...mediaUrls, ...uploadedFiles];
+//     }
+
+//     // 🔥 Final Check
+//     if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
+//        console.error("❌ Validation Failed: No mediaUrls generated");
+//        return res.status(400).json({ message: "Media file or Doodle data is missing/invalid!" });
+//     }
+
+//     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+//     const post = await Post.create({
+//       userId,
+//       type: cleanType,
+//       content: cleanType === "doodle" ? "Doodle Post" : content,
+//       caption,
+//       mediaUrls,
+//       isSaved: isSavedBool,
+//       expiresAt
+//     });
+
+//     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+
+//     return res.status(201).json({ success: true, message: "Post created!", post });
+
+//   } catch (error) {
+//     console.error("Create Post Error:", error);
+//     res.status(500).json({ success: false, message: "Failed", error: error.message });
+//   }
+// };
+
 export const createPost = async (req, res) => {
   try {
     const { type, content, caption, isSaved } = req.body;
@@ -20,41 +111,20 @@ export const createPost = async (req, res) => {
 
     let mediaUrls = [];
 
-
-   // 🎨 if DOODLE 
-if (cleanType === "doodle") {
-  // 🔥 Content = paths JSON hai, base64 nahi
-  // File (media) already req.files mein aa rahi hai — wahi use karo
-  // Koi alag GCS upload mat karo doodle ke liye
-  
-  if (req.files && req.files.length > 0) {
-    const file = req.files[0]; // doodle JPEG file
-    
-    const fileName = `post_doodles/doodle_${userId}_${Date.now()}.jpg`;
-    const blob = bucket.file(fileName);
-
-    await new Promise((resolve, reject) => {
-      const stream = blob.createWriteStream({
-        metadata: { contentType: file.mimetype },
-        resumable: false,
-      });
-      stream.on("error", reject);
-      stream.on("finish", resolve);
-      stream.end(file.buffer);
-    });
-
-    mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-    console.log("✅ Doodle file uploaded:", fileName);
-  }
-}
-
-    // 📂 AGAR REGULAR FILES HAIN
+    // 📂 1. UPLOAD LOGIC (Doodle + Regular Files combined to avoid double upload)
     if (req.files && req.files.length > 0) {
-      const uploadPromises = req.files.map((file) => {
+      const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
           let folderName = 'post_images';
-          if (file.mimetype.startsWith('video')) folderName = 'post_videos';
-          else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
+          
+          // Agar Doodle hai toh pehli file ko specific folder mein daalo
+          if (cleanType === "doodle" && index === 0) {
+            folderName = 'post_doodles';
+          } else if (file.mimetype.startsWith('video')) {
+            folderName = 'post_videos';
+          } else if (file.mimetype.startsWith('audio')) {
+            folderName = 'post_audios';
+          }
 
           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           const blob = bucket.file(fileName);
@@ -68,39 +138,50 @@ if (cleanType === "doodle") {
           });
         });
       });
-      const uploadedFiles = await Promise.all(uploadPromises);
-      mediaUrls = [...mediaUrls, ...uploadedFiles];
+
+      mediaUrls = await Promise.all(uploadPromises);
+      console.log(`✅ Uploaded ${mediaUrls.length} files`);
     }
 
-    // 🔥 Final Check
-    if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
-       console.error("❌ Validation Failed: No mediaUrls generated");
-       return res.status(400).json({ message: "Media file or Doodle data is missing/invalid!" });
+    // 🔥 2. FINAL VALIDATION CHECK
+    // In types ke liye mediaUrls hona hi chahiye
+    const mediaRequiredTypes = ["image", "video", "audio", "doodle"];
+    
+    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
+       console.error("❌ Validation Failed: No mediaUrls generated for type:", cleanType);
+       return res.status(400).json({ 
+         success: false, 
+         message: `Media file or Doodle data is missing for type: ${cleanType}` 
+       });
     }
 
+    // 🕒 3. EXPIRY LOGIC
     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // 📝 4. CREATE POST
     const post = await Post.create({
       userId,
       type: cleanType,
-      content: cleanType === "doodle" ? "Doodle Post" : content,
-      caption,
-      mediaUrls,
+      content: cleanType === "doodle" ? (content || "Doodle Post") : content,
+      caption: caption || "",
+      mediaUrls, // Ab ye hamesha sahi array hoga
       isSaved: isSavedBool,
       expiresAt
     });
 
-    if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+    // 🚀 5. CACHE CLEANUP
+    if (redisClient?.isReady) {
+      await redisClient.del(`userPosts:${userId}`);
+      console.log(`🧹 Cache cleared for userPosts:${userId}`);
+    }
 
     return res.status(201).json({ success: true, message: "Post created!", post });
 
   } catch (error) {
     console.error("Create Post Error:", error);
-    res.status(500).json({ success: false, message: "Failed", error: error.message });
+    res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
   }
 };
-
-
 
 export const getArchivedPosts = async (req, res) => {
   try {
