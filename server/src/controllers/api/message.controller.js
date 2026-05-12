@@ -130,26 +130,87 @@ export const sendMessage = async (req, res) => {
 // ============================================================
 // MARK SEEN (With Socket & Cache Update)
 // ============================================================
+// export const markSeen = async (req, res) => {
+//   try {
+//     const { conversationId } = req.params;
+//     const userId = req.user.id;
+
+//     if (!isUUID(conversationId)) return res.status(400).json({ message: "Invalid ID" });
+
+//     await Message.update(
+//       { status: "seen" },
+//       { where: { conversationId, receiverId: userId, status: { [Op.ne]: "seen" } } }
+//     );
+
+//     const io = getIO();
+//     io.to(conversationId).emit("messages_seen", { conversationId, userId });
+
+//     res.json({ success: true });
+//   } catch (err) {
+//     res.status(500).json({ message: "Seen failed" });
+//   }
+// };
+
+// Helper function agar validation library nahi hai toh
+const validateUUID = (uuid) => {
+  const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return re.test(uuid);
+};
+
 export const markSeen = async (req, res) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user.id;
 
-    if (!isUUID(conversationId)) return res.status(400).json({ message: "Invalid ID" });
+    // 🚀 1. Validation check (isUUID fix)
+    if (!validateUUID(conversationId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid conversationId format"
+      });
+    }
 
+    // 🚀 2. Update Messages Status
+    // Hum un messages ko 'seen' kar rahe hain jo Maine (userId) nahi bheje hain 
+    // Yani jo mere liye 'incoming' hain.
     await Message.update(
       { status: "seen" },
-      { where: { conversationId, receiverId: userId, status: { [Op.ne]: "seen" } } }
+      {
+        where: {
+          conversationId,
+          senderId: { [Op.ne]: userId }, // Jo message maine nahi bheje (Incoming)
+          status: { [Op.ne]: "seen" }    // Jo pehle se seen nahi hain
+        }
+      }
     );
 
-    const io = getIO();
-    io.to(conversationId).emit("messages_seen", { conversationId, userId });
+    // 🚀 3. Socket.io Real-time Emit
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(conversationId).emit("messages_seen", {
+          conversationId,
+          userId
+        });
+      }
+    } catch (socketErr) {
+      console.error("⚠️ Socket emit failed in markSeen:", socketErr.message);
+      // Socket fail hone par response block nahi karenge
+    }
 
-    res.json({ success: true });
+    return res.json({ success: true });
+
   } catch (err) {
-    res.status(500).json({ message: "Seen failed" });
+    console.error("🔥 SEEN ERROR:", err); // Termminal mein check karein
+    return res.status(500).json({ 
+      success: false, 
+      message: "Seen failed",
+      error: err.message 
+    });
   }
 };
+
+
 
 // ============================================================
 // GET MESSAGES (No Caching for Real-time consistency)
