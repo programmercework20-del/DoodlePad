@@ -206,44 +206,120 @@ export const getMyProfile = async (req, res) => {
 // ============================================================
 // SEND DOODLE REQUEST (GCS Fixed URL)
 // ============================================================
+// export const sendDoodleRequest = async (req, res) => {
+//   try {
+//     const senderId = req.user.id;
+//     const { receiverId, base64Image, doodleData, paths } = req.body;
+
+//     if (!receiverId) return res.status(400).json({ message: "Receiver ID is required" });
+
+//     let finalDoodleImage = null;
+//     let finalDoodleData = (Array.isArray(paths) && paths.length > 0) ? JSON.stringify(paths) : doodleData;
+
+//     if (req.file) {
+//       const fileName = `doodles/doodle_${senderId}_${Date.now()}`;
+//       const blob = bucket.file(fileName);
+//       await blob.save(req.file.buffer, { 
+//         metadata: { contentType: req.file.mimetype },
+//         resumable: false 
+//       });
+//       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+//     } else if (base64Image) {
+//       const base64Clean = base64Image.replace(/^data:image\/\w+;base64,/, "");
+//       const buffer = Buffer.from(base64Clean, "base64");
+//       const fileName = `doodles/doodle_${senderId}_${Date.now()}.png`;
+//       const blob = bucket.file(fileName);
+//       await blob.save(buffer, { 
+//         metadata: { contentType: "image/png" },
+//         resumable: false 
+//       });
+//       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+//     }
+
+//     const request = await DoodleRequest.create({
+//       senderId,
+//       receiverId,
+//       doodleImage: finalDoodleImage,
+//       doodleData: finalDoodleData || null,
+//       status: "pending",
+//     });
+
+//     await createNotification({
+//       senderId,
+//       receiverId,
+//       type: "DOODLE_REQUEST",
+//       doodleRequestId: request.id,
+//     });
+
+//     return res.status(201).json({ success: true, message: "Doodle request sent", request });
+//   } catch (error) {
+//     console.error("DOODLE SEND ERROR:", error);
+//     return res.status(500).json({ message: "Failed to send request" });
+//   }
+// };
 export const sendDoodleRequest = async (req, res) => {
   try {
     const senderId = req.user.id;
-    const { receiverId, base64Image, doodleData, paths } = req.body;
+    const { receiverId, base64Image, paths, doodleData } = req.body;
 
-    if (!receiverId) return res.status(400).json({ message: "Receiver ID is required" });
+    if (!receiverId) {
+      return res.status(400).json({ success: false, message: "Receiver ID is required" });
+    }
 
     let finalDoodleImage = null;
-    let finalDoodleData = (Array.isArray(paths) && paths.length > 0) ? JSON.stringify(paths) : doodleData;
+    let finalDoodleData = null;
 
+    // 🎨 1. Handle Doodle Data (Paths logic from BE Dev)
+    if (Array.isArray(paths) && paths.length > 0) {
+      finalDoodleData = JSON.stringify(paths);
+    } else if (typeof doodleData === "string" && doodleData.trim()) {
+      finalDoodleData = doodleData;
+    }
+
+    // 📂 2. Handle File Upload to GCP Bucket
     if (req.file) {
+      // BE Dev ke logic ko Bucket ke saath integrate kiya
       const fileName = `doodles/doodle_${senderId}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      await blob.save(req.file.buffer, { 
+
+      await blob.save(req.file.buffer, {
         metadata: { contentType: req.file.mimetype },
-        resumable: false 
+        resumable: false,
       });
+
       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    } else if (base64Image) {
+    } 
+    // 🖼️ 3. Handle Base64 Image upload to GCP Bucket
+    else if (base64Image) {
       const base64Clean = base64Image.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Clean, "base64");
+      
       const fileName = `doodles/doodle_${senderId}_${Date.now()}.png`;
       const blob = bucket.file(fileName);
-      await blob.save(buffer, { 
+
+      await blob.save(buffer, {
         metadata: { contentType: "image/png" },
-        resumable: false 
+        resumable: false,
       });
+
       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
+    // 🛑 4. Final Validation
+    if (!finalDoodleImage && !finalDoodleData) {
+      return res.status(400).json({ success: false, message: "Doodle paths or image required" });
+    }
+
+    // 💾 5. Create Database Entry
     const request = await DoodleRequest.create({
       senderId,
       receiverId,
       doodleImage: finalDoodleImage,
-      doodleData: finalDoodleData || null,
+      doodleData: finalDoodleData,
       status: "pending",
     });
 
+    // 🔔 6. Create Notification
     await createNotification({
       senderId,
       receiverId,
@@ -251,13 +327,27 @@ export const sendDoodleRequest = async (req, res) => {
       doodleRequestId: request.id,
     });
 
-    return res.status(201).json({ success: true, message: "Doodle request sent", request });
+    // 🚀 7. Clear Redis Cache (Optional but recommended)
+    // Taki receiver ko turant update mil sake agar cache use ho raha hai
+    if (redisClient?.isReady) {
+      await redisClient.del(`doodle_requests:${receiverId}`);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Doodle request sent successfully",
+      request,
+    });
+
   } catch (error) {
-    console.error("DOODLE SEND ERROR:", error);
-    return res.status(500).json({ message: "Failed to send request" });
+    console.error("🔥 DOODLE SEND ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send doodle request",
+      error: error.message,
+    });
   }
 };
-
 // ============================================================
 // ACCEPT / REJECT / GET DOODLE REQUESTS
 // ============================================================

@@ -211,6 +211,16 @@ User.hasMany(Notification, { foreignKey: "receiverId", as: "notifications" });
 // =====================================================
 Message.belongsTo(User, { foreignKey: "senderId", as: "sender" });
 Message.belongsTo(User, { foreignKey: "receiverId", as: "receiver" });
+
+Message.belongsTo(Post, {
+  foreignKey: "postId",
+  as: "post"   // ✅ THIS MUST MATCH
+});
+
+Post.hasMany(Message, {
+  foreignKey: "postId",
+  as: "messages"
+});
 // EXPORT
 export {
   sequelize,
