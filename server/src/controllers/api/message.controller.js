@@ -205,13 +205,17 @@ export const markSeen = async (req, res) => {
 // ============================================================
 // GET MESSAGES (No Caching for Real-time consistency)
 // ============================================================
+
+
 export const getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
 
-    if (!isUUID(conversationId)) {
+    // ✅ FIX: isUUID check logic
+    if (!validateUUID(conversationId)) {
       return res.status(400).json({
-        message: "Invalid conversationId"
+        success: false,
+        message: "Invalid conversationId format"
       });
     }
 
@@ -221,13 +225,15 @@ export const getMessages = async (req, res) => {
       include: [
         {
           model: Post,
-          as: "post", // ✅ MUST MATCH association
+          as: "post", 
           attributes: ["id", "mediaUrls", "caption"],
+          required: false, // 👈 IMP: Agar message normal text hai (post nahi), toh bhi message show hoga
           include: [
             {
               model: User,
               as: "author",
-              attributes: ["id", "username", "profilePhoto"]
+              attributes: ["id", "username", "profilePhoto"],
+              required: false
             }
           ]
         }
@@ -236,12 +242,18 @@ export const getMessages = async (req, res) => {
 
     return res.json({
       success: true,
+      count: messages.length,
       messages
     });
 
   } catch (error) {
-    console.error("🔥 GET MESSAGES ERROR:", error); // 👈 IMPORTANT
-    res.status(500).json({ message: "Failed to fetch messages" });
+    console.error("🔥 GET MESSAGES ERROR:", error); 
+    // Isse aapko terminal mein exact association error dikh jayega
+    return res.status(500).json({ 
+      success: false, 
+      message: "Failed to fetch messages",
+      error: error.message 
+    });
   }
 };
 
