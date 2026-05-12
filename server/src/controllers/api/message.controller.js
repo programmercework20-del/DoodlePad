@@ -87,16 +87,16 @@ export const sendMessage = async (req, res) => {
     }
 
     // 4. CREATE MESSAGE (Ab postId save hoga)
-    // const message = await Message.create({
-    //   conversationId: conversation.id,  
-    //   senderId,
-    //   receiverId,
-    //   content: finalType === "shared_post" ? "Shared a post" : content,
-    //   mediaUrl,
-    //   type: finalType,
-    //   postId: postId || null, // 👈 Ye zaroori hai
-    //   status: "sent"
-    // }, { transaction });
+    const message = await Message.create({
+      conversationId: conversation.id,  
+      senderId,
+      receiverId,
+      content: finalType === "shared_post" ? "Shared a post" : content,
+      mediaUrl,
+      type: finalType,
+      postId: postId || null, // 👈 Ye zaroori hai
+      status: "sent"
+    }, { transaction });
 
     // 5. UPDATE CONVERSATION PREVIEW
     const lastMsgPreview = finalType === "shared_post" ? "🔗 Post" : (content || (finalType === "image" ? "📸 Image" : finalType === "audio" ? "🎤 Audio" : "🎬 Video"));
@@ -205,7 +205,45 @@ export const markSeen = async (req, res) => {
 // ============================================================
 // GET MESSAGES (No Caching for Real-time consistency)
 // ============================================================
+export const getMessages = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
 
+    if (!isUUID(conversationId)) {
+      return res.status(400).json({
+        message: "Invalid conversationId"
+      });
+    }
+
+    const messages = await Message.findAll({
+      where: { conversationId },
+      order: [["createdAt", "ASC"]],
+      include: [
+        {
+          model: Post,
+          as: "post", // ✅ MUST MATCH association
+          attributes: ["id", "mediaUrls", "caption"],
+          include: [
+            {
+              model: User,
+              as: "author",
+              attributes: ["id", "username", "profilePhoto"]
+            }
+          ]
+        }
+      ]
+    });
+
+    return res.json({
+      success: true,
+      messages
+    });
+
+  } catch (error) {
+    console.error("🔥 GET MESSAGES ERROR:", error); // 👈 IMPORTANT
+    res.status(500).json({ message: "Failed to fetch messages" });
+  }
+};
 
 // ... Edit, Delete, Accept/Reject Request remains same but with consistent success:true wrap
 export const editMessage = async (req, res) => {
