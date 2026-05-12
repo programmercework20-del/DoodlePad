@@ -206,62 +206,6 @@ export const markSeen = async (req, res) => {
 // GET MESSAGES (No Caching for Real-time consistency)
 // ============================================================
 
-const Message = sequelize.define("Message", {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
-  },
-
-  conversationId: {
-    type: DataTypes.UUID,
-    allowNull: false
-  },
-
-  senderId: {
-    type: DataTypes.UUID,
-    allowNull: false
-  },
-
-  content: {
-    type: DataTypes.TEXT
-  },
-
-  mediaUrl: {
-    type: DataTypes.STRING
-  },
-
-  type: {
-    type: DataTypes.ENUM("text", "image", "video", "audio", "doodle", "shared_post"),
-    defaultValue: "text"
-  },
-
-thumbnail: {
-    type: DataTypes.STRING
-  },
-
-duration: {
-    type:     DataTypes.INTEGER
-  },
-
-  status: {
-    type: DataTypes.ENUM("sent", "delivered", "seen"),
-    defaultValue: "sent"
-  },
-  receiverId: {
-  type: DataTypes.UUID,
-  allowNull: false
-},
-postId: {          // ✅ ADD THIS
-  type: DataTypes.UUID,
-  allowNull: true
-}
-
-}, {
-  tableName: "messages",
-  timestamps: true
-});
-export default Message;
 
 // ... Edit, Delete, Accept/Reject Request remains same but with consistent success:true wrap
 export const editMessage = async (req, res) => {
