@@ -15,6 +15,7 @@ import Share from "./Share.js";
 import Notification from "./Notification.js";
 import Conversation from "./Conversation.js";
 import ConversationParticipant from "./ConversationParticipant.js";
+import DoodleRequest from "./DoodleRequest.js";
 
 
 // =====================================================
@@ -182,6 +183,9 @@ ConversationParticipant.belongsTo(User, {
   as: "user"
 });
 
+// models/index.js mein aisi line honi chahiye:
+DoodleRequest.belongsTo(User, { as: 'sender', foreignKey: 'senderId' });
+
 
 
 // =====================================================
@@ -205,6 +209,8 @@ Notification.belongsTo(Post, {
 Notification.belongsTo(Comment, { foreignKey: "commentId" });
 
 User.hasMany(Notification, { foreignKey: "receiverId", as: "notifications" });
+
+
 
 // =====================================================
 // ================= MESSAGE ============================
@@ -235,6 +241,7 @@ export {
   Follower,
   PostLike,
   Share,
+  DoodleRequest,
   Notification,
   Conversation,              // ✅ ADD THIS
   ConversationParticipant 
