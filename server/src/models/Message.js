@@ -27,7 +27,7 @@ const Message = sequelize.define("Message", {
   },
 
   type: {
-    type: DataTypes.ENUM("text", "image", "video", "audio", "doodle"),
+    type: DataTypes.ENUM("text", "image", "video", "audio", "doodle", "shared_post"),
     defaultValue: "text"
   },
 
@@ -47,6 +47,10 @@ duration: {
   receiverId: {
   type: DataTypes.UUID,
   allowNull: false
+},
+postId: {         
+  type: DataTypes.UUID,
+  allowNull: true
 }
 
 }, {
