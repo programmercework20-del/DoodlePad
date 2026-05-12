@@ -367,8 +367,7 @@ export const markSeen = async (req, res) => {
 //   }
 // };
 
-import { DataTypes } from 'sequelize';
-import sequelize from '../config/db.js';
+
 
 const Message = sequelize.define("Message", {
   id: {
