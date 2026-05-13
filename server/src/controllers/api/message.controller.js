@@ -410,27 +410,60 @@ export const sendMessage = async (req, res) => {
 
     await transaction.commit();
 
+    // // 6. SOCKET & CACHE (Post-Transaction)
+    // const io = getIO();
+    // const onlineUsers = getOnlineUsers();
+    // const receiverSocketId = onlineUsers.get(receiverId);
+
+    // if (receiverSocketId) {
+    //   io.to(receiverSocketId).emit("receive_message", message);
+    //   // Delivery status update silently
+    //   message.update({ status: "delivered" }).catch(e => console.error("Delivered update failed", e));
+    // }
+
+    // if (redisClient?.isReady) {
+    //   await Promise.all([
+    //     redisClient.del(`conversations:${senderId}`),
+    //     redisClient.del(`conversations:${receiverId}`)
+    //   ]);
+    // }
+
+    // createNotification({ senderId, receiverId, type: "MESSAGE" }).catch(e => console.error(e));
+
+    // return res.json({ success: true, message });
     // 6. SOCKET & CACHE (Post-Transaction)
-    const io = getIO();
-    const onlineUsers = getOnlineUsers();
-    const receiverSocketId = onlineUsers.get(receiverId);
+const io = getIO();
+const onlineUsers = getOnlineUsers();
+const receiverSocketId = onlineUsers.get(receiverId);
 
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("receive_message", message);
-      // Delivery status update silently
-      message.update({ status: "delivered" }).catch(e => console.error("Delivered update failed", e));
-    }
+// 🔥 FIX: Room-based emit — conversation room mein sabko message bhejo
+io.to(conversation.id).emit("receive_message", {
+  ...message.toJSON(),
+  conversationId: conversation.id
+});
 
-    if (redisClient?.isReady) {
-      await Promise.all([
-        redisClient.del(`conversations:${senderId}`),
-        redisClient.del(`conversations:${receiverId}`)
-      ]);
-    }
+// 🔥 Agar receiver online hai aur room mein nahi — direct bhi bhejo
+if (receiverSocketId) {
+  io.to(receiverSocketId).emit("receive_message", {
+    ...message.toJSON(),
+    conversationId: conversation.id
+  });
+  message.update({ status: "delivered" }).catch(e => 
+    console.error("Delivered update failed", e)
+  );
+}
 
-    createNotification({ senderId, receiverId, type: "MESSAGE" }).catch(e => console.error(e));
+if (redisClient?.isReady) {
+  await Promise.all([
+    redisClient.del(`conversations:${senderId}`),
+    redisClient.del(`conversations:${receiverId}`)
+  ]);
+}
 
-    return res.json({ success: true, message });
+createNotification({ senderId, receiverId, type: "MESSAGE" })
+  .catch(e => console.error(e));
+
+return res.json({ success: true, message });
 
   } catch (err) {
     if (transaction) await transaction.rollback();
