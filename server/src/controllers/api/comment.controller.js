@@ -284,64 +284,60 @@ export const deleteOwnComment = async (req, res) => {
 //     return res.status(500).json({ success: false, message: "Like failed" });
 //   }
 // };
+
 export const likeComment = async (req, res) => {
   try {
     const userId = req.user.id;
     const { commentId } = req.params;
 
-    // 1. Fetch minimal data required (faster query)
     const comment = await Comment.findByPk(commentId, { 
       attributes: ['id', 'userId', 'postId', 'likesCount'] 
     });
     
     if (!comment) return res.status(404).json({ success: false, message: "Comment not found" });
 
-    // 2. Check if like exists
     const existing = await CommentLike.findOne({ where: { commentId, userId } });
 
     let action;
     let newLikesCount;
 
-    // 3. Database operations (No reload required)
     if (existing) {
       await existing.destroy();
       await comment.decrement("likesCount");
       action = "unliked";
-      // In-memory calculation for instant response
-      newLikesCount = Math.max(0, comment.likesCount - 1); 
+      // 🔥 FIX: DB se fresh value
+      await comment.reload();
+      newLikesCount = comment.likesCount;
     } else {
       await CommentLike.create({ commentId, userId });
       await comment.increment("likesCount");
       action = "liked";
-      newLikesCount = comment.likesCount + 1;
+      // 🔥 FIX: DB se fresh value
+      await comment.reload();
+      newLikesCount = comment.likesCount;
     }
 
-    // ⚡ 4. LIGHTNING FAST RESPONSE
-    // Return to frontend immediately without waiting for sockets or notifications
     res.json({ success: true, action, likesCount: newLikesCount });
 
     // ============================================================
-    // ⚙️ BACKGROUND TASKS (Runs after response is sent to user)
+    // ⚙️ BACKGROUND TASKS
     // ============================================================
 
-    // 📡 5. REAL-TIME SOCKET BROADCAST
     try {
       const io = getIO();
       if (io) {
-        // Emit event to update like count on screens of other users looking at this post
         io.emit("comment_like_updated", {
           commentId,
           postId: comment.postId,
           likesCount: newLikesCount,
           action,
-          userId // Sender ID
+          userId
         });
       }
     } catch (socketErr) {
       console.error("⚠️ Socket emit failed in likeComment:", socketErr.message);
     }
 
-    // 🔔 6. ASYNC NOTIFICATION (Only when liked)
     if (action === "liked" && comment.userId !== userId) {
       createNotification({
         senderId: userId,
@@ -352,15 +348,12 @@ export const likeComment = async (req, res) => {
       }).catch(e => console.error("⚠️ Notification Error:", e));
     }
 
-    // 🧠 7. REDIS CACHE INVALIDATION (Optional but recommended)
     if (redisClient?.isReady) {
-      // Clear cached comments for this post so next API fetch gets fresh like counts
       redisClient.del(`post_comments:${comment.postId}`).catch(e => console.error(e));
     }
 
   } catch (error) {
     console.error("🔥 LIKE COMMENT ERROR:", error);
-    // Ensure we don't send headers twice if error happens before res.json
     if (!res.headersSent) {
       return res.status(500).json({ success: false, message: "Like failed" });
     }
