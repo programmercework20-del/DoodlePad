@@ -63,6 +63,8 @@
 
 
 import { Server } from "socket.io";
+import { ConversationParticipant } from "../models/index.js";
+
 
 let io = null;
 const onlineUsers = new Map();
@@ -84,13 +86,30 @@ export const initSocket = (server) => {
     console.log("⚡ New Socket Connection:", socket.id);
 
     // ✅ Register user
-    socket.on("register", (userId) => {
-      if (userId) {
-        onlineUsers.set(userId, socket.id);
-        console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
-        console.log(`📈 Online Users Count: ${onlineUsers.size}`);
-      }
-    });
+    socket.on("register", async (userId) => {
+  if (userId) {
+    onlineUsers.set(userId, socket.id);
+    console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
+    console.log(`📈 Online Users Count: ${onlineUsers.size}`);
+
+    // 🔥 FIX: User ke saare conversations join karo
+    try {
+      const participantEntries = await ConversationParticipant.findAll({
+        where: { userId },
+        attributes: ["conversationId"],
+        raw: true
+      });
+
+      participantEntries.forEach(({ conversationId }) => {
+        socket.join(conversationId);
+        console.log(`🏠 Auto-joined room: ${conversationId} for user: ${userId}`);
+      });
+    } catch (err) {
+      console.error("❌ Auto-join rooms failed:", err.message);
+    }
+  }
+});
+
 
     // 🔥 FIX 1: Conversation room join karo
     socket.on("join_conversation", (conversationId) => {
