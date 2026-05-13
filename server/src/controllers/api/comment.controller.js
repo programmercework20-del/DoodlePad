@@ -5,7 +5,7 @@ import CommentLike from "../../models/CommentLike.js";
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket
-
+import { getIO } from "../../socket/socket.js";
 // ============================================================
 // ADD COMMENT / REPLY (With GCS & Cache Clear)
 // ============================================================
