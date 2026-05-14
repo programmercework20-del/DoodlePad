@@ -309,6 +309,7 @@ import sequelize from "../../config/db.js";
 import { validate as isUUID } from "uuid";
 import { bucket } from "../../config/firebase.js";
 
+
 const validateUUID = (uuid) => {
   const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return re.test(uuid);
@@ -325,100 +326,113 @@ import os from "os";
 
 export const sendMessage = async (req, res) => {
   const transaction = await sequelize.transaction();
+
   try {
     const senderId = req.user.id;
-    const receiverId = req.body.receiverId;
-    let { content, type = "text", postId } = req.body;
+    const { receiverId, content, type = "text", postId, conversationId } = req.body;
 
-    // VALIDATION (already present in your code)
-    if (!receiverId) return res.status(400).json({ success: false, message: "Receiver required" });
+    // 1. Better Validation
+    if (!receiverId) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: "Receiver ID required" });
+    }
 
     let mediaUrl = null;
-    let thumbnail = null; // 🔥 Add this
+    let thumbnail = null;
     let finalType = type;
 
-    // 📂 GCS FILE UPLOAD + THUMBNAIL LOGIC
+    // 2. File & Thumbnail Logic
     if (req.file) {
       const fileName = `chat_media/chat_${Date.now()}_${req.file.originalname}`;
       const blob = bucket.file(fileName);
       await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
       mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
 
-      const mime = req.file.mimetype;
-      if (mime.startsWith("image")) finalType = "image";
-      else if (mime.startsWith("audio")) finalType = "audio";
-      else if (mime.startsWith("video")) {
+      if (req.file.mimetype.startsWith("image")) finalType = "image";
+      else if (req.file.mimetype.startsWith("audio")) finalType = "audio";
+      else if (req.file.mimetype.startsWith("video")) {
         finalType = "video";
-        // 🔥 Generate Thumbnail for Video
         try {
-          const tempVideoPath = path.join(os.tmpdir(), `chat_temp_${Date.now()}.mp4`);
-          const tempThumbPath = path.join(os.tmpdir(), `chat_thumb_${Date.now()}.jpg`);
+          const tempVideoPath = path.join(os.tmpdir(), `chat_v_${Date.now()}.mp4`);
+          const tempThumbPath = path.join(os.tmpdir(), `chat_t_${Date.now()}.jpg`);
           fs.writeFileSync(tempVideoPath, req.file.buffer);
 
           await new Promise((resolve, reject) => {
             ffmpeg(tempVideoPath)
               .screenshots({
-                count: 1,
-                timemarks: ['00:00:01'],
+                count: 1, timemarks: ['00:00:01'],
                 filename: path.basename(tempThumbPath),
-                folder: os.tmpdir(),
-                size: '320x?'
+                folder: os.tmpdir(), size: '320x?'
               })
-              .on('end', resolve)
-              .on('error', reject);
+              .on('end', resolve).on('error', reject);
           });
 
-          const thumbFileName = `chat_thumbnails/thumb_${Date.now()}.jpg`;
-          const thumbBlob = bucket.file(thumbFileName);
-          await thumbBlob.save(fs.readFileSync(tempThumbPath));
+          const thumbFileName = `chat_thumbnails/t_${Date.now()}.jpg`;
+          await bucket.file(thumbFileName).save(fs.readFileSync(tempThumbPath));
           thumbnail = `https://storage.googleapis.com/${bucket.name}/${thumbFileName}`;
 
-          // Cleanup
           if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
           if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
-        } catch (e) { console.error("Thumbnail failed", e); }
+        } catch (e) { console.error("Thumbnail error:", e); }
       }
-      content = null;
     }
 
-    // (Conversation Find/Create Logic same as yours)
-    // ...
+    // 3. Conversation Logic (Using provided conversationId or finding/creating)
+    let conversation = null;
+    if (conversationId) {
+      conversation = await Conversation.findByPk(conversationId, { transaction });
+    }
 
-    // 4. CREATE MESSAGE with Thumbnail
+    if (!conversation) {
+       // ... existing find/create logic from your previous code ...
+       // Ensure 'conversation' is assigned here
+    }
+
+    // 4. Create Message
     const message = await Message.create({
       conversationId: conversation.id,
       senderId,
       receiverId,
-      content: finalType === "shared_post" ? "Shared a post" : content,
+      content: finalType === "shared_post" ? "Shared a post" : (content || ""),
       mediaUrl,
-      thumbnail, // 🔥 Save here
+      thumbnail,
       type: finalType,
       postId: postId || null,
       status: "sent"
     }, { transaction });
 
-    // Update conversation preview and commit...
+    // 5. Update Preview
+    await conversation.update({
+      lastMessage: finalType === "shared_post" ? "🔗 Post" : (content || finalType),
+      lastMessageAt: new Date()
+    }, { transaction });
+
     await transaction.commit();
 
-    // Socket Emit and Invalidate Cache...
-    // (Logic remains same)
-    const messageData = message.toJSON();
+    // 🚀 Background Tasks (No await needed to speed up response)
+    const messageData = message.get({ plain: true });
 
-// 🚀 REDIS CACHE INVALIDATION (Add this specifically)
-if (redisClient?.isReady) {
-  // Dono users ki inbox cache delete karein taaki unhe fresh list mile
-  Promise.all([
-    redisClient.del(`conversations:${senderId}`),
-    redisClient.del(`conversations:${receiverId}`)
-  ]).then(() => {
-    console.log("🧹 Inbox cache cleared for both users");
-  }).catch(e => console.error("Cache clear failed:", e));
-}
+    if (redisClient?.isReady) {
+      redisClient.del(`conversations:${senderId}`);
+      redisClient.del(`conversations:${receiverId}`);
+    }
 
-    return res.json({ success: true, message: message.toJSON() });
+    try {
+      const io = getIO();
+      const onlineUsers = getOnlineUsers();
+      io.to(conversation.id).emit("receive_message", messageData);
+      const receiverSocket = onlineUsers.get(receiverId);
+      if (receiverSocket) io.to(receiverSocket).emit("receive_message", messageData);
+    } catch (sErr) { console.error("Socket error:", sErr); }
+
+    createNotification({ senderId, receiverId, type: "MESSAGE" }).catch(() => {});
+
+    return res.json({ success: true, message: messageData });
+
   } catch (err) {
-    await transaction.rollback();
-    return res.status(500).json({ success: false, message: "Send failed" });
+    if (transaction) await transaction.rollback();
+    console.error("🔥 SEND ERROR:", err);
+    return res.status(500).json({ success: false, message: "Send failed", error: err.message });
   }
 };
 
