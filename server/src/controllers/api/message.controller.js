@@ -411,35 +411,39 @@ export const sendMessage = async (req, res) => {
     await transaction.commit();
 
     // 6. PREPARE MESSAGE DATA
-    const messageData = message.toJSON();
+    // message.controller.js - Inside sendMessage function
 
-    // 7. SOCKET EMIT
-    try {
-      const io = getIO();
-      const onlineUsers = getOnlineUsers();
-      const receiverSocketId = onlineUsers.get(receiverId);
+// ... (Baaki logic same rahega transaction commit tak)
 
-      // 🔥 Room emit — dono users jo room mein hain unhe milega
-      io.to(conversation.id).emit("receive_message", {
-        ...messageData,
-        conversationId: conversation.id
-      });
+const messageData = message.toJSON();
 
-      // 🔥 Direct emit — backup agar receiver room mein nahi
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit("receive_message", {
-          ...messageData,
-          conversationId: conversation.id
-        });
+try {
+  const io = getIO();
+  const onlineUsers = getOnlineUsers();
+  const receiverSocketId = onlineUsers.get(receiverId);
 
-        // Delivered status update
-        message.update({ status: "delivered" })
-          .catch(e => console.error("Delivered update failed:", e));
-      }
-    } catch (socketErr) {
-      console.error("⚠️ Socket emit failed:", socketErr.message);
-      // Socket fail hone par response block nahi hoga
-    }
+  // 🔥 STRATEGY: Target both the Conversation Room AND the User's Personal Channel
+  
+  // 1. Emit to Conversation Room (For real-time UI update in chat lobby)
+  io.to(conversation.id).emit("receive_message", messageData);
+
+  // 2. Emit to Receiver's Personal Channel (Backup if they are online but not in room)
+  io.to(`user_${receiverId}`).emit("receive_message", messageData);
+
+  // 3. Update Status to 'delivered' if receiver is online
+  if (receiverSocketId) {
+    await message.update({ status: "delivered" });
+    
+    // Notify sender that message is delivered (Real-time double tick)
+    io.to(`user_${senderId}`).emit("message_status_update", {
+      messageId: message.id,
+      status: "delivered",
+      conversationId: conversation.id
+    });
+  }
+} catch (socketErr) {
+  console.error("⚠️ Socket Error:", socketErr.message);
+}
 
     // 8. CACHE INVALIDATE
     if (redisClient?.isReady) {

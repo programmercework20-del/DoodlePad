@@ -85,38 +85,30 @@ export const initSocket = (server) => {
     console.log("⚡ New Socket Connection:", socket.id);
 
     // ✅ Register + Auto join all conversation rooms
-    socket.on("register", async (userId) => {
-      if (!userId) return;
+  // socket.js
+socket.on("register", async (userId) => {
+  if (!userId) return;
 
-      // 🔥 Agar user pehle se registered hai — purana socket hatao
-      for (let [uid, sid] of onlineUsers.entries()) {
-        if (uid === userId && sid !== socket.id) {
-          onlineUsers.delete(uid);
-          break;
-        }
-      }
+  // 1. Map Update (Ensure latest socket ID)
+  onlineUsers.set(userId, socket.id);
 
-      onlineUsers.set(userId, socket.id);
-      console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
-      console.log(`📈 Online Users Count: ${onlineUsers.size}`);
-
-      // 🔥 Saare conversations auto join karo
-      try {
-        const entries = await ConversationParticipant.findAll({
-          where: { userId },
-          attributes: ["conversationId"],
-          raw: true
-        });
-
-        entries.forEach(({ conversationId }) => {
-          socket.join(conversationId);
-        });
-
-        console.log(`🏠 Auto-joined ${entries.length} rooms for: ${userId}`);
-      } catch (err) {
-        console.error("❌ Auto-join failed:", err.message);
-      }
+  // 2. Auto-join rooms (Backup for background updates)
+  try {
+    const entries = await ConversationParticipant.findAll({
+      where: { userId },
+      attributes: ["conversationId"],
+      raw: true
     });
+    entries.forEach(({ conversationId }) => {
+      socket.join(conversationId);
+    });
+  } catch (err) {
+    console.error("❌ Auto-join failed:", err.message);
+  }
+  
+  // 3. User-specific room (Personal Notification Channel)
+  socket.join(`user_${userId}`); 
+});
 
     // ✅ Manual join — chat screen open hone pe
     socket.on("join_conversation", (conversationId) => {
