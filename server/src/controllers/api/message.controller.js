@@ -402,6 +402,18 @@ export const sendMessage = async (req, res) => {
 
     // Socket Emit and Invalidate Cache...
     // (Logic remains same)
+    const messageData = message.toJSON();
+
+// 🚀 REDIS CACHE INVALIDATION (Add this specifically)
+if (redisClient?.isReady) {
+  // Dono users ki inbox cache delete karein taaki unhe fresh list mile
+  Promise.all([
+    redisClient.del(`conversations:${senderId}`),
+    redisClient.del(`conversations:${receiverId}`)
+  ]).then(() => {
+    console.log("🧹 Inbox cache cleared for both users");
+  }).catch(e => console.error("Cache clear failed:", e));
+}
 
     return res.json({ success: true, message: message.toJSON() });
   } catch (err) {
@@ -413,6 +425,7 @@ export const sendMessage = async (req, res) => {
 // ============================================================
 // MARK SEEN
 // ============================================================
+// message.controller.js
 export const markSeen = async (req, res) => {
   try {
     const { conversationId } = req.params;
@@ -422,20 +435,30 @@ export const markSeen = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid conversationId format" });
     }
 
-    await Message.update(
+    // 1. Update messages status in DB
+    const [updatedCount] = await Message.update(
       { status: "seen" },
       {
         where: {
           conversationId,
-          senderId: { [Op.ne]: userId },
+          senderId: { [Op.ne]: userId }, // Mere liye aaye hue messages
           status: { [Op.ne]: "seen" }
         }
       }
     );
 
+    // 🚀 2. ZAROORI: Redis Cache Clear (Inbox refresh ke liye)
+    // Agar messages seen hue hain, toh inbox ki cache saaf karni hogi
+    if (updatedCount > 0 && redisClient?.isReady) {
+      await redisClient.del(`conversations:${userId}`);
+      // console.log(`🧹 Cache cleared for user: ${userId} after marking seen`);
+    }
+
+    // 3. Socket emit for real-time double tick (Blue tick)
     try {
       const io = getIO();
       if (io) {
+        // Sender ko batao ki uske messages dekh liye gaye hain
         io.to(conversationId).emit("messages_seen", { conversationId, userId });
       }
     } catch (socketErr) {
@@ -468,7 +491,8 @@ export const getMessages = async (req, res) => {
         {
           model: Post,
           as: "post",
-          attributes: ["id", "mediaUrls", "caption"],
+          // 🔥 Yahan 'thumbnail' add kar diya hai
+          attributes: ["id", "mediaUrls", "caption", "thumbnail", "type"], 
           required: false,
           include: [
             {
