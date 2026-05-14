@@ -145,6 +145,26 @@ export const addComment = async (req, res) => {
       }).catch(e => console.error("Notification delivery failed:", e));
     }
 
+   // ... (Existing addComment logic)
+
+    // 📡 6. REAL-TIME SOCKET BROADCAST (Add this)
+    try {
+      const io = getIO();
+      if (io) {
+        // Post ke room mein naye comment/reply ki details bhej do
+        io.to(postId).emit("new_comment", {
+          ...comment.toJSON(),
+          user: {
+            id: req.user.id,
+            username: req.user.username,
+            profilePhoto: req.user.profilePhoto
+          }
+        });
+      }
+    } catch (socketErr) {
+      console.log("⚠️ Socket broadcast failed");
+    }
+
     return res.status(201).json({
       success: true,
       message: parentId ? "Reply added" : "Comment added",
@@ -159,6 +179,9 @@ export const addComment = async (req, res) => {
 // ============================================================
 // GET POST COMMENTS (Top-level + Replies)
 // ============================================================
+// ============================================================
+// GET POST COMMENTS (Optimized for Real-time & Replies)
+// ============================================================
 export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -171,6 +194,7 @@ export const getPostComments = async (req, res) => {
     }
 
     const comments = await Comment.findAll({
+      // ✅ Sirf main comments (parentId: null) fetch karein
       where: { postId, parentId: null, status: "active" },
       include: [
         {
@@ -179,10 +203,12 @@ export const getPostComments = async (req, res) => {
           attributes: ["id", "username", "profilePhoto"]
         },
         {
+          // ✅ Replies include karein
           model: Comment,
           as: "replies",
+          // Status check zaroori hai
           where: { status: "active" },
-          required: false,
+          required: false, // Taaki bina reply wale comments bhi dikhein
           include: [
             {
               model: User,
@@ -192,18 +218,23 @@ export const getPostComments = async (req, res) => {
           ]
         }
       ],
-      order: [["createdAt", "DESC"]]
+      // ✅ Naye comments upar dikhein
+      order: [
+        ["createdAt", "DESC"],
+        [{ model: Comment, as: 'replies' }, "createdAt", "ASC"] // Replies purani upar (conversation style)
+      ]
     });
 
     if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(comments));
+      // 🚀 Expiry thoda kam karein real-time feel ke liye (e.g., 2 min)
+      await redisClient.setEx(cacheKey, 120, JSON.stringify(comments));
     }
 
     return res.json({ success: true, comments });
 
   } catch (error) {
-    console.error("GET COMMENTS ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch comments" });
+    console.error("🔥 GET COMMENTS ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch" });
   }
 };
 
