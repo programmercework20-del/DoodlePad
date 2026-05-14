@@ -50,29 +50,36 @@ export const getConversations = async (req, res) => {
       limit: 50 
     });
 
-    // 🚀 4. Format Result with dynamic Unread Count
-    const result = await Promise.all(conversations.map(async (conv) => {
-      const otherParticipant = conv.participants.find(p => p.userId !== userId);
-      const otherUser = otherParticipant ? otherParticipant.user : null;
+   // 🚀 4. Format Result with dynamic Unread Count & IST Time
+const result = await Promise.all(conversations.map(async (conv) => {
+  const otherParticipant = conv.participants.find(p => p.userId !== userId);
+  const otherUser = otherParticipant ? otherParticipant.user : null;
 
-      // 🔢 Count unread messages specifically for this conversation
-      const unreadCount = await Message.count({
-        where: {
-          conversationId: conv.id,
-          receiverId: userId, // Jo messages mere liye hain
-          status: { [Op.ne]: "seen" } // Jo abhi tak seen nahi hue
-        }
-      });
+  const unreadCount = await Message.count({
+    where: {
+      conversationId: conv.id,
+      receiverId: userId,
+      status: { [Op.ne]: "seen" }
+    }
+  });
 
-      return {
-        id: conv.id,
-        lastMessage: conv.lastMessage || "Start chatting...",
-        lastMessageAt: conv.lastMessageAt,
-        unreadCount, // 🔥 Dynamic Unread Count
-        isRequest: conv.isRequest,
-        user: otherUser
-      };
-    }));
+  // 🔥 IST Time Formatting Logic (12-hour format)
+  const istTime = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true // Ye 6:15 PM format mein convert karega
+  }).format(new Date(conv.lastMessageAt));
+
+  return {
+    id: conv.id,
+    lastMessage: conv.lastMessage || "Start chatting...",
+    lastMessageAt: istTime, // Ab ye "6:15 PM" jaisa dikhega
+    unreadCount,
+    isRequest: conv.isRequest,
+    user: otherUser
+  };
+}));
 
     const finalResult = result.filter(c => c.user !== null);
 
