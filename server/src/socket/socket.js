@@ -88,6 +88,14 @@ export const initSocket = (server) => {
     socket.on("register", async (userId) => {
       if (!userId) return;
 
+      // 🔥 Agar user pehle se registered hai — purana socket hatao
+      for (let [uid, sid] of onlineUsers.entries()) {
+        if (uid === userId && sid !== socket.id) {
+          onlineUsers.delete(uid);
+          break;
+        }
+      }
+
       onlineUsers.set(userId, socket.id);
       console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
       console.log(`📈 Online Users Count: ${onlineUsers.size}`);
@@ -110,19 +118,19 @@ export const initSocket = (server) => {
       }
     });
 
-    // ✅ Manual join (jab chat screen open ho)
+    // ✅ Manual join — chat screen open hone pe
     socket.on("join_conversation", (conversationId) => {
       if (conversationId) {
         socket.join(conversationId);
-        console.log(`🏠 Joined room: ${conversationId}`);
+        console.log(`🏠 Manually joined room: ${conversationId} by socket: ${socket.id}`);
       }
     });
 
-    // ✅ Manual leave (jab chat screen close ho)
+    // ✅ Manual leave — chat screen close hone pe
     socket.on("leave_conversation", (conversationId) => {
       if (conversationId) {
         socket.leave(conversationId);
-        console.log(`🚪 Left room: ${conversationId}`);
+        console.log(`🚪 Left room: ${conversationId} by socket: ${socket.id}`);
       }
     });
 
