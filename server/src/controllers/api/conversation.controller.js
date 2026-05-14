@@ -1,29 +1,23 @@
-import { 
-  Conversation, 
-  ConversationParticipant, 
-  User 
-} from "../../models/index.js";
+// conversation.controller.js
+import { Message, Conversation, ConversationParticipant, User } from "../../models/index.js";
 import { Op } from "sequelize";
 import redisClient from "../../config/redis.js";
 
-// ============================================================
-// GET CONVERSATIONS (Inbox List - Fixed Table Name & Logic)
-// ============================================================
 export const getConversations = async (req, res) => {
   try {
     const userId = req.user.id;
     const cacheKey = `conversations:${userId}`;
 
-    // 🚀 1. Redis Cache Check
+    // 🚀 1. Redis Cache Check (Fastest Path)
     if (redisClient?.isReady) {
       const cachedData = await redisClient.get(cacheKey);
       if (cachedData) {
+        // console.log("🟢 Serving from Redis Cache");
         return res.json({ success: true, conversations: JSON.parse(cachedData) });
       }
     }
 
     // 🚀 2. Fetch Conversation IDs for the User
-    // Hum Sequelize model ka use kar rahe hain taaki tableName ka koi lafada na ho
     const participantEntries = await ConversationParticipant.findAll({
       where: { userId },
       attributes: ['conversationId'],
@@ -32,16 +26,13 @@ export const getConversations = async (req, res) => {
 
     const conversationIds = participantEntries.map(p => p.conversationId);
 
-    // Agar koi conversation nahi mili, toh khali array bhej do
     if (conversationIds.length === 0) {
       return res.json({ success: true, conversations: [] });
     }
 
-    // 🚀 3. Fetch Full Details with Participants and User Info
+    // 🚀 3. Fetch Full Details with Participants
     const conversations = await Conversation.findAll({
-      where: {
-        id: { [Op.in]: conversationIds }
-      },
+      where: { id: { [Op.in]: conversationIds } },
       include: [
         {
           model: ConversationParticipant,
@@ -59,29 +50,42 @@ export const getConversations = async (req, res) => {
       limit: 50 
     });
 
-    // 🚀 4. Format Result (Identify "Other User")
-    const result = conversations.map(conv => {
-      // Khud ko chhod kar dusre participant ko dhoondo
+    // 🚀 4. Format Result with dynamic Unread Count
+    const result = await Promise.all(conversations.map(async (conv) => {
       const otherParticipant = conv.participants.find(p => p.userId !== userId);
       const otherUser = otherParticipant ? otherParticipant.user : null;
+
+      // 🔢 Count unread messages specifically for this conversation
+      const unreadCount = await Message.count({
+        where: {
+          conversationId: conv.id,
+          receiverId: userId, // Jo messages mere liye hain
+          status: { [Op.ne]: "seen" } // Jo abhi tak seen nahi hue
+        }
+      });
 
       return {
         id: conv.id,
         lastMessage: conv.lastMessage || "Start chatting...",
         lastMessageAt: conv.lastMessageAt,
+        unreadCount, // 🔥 Dynamic Unread Count
         isRequest: conv.isRequest,
         user: otherUser
       };
-    }).filter(c => c.user !== null); // Sirf wahi dikhao jisme user mil jaye
+    }));
 
-    // 🚀 5. Set Redis Cache (2 minutes expiry)
-    if (redisClient?.isReady && result.length > 0) {
-      await redisClient.setEx(cacheKey, 30, JSON.stringify(result));
+    const finalResult = result.filter(c => c.user !== null);
+
+    // 🚀 5. Set Redis Cache
+    // Inbox ke liye 30-60 seconds expiry best hai taaki counts bohot purane na lagein
+    if (redisClient?.isReady && finalResult.length > 0) {
+      await redisClient.setEx(cacheKey, 60, JSON.stringify(finalResult));
+      // console.log("🔴 Cache Miss: Data saved to Redis for 60s");
     }
 
     return res.json({ 
       success: true, 
-      conversations: result 
+      conversations: finalResult 
     });
 
   } catch (err) {
