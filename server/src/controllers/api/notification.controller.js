@@ -91,6 +91,7 @@ export const getUnreadCount = async (req, res) => {
 // ============================================================
 // REDIRECT LOGIC (Resolve post/comment existence)
 // ============================================================
+// notification.controller.js mein update karein
 export const getNotificationRedirect = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -106,13 +107,26 @@ export const getNotificationRedirect = async (req, res) => {
 
     let exists = true;
     let parentId = null;
+    let conversationId = null; // 🔥 New Field
 
+    // 🚀 1. Handle MESSAGE Redirect
+    if (notification.type === "MESSAGE") {
+      const msg = await Message.findByPk(notification.commentId); // Hum messageId ko commentId field mein save karte hain notification model mein
+      if (msg) {
+        conversationId = msg.conversationId;
+      } else {
+        exists = false;
+      }
+    }
+
+    // 🚀 2. Handle Post Redirect
     if (notification.postId) {
       const post = await Post.findByPk(notification.postId);
       if (!post) exists = false;
     }
 
-    if (notification.commentId) {
+    // 🚀 3. Handle Comment/Reply Redirect
+    if (notification.commentId && notification.type !== "MESSAGE") {
       const comment = await Comment.findByPk(notification.commentId);
       if (!comment) {
         exists = false;
@@ -127,6 +141,7 @@ export const getNotificationRedirect = async (req, res) => {
       postId: notification.postId,
       commentId: notification.commentId,
       parentId,
+      conversationId, // ✅ Ab FE ko pata chalega kaunsa room kholna hai
       doodleRequestId: notification.doodleRequestId,
       exists
     });

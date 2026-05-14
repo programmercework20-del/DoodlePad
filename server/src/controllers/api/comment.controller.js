@@ -128,20 +128,23 @@ export const addComment = async (req, res) => {
       // await redisClient.del(`feed:*`); 
     }
 
-    // 🔔 5. Notification Logic
-    let receiverId = post.userId;
+    let receiverId = post.userId; // Default receiver post owner hai
+    let notificationType = "COMMENT_POST";
+
     if (parentId) {
       const parentComment = await Comment.findByPk(parentId);
-      if (parentComment && parentComment.userId !== userId) {
-        receiverId = parentComment.userId;
+      if (parentComment) {
+        receiverId = parentComment.userId; // Agar reply hai, toh comment owner ko notification jayegi
+        notificationType = "REPLY_COMMENT";
       }
     }
 
+    // Apne aap ko notification nahi bhejni
     if (receiverId !== userId) {
       createNotification({
         senderId: userId,
         receiverId,
-        type: parentId ? "REPLY_COMMENT" : "COMMENT_POST",
+        type: notificationType, // ✅ Auto-switch between COMMENT_POST and REPLY_COMMENT
         postId,
         commentId: comment.id
       }).catch(e => console.error("Notification delivery failed:", e));
