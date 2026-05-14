@@ -294,39 +294,50 @@ export const likeComment = async (req, res) => {
       attributes: ['id', 'userId', 'postId', 'likesCount'] 
     });
     
-    if (!comment) return res.status(404).json({ success: false, message: "Comment not found" });
+    if (!comment) return res.status(404).json({ 
+      success: false, 
+      message: "Comment not found" 
+    });
 
-    const existing = await CommentLike.findOne({ where: { commentId, userId } });
+    const existing = await CommentLike.findOne({ 
+      where: { commentId, userId } 
+    });
 
     let action;
     let newLikesCount;
 
     if (existing) {
+      // 🔥 FIX: DB aur in-memory ek saath update
       await existing.destroy();
-      await comment.decrement("likesCount");
+      newLikesCount = Math.max(0, comment.likesCount - 1);
+      await Comment.update(
+        { likesCount: newLikesCount },
+        { where: { id: commentId } }
+      );
       action = "unliked";
-      // 🔥 FIX: DB se fresh value
-      await comment.reload();
-      newLikesCount = comment.likesCount;
     } else {
       await CommentLike.create({ commentId, userId });
-      await comment.increment("likesCount");
+      newLikesCount = comment.likesCount + 1;
+      await Comment.update(
+        { likesCount: newLikesCount },
+        { where: { id: commentId } }
+      );
       action = "liked";
-      // 🔥 FIX: DB se fresh value
-      await comment.reload();
-      newLikesCount = comment.likesCount;
     }
 
+    // ⚡ INSTANT RESPONSE — reload() nahi, delay nahi
     res.json({ success: true, action, likesCount: newLikesCount });
 
     // ============================================================
-    // ⚙️ BACKGROUND TASKS
+    // ⚙️ BACKGROUND TASKS — response ke baad
     // ============================================================
 
+    // 📡 Socket — saare users ko instant update
     try {
       const io = getIO();
       if (io) {
-        io.emit("comment_like_updated", {
+        // 🔥 Post room mein saare users ko emit karo
+        io.to(comment.postId).emit("comment_like_updated", {
           commentId,
           postId: comment.postId,
           likesCount: newLikesCount,
@@ -335,9 +346,10 @@ export const likeComment = async (req, res) => {
         });
       }
     } catch (socketErr) {
-      console.error("⚠️ Socket emit failed in likeComment:", socketErr.message);
+      console.error("⚠️ Socket emit failed:", socketErr.message);
     }
 
+    // 🔔 Notification
     if (action === "liked" && comment.userId !== userId) {
       createNotification({
         senderId: userId,
@@ -348,14 +360,19 @@ export const likeComment = async (req, res) => {
       }).catch(e => console.error("⚠️ Notification Error:", e));
     }
 
+    // 🧠 Redis cache clear
     if (redisClient?.isReady) {
-      redisClient.del(`post_comments:${comment.postId}`).catch(e => console.error(e));
+      redisClient.del(`post_comments:${comment.postId}`)
+        .catch(e => console.error(e));
     }
 
   } catch (error) {
     console.error("🔥 LIKE COMMENT ERROR:", error);
     if (!res.headersSent) {
-      return res.status(500).json({ success: false, message: "Like failed" });
+      return res.status(500).json({ 
+        success: false, 
+        message: "Like failed" 
+      });
     }
   }
 };
