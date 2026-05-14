@@ -75,6 +75,7 @@ import { getIO } from "../../socket/socket.js";
 //     return res.status(500).json({ success: false, message: "Failed to add comment" });
 //   }
 // };
+// comment.controller.js
 export const addComment = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -83,12 +84,9 @@ export const addComment = async (req, res) => {
 
     let mediaUrl = null;
 
-    // 🔥 1. GCS Bucket Upload logic
     if (req.file) {
       const fileName = `comments/comment_${userId}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      
-      // Resumable false rakha hai fast processing ke liye
       await blob.save(req.file.buffer, { 
         metadata: { contentType: req.file.mimetype },
         resumable: false 
@@ -99,7 +97,6 @@ export const addComment = async (req, res) => {
     const post = await Post.findByPk(postId);
     if (!post) return res.status(404).json({ success: false, message: "Post not found" });
 
-    // 2. Database mein Comment create karein
     const comment = await Comment.create({
       postId,
       userId,
@@ -109,42 +106,40 @@ export const addComment = async (req, res) => {
       parentId: parentId || null
     });
 
-    // 3. Post table mein commentsCount ko update karein
     await post.increment("commentsCount");
 
-    // 🚀 4. REDIS CACHE MANAGEMENT (Production Level)
+    // 🚀 PRODUCTION REDIS MANAGEMENT
     if (redisClient?.isReady) {
-      // Is post ki comments list delete karein
+      // 1. Is post ki puri comment list delete karein
       await redisClient.del(`comments:${postId}`);
       
-      // Is individual post ki cache delete karein
+      // 2. Individual post detail cache delete karein
       await redisClient.del(`post:${postId}`);
 
-      // 🔥 CRITICAL: Jis user ki post hai uski profile cache (userPosts) delete karein
-      // Taki profile page par updated commentsCount (e.g., 2 comments) dikhe
+      // 3. User profile cache delete karein (Post count update ke liye)
       await redisClient.del(`userPosts:${post.userId}`);
       
-      // Agar aap global feed cache use karte hain toh use bhi clear karein
-      // await redisClient.del(`feed:*`); 
+      console.log(`🧹 Cache cleared for postId: ${postId}`);
     }
 
-    let receiverId = post.userId; // Default receiver post owner hai
+    // 🔔 NOTIFICATION LOGIC
+    let receiverId = post.userId; 
     let notificationType = "COMMENT_POST";
 
     if (parentId) {
       const parentComment = await Comment.findByPk(parentId);
       if (parentComment) {
-        receiverId = parentComment.userId; // Agar reply hai, toh comment owner ko notification jayegi
-        notificationType = "REPLY_COMMENT";
+        receiverId = parentComment.userId;
+        notificationType = "REPLY_COMMENT"; // ✅ Triggering Reply Notification
       }
     }
 
-    // Apne aap ko notification nahi bhejni
     if (receiverId !== userId) {
+      // Notification send (Background task)
       createNotification({
         senderId: userId,
         receiverId,
-        type: notificationType, // ✅ Auto-switch between COMMENT_POST and REPLY_COMMENT
+        type: notificationType,
         postId,
         commentId: comment.id
       }).catch(e => console.error("Notification delivery failed:", e));
@@ -157,7 +152,7 @@ export const addComment = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ADD COMMENT ERROR:", error);
+    console.error("🔥 ADD COMMENT ERROR:", error);
     return res.status(500).json({ success: false, message: "Failed to add comment" });
   }
 };

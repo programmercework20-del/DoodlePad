@@ -3,6 +3,10 @@ import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import Comment from "../../models/Comment.js";
 import { processHashtags } from "../../utils/hashtag.util.js";
+import ffmpeg from "fluent-ffmpeg";
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 
 // 🔥 REDIS & BUCKET IMPORT
@@ -100,6 +104,7 @@ import { bucket } from "../../config/firebase.js";
 //   }
 // };
 
+
 export const createPost = async (req, res) => {
   try {
     const { type, content, caption, isSaved } = req.body;
@@ -107,87 +112,95 @@ export const createPost = async (req, res) => {
     const cleanType = type?.toLowerCase();
     const isSavedBool = isSaved === "true" || isSaved === true;
 
-    console.log(`🚀 Creating Post: Type=${cleanType}, ContentLength=${content?.length || 0}`);
-
     let mediaUrls = [];
+    let thumbnail = null; // 🔥 Thumbnail field
 
-    // 📂 1. UPLOAD LOGIC (Doodle + Regular Files combined to avoid double upload)
     if (req.files && req.files.length > 0) {
-      const uploadPromises = req.files.map((file, index) => {
-        return new Promise((resolve, reject) => {
-          let folderName = 'post_images';
+      const uploadPromises = req.files.map(async (file, index) => {
+        let folderName = 'post_images';
+        if (cleanType === "doodle" && index === 0) folderName = 'post_doodles';
+        else if (file.mimetype.startsWith('video')) folderName = 'post_videos';
+        else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
+
+        const fileName = `${folderName}/user_${userId}_${Date.now()}_${index}`;
+        const blob = bucket.file(fileName);
+
+        // --- 🔥 VIDEO THUMBNAIL LOGIC START ---
+        if (file.mimetype.startsWith('video') && !thumbnail) {
+          // File names mein index add kiya taaki parallel uploads mein conflict na ho
+          const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}.mp4`);
+          const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
           
-          // Agar Doodle hai toh pehli file ko specific folder mein daalo
-          if (cleanType === "doodle" && index === 0) {
-            folderName = 'post_doodles';
-          } else if (file.mimetype.startsWith('video')) {
-            folderName = 'post_videos';
-          } else if (file.mimetype.startsWith('audio')) {
-            folderName = 'post_audios';
+          try {
+            // 1. Video ko temporary save karein
+            fs.writeFileSync(tempVideoPath, file.buffer);
+
+            // 2. FFmpeg se 1st frame extract karein
+            await new Promise((resolve, reject) => {
+              ffmpeg(tempVideoPath)
+                .inputOptions('-threads 2') // 🚀 CPU Optimization: Prevent server freeze
+                .screenshots({
+                  count: 1,
+                  timemarks: ['00:00:01'], // 1st second ka frame
+                  filename: path.basename(tempThumbPath),
+                  folder: os.tmpdir(),
+                  size: '640x?' // Resize for performance
+                })
+                .on('end', resolve)
+                .on('error', reject);
+            });
+
+            // 3. Thumbnail ko Bucket mein upload karein
+            const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
+            const thumbBlob = bucket.file(thumbFileName);
+            await thumbBlob.save(fs.readFileSync(tempThumbPath), {
+              metadata: { contentType: 'image/jpeg' }
+            });
+
+            thumbnail = `https://storage.googleapis.com/${bucket.name}/${thumbFileName}`;
+
+          } catch (thumbErr) {
+            console.error("⚠️ Thumbnail extraction failed:", thumbErr);
+          } finally {
+            // 🧹 4. GUARANTEED CLEANUP: Ye code har haal mein chalega (Success ya Error dono mein)
+            if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
+            if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
           }
+        }
+        // --- 🔥 VIDEO THUMBNAIL LOGIC END ---
 
-          const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          const blob = bucket.file(fileName);
-
-          blob.save(file.buffer, {
-            metadata: { contentType: file.mimetype },
-            resumable: file.size > 5 * 1024 * 1024,
-          }, (err) => {
-            if (err) return reject(err);
-            resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-          });
+        // Main file ko upload karein
+        await blob.save(file.buffer, {
+          metadata: { contentType: file.mimetype },
+          resumable: file.size > 5 * 1024 * 1024,
         });
+
+        return `https://storage.googleapis.com/${bucket.name}/${fileName}`;
       });
 
       mediaUrls = await Promise.all(uploadPromises);
-      console.log(`✅ Uploaded ${mediaUrls.length} files`);
     }
 
-    // 🔥 2. FINAL VALIDATION CHECK
-    // In types ke liye mediaUrls hona hi chahiye
-    // const mediaRequiredTypes = ["image", "video", "audio", "doodle"];
-    
-    // if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
-    //    console.error("❌ Validation Failed: No mediaUrls generated for type:", cleanType);
-    //    return res.status(400).json({ 
-    //      success: false, 
-    //      message: `Media file or Doodle data is missing for type: ${cleanType}` 
-    //    });
-    // }
+    // Validation
+    const mediaRequiredTypes = ["image", "video", "audio"];
+    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
+      return res.status(400).json({ success: false, message: "Media file missing" });
+    }
 
-    // Is line ko controller mein update karein
-const mediaRequiredTypes = ["image", "video", "audio"]; // 'doodle' ko yahan se hata dein
-
-if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
-   console.error("❌ Validation Failed: No mediaUrls generated for type:", cleanType);
-   return res.status(400).json({ success: false, message: "Media file missing" });
-}
-
-// Doodle ke liye alag check: File ho ya fir Content (JSON) ho
-if (cleanType === "doodle" && mediaUrls.length === 0 && !content) {
-   return res.status(400).json({ success: false, message: "Doodle data missing" });
-}
-
-
-    // 🕒 3. EXPIRY LOGIC
     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // 📝 4. CREATE POST
     const post = await Post.create({
       userId,
       type: cleanType,
       content: cleanType === "doodle" ? (content || "Doodle Post") : content,
       caption: caption || "",
-      mediaUrls, // Ab ye hamesha sahi array hoga
+      mediaUrls,
+      thumbnail, // ✅ Now saving to DB safely
       isSaved: isSavedBool,
       expiresAt
     });
 
-    // 🚀 5. CACHE CLEANUP
-    if (redisClient?.isReady) {
-      await redisClient.del(`userPosts:${userId}`);
-      console.log(`🧹 Cache cleared for userPosts:${userId}`);
-    }
+    if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
 
     return res.status(201).json({ success: true, message: "Post created!", post });
 

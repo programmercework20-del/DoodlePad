@@ -62,7 +62,11 @@ const Post = sequelize.define("Post", {
     expiresAt: {
         type: DataTypes.DATE,
         allowNull: true
-    }
+    },
+    thumbnail: {
+    type: DataTypes.TEXT, 
+    allowNull: true
+  },
 }, {
     tableName: "posts",
     timestamps: true
