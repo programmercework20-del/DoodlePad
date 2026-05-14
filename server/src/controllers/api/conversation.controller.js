@@ -76,7 +76,7 @@ export const getConversations = async (req, res) => {
 
     // 🚀 5. Set Redis Cache (2 minutes expiry)
     if (redisClient?.isReady && result.length > 0) {
-      await redisClient.setEx(cacheKey, 120, JSON.stringify(result));
+      await redisClient.setEx(cacheKey, 30, JSON.stringify(result));
     }
 
     return res.json({ 

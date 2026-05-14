@@ -449,6 +449,8 @@ if (receiverSocketId) {
   });
   message.update({ status: "delivered" })
     .catch(e => console.error("Delivered update failed", e));
+
+    return res.json({ success: true, message: messageData });
 }
 
   } catch (err) {

@@ -65,7 +65,6 @@
 import { Server } from "socket.io";
 import { ConversationParticipant } from "../models/index.js";
 
-
 let io = null;
 const onlineUsers = new Map();
 
@@ -85,45 +84,45 @@ export const initSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("⚡ New Socket Connection:", socket.id);
 
-    // ✅ Register user
+    // ✅ Register + Auto join all conversation rooms
     socket.on("register", async (userId) => {
-  if (userId) {
-    onlineUsers.set(userId, socket.id);
-    console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
-    console.log(`📈 Online Users Count: ${onlineUsers.size}`);
+      if (!userId) return;
 
-    // 🔥 FIX: User ke saare conversations join karo
-    try {
-      const participantEntries = await ConversationParticipant.findAll({
-        where: { userId },
-        attributes: ["conversationId"],
-        raw: true
-      });
+      onlineUsers.set(userId, socket.id);
+      console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
+      console.log(`📈 Online Users Count: ${onlineUsers.size}`);
 
-      participantEntries.forEach(({ conversationId }) => {
-        socket.join(conversationId);
-        console.log(`🏠 Auto-joined room: ${conversationId} for user: ${userId}`);
-      });
-    } catch (err) {
-      console.error("❌ Auto-join rooms failed:", err.message);
-    }
-  }
-});
+      // 🔥 Saare conversations auto join karo
+      try {
+        const entries = await ConversationParticipant.findAll({
+          where: { userId },
+          attributes: ["conversationId"],
+          raw: true
+        });
 
+        entries.forEach(({ conversationId }) => {
+          socket.join(conversationId);
+        });
 
-    // 🔥 FIX 1: Conversation room join karo
-    socket.on("join_conversation", (conversationId) => {
-      if (conversationId) {
-        socket.join(conversationId);
-        console.log(`🏠 Socket ${socket.id} joined room: ${conversationId}`);
+        console.log(`🏠 Auto-joined ${entries.length} rooms for: ${userId}`);
+      } catch (err) {
+        console.error("❌ Auto-join failed:", err.message);
       }
     });
 
-    // 🔥 FIX 2: Conversation room leave karo
+    // ✅ Manual join (jab chat screen open ho)
+    socket.on("join_conversation", (conversationId) => {
+      if (conversationId) {
+        socket.join(conversationId);
+        console.log(`🏠 Joined room: ${conversationId}`);
+      }
+    });
+
+    // ✅ Manual leave (jab chat screen close ho)
     socket.on("leave_conversation", (conversationId) => {
       if (conversationId) {
         socket.leave(conversationId);
-        console.log(`🚪 Socket ${socket.id} left room: ${conversationId}`);
+        console.log(`🚪 Left room: ${conversationId}`);
       }
     });
 
