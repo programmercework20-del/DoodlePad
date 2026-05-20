@@ -6,6 +6,7 @@ import { Op } from "sequelize";
 import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
 import { createNotification } from "../../services/notification.service.js";
+import Block from "../../models/Block.js";
 
 // 🔥 REDIS & BUCKET IMPORT (Check paths carefully)
 import redisClient from "../../config/redis.js"; 
@@ -306,6 +307,26 @@ export const followUser = async (req, res) => {
 
     const targetUser = await User.findByPk(followingId);
     if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+    const isBlocked = await Block.findOne({
+      where:{
+        [Op.or]: [
+          {
+            blockerId: followerId,
+            blockedId: followingId
+          },
+          {
+            blockerId: followingId,
+            blockedId: followerId
+          }
+        ]
+      }
+    });
+
+    if(isBlocked){
+      return res.status(403).json({ message: "Action not allowed due to block status" });
+    }
+
 
     const existing = await Follower.findOne({ where: { followerId, followingId } });
 

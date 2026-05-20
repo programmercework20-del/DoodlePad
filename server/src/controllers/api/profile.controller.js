@@ -3,6 +3,7 @@ import Post from "../../models/Post.js";
 import Follower from "../../models/Follower.js";
 import DoodleRequest from "../../models/DoodleRequest.js";
 import { createNotification } from "../../services/notification.service.js";
+import Block from "../../models/Block.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 
@@ -76,6 +77,26 @@ export const getUserProfile = async (req, res) => {
         effectiveDoodleOwnerId = acceptedRequest.senderId;
       }
     }
+
+    const isBlocked = await Block.findOne({
+      where:{
+        [Op.or]: [
+          {
+            blockerId: viewerId,
+            blockedId: profileUserId
+          },
+          {
+            blockerId: profileUserId,
+            blockedId: viewerId
+          }
+        ]
+      }
+    });
+
+    if(isBlocked){
+      return res.status(403).json({ message: "Action not allowed due to block status" });
+    }
+
 
     const profileData = {
       profile: {

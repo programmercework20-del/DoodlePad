@@ -11,6 +11,7 @@ import {
     getMyProfile, 
     rejectDoodleRequest 
 } from "../controllers/api/profile.controller.js";
+import { getDiscoverPeople } from "../controllers/api/discover.controller.js";
 
 const router = express.Router();
 
@@ -18,6 +19,12 @@ const router = express.Router();
 
 // 1. My Profile (GET)//
 router.get("/my-profile", protect, getMyProfile);
+
+router.get(
+    "/discover-people",
+    protect,
+    getDiscoverPeople   
+);
 
 // 2. Update Profile (PUT)
 router.put("/update-profile", protect, upload.single("profilePhoto"), updateMyProfile);

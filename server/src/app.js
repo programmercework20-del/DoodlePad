@@ -23,6 +23,7 @@ import notificationRoutes from "./routes/notification.routes.js";
 import conversationRoutes from './routes/conversation.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import adRoutes from "./routes/ad.routes.js"; 
+import blockUnblockRoutes from "./routes/blockUnblock.routes.js";
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
 
@@ -34,6 +35,8 @@ import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
 
 // Middlewares  
 import adminAuth from "./middlewares/adminAuth.js";
+
+
 
 const app = express();
 
@@ -135,6 +138,7 @@ app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/block", blockUnblockRoutes);
 app.use("/api", apiRoutes);
 // app.use(express.static("public"));
 

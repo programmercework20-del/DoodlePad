@@ -2,6 +2,8 @@ import { Op } from "sequelize";
 import { User, Follower } from "../../models/index.js";
 import Post from "../../models/Post.js";
 import Ad from "../../models/Ad.js";
+import Block from "../../models/Block.js";
+import Ad from "../../models/Ad.js";
 import { calculateFeedScore } from "../../utils/feedRanking.js";
 import redisClient from "../../config/redis.js";
 
@@ -23,6 +25,19 @@ export const getFeed = async (req, res) => {
         return res.json({ success: true, feed: JSON.parse(cachedFeed) });
       }
     }
+
+    const blockUsers = await Block.findAll({
+      where:{
+        [Op.or]: [
+          { blockerId: userId },
+          { blockedId: userId }
+          ]
+      }
+      });
+
+      const blockedUserIds = blockUsers.map(b => b.blockedId === userId ? b.blockedId : b.blockerId);
+
+
 
     // 1️⃣ Following users ki list nikalna
     const following = await Follower.findAll({
@@ -90,11 +105,25 @@ export const getFeed = async (req, res) => {
     feed.sort((a, b) => b.score - a.score);
     feed = feed.slice(0, limit).map(({ score, ...rest }) => rest);
 
-    // 6️⃣ Fetch & Inject Ads (Revenue Logic)
     const ads = await Ad.findAll({
-      where: { status: "active" },
-      limit: Math.ceil(feed.length / 4) // Har 4 posts ke baad 1 ad
-    });
+      where: {
+        status: "active",
+        startDate: {
+        [Op.or]: new Date()
+      },
+      endDate: {
+        [Op.gte]: new Date()
+        }
+    },
+    order: [
+      ["priority", "DESC"],
+     ["impressions", "DESC"]
+    ],
+
+    limit: Math.ceil(feed.length / 5)
+
+  });
+   
 
     let finalFeed = [];
     let adIndex = 0;
