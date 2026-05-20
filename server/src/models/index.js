@@ -16,6 +16,7 @@ import Notification from "./Notification.js";
 import Conversation from "./Conversation.js";
 import ConversationParticipant from "./ConversationParticipant.js";
 import DoodleRequest from "./DoodleRequest.js";
+import Block from "./Block.js";
 
 
 // =====================================================
@@ -227,6 +228,34 @@ Post.hasMany(Message, {
   foreignKey: "postId",
   as: "messages"
 });
+
+
+// =====================================================
+// ================= BLOCK/UNBLOCK ============================
+// =====================================================
+
+// relations
+User.belongsToMany(User, {
+  through: Block,
+  as: "BlockedUsers",
+  foreignKey: "blockerId",
+  otherKey: "blockedId"
+});
+
+User.belongsToMany(User, {
+  through: Block,
+  as: "BlockedBy",
+  foreignKey: "blockedId",
+  otherKey: "blockerId"
+});
+
+Block.belongsTo(User, {
+  foreignKey: "blockedId",
+  as: "blockedUser"
+});
+
+
+
 // EXPORT
 export {
   sequelize,
@@ -243,6 +272,6 @@ export {
   Share,
   DoodleRequest,
   Notification,
-  Conversation,              // ✅ ADD THIS
+  Conversation,             
   ConversationParticipant 
 };
