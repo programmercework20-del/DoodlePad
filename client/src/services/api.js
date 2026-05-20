@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
-    withCredentials: true, // Needed for cookies if we still use them
+    withCredentials: false, // Needed for cookies if we still use them
 });
 
 // Add a request interceptor to add the auth token from localStorage

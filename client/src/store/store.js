@@ -6,6 +6,7 @@ import commentReducer from './slices/commentSlice';
 import liveReducer from './slices/liveSlice';
 import messageReducer from './slices/messageSlice';
 import analyticsReducer from './slices/analyticsSlice';
+import adReducer from './slices/adSlice';
 
 export const store = configureStore({
     reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
         live: liveReducer,
         messages: messageReducer,
         analytics: analyticsReducer,
+        ads: adReducer,
     },
 });
 

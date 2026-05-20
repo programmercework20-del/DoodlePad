@@ -7,6 +7,8 @@ import http from "http";
 import { initSocket } from "./src/socket/socket.js";
 import { markExpiredPosts } from "./src/controllers/api/post.controller.js";
 import express from 'express'; // 
+import Ad from './src/models/Ad.js';
+import { Op } from 'sequelize'; 
 
 
 const PORT = config.port || 5000;
@@ -22,6 +24,17 @@ cron.schedule("* * * * *", async () => {
   try {
     console.log("⏳ Checking expired posts (every 1 hour)...");
     await markExpiredPosts();
+
+    await Ad.update(
+      
+      { status: "expired" } ,
+      { where: { endDate: { [Op.lt]: new Date() } } ,
+
+      status: "active"
+
+    }
+    );
+
   } catch (err) {
     console.error("Cron Job Error:", err);
   }

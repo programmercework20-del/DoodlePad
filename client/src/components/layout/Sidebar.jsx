@@ -10,6 +10,7 @@ import {
     Radio,
     Mail,
     LogOut,
+    Megaphone
 } from 'lucide-react';
 
 const menuItems = [
@@ -20,6 +21,7 @@ const menuItems = [
     { name: 'Reports', path: '/reports', icon: Flag },
     { name: 'Live Sessions', path: '/live', icon: Radio },
     { name: 'Messages', path: '/messages', icon: Mail },
+    { name: 'Advertisements', path: '/ads', icon: Megaphone }
 ];
 
 export default function Sidebar() {
@@ -71,3 +73,4 @@ export default function Sidebar() {
         </aside>
     );
 }
+ 

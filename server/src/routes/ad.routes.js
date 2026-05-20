@@ -1,16 +1,33 @@
-// import express from "express";
-// import { protect, adminOnly } from "../../middlewares/auth.middleware.js";
-// import {
-//   createAd,
-//   getAds,
-//   deleteAd
-// } from "../../controllers/admin/ad.controller.js";
+import express from "express";
 
-// const router = express.Router();
+import uploadAd from "../middlewares/uploadAd.js";
 
-// // 🔥 Admin APIs
-// router.post("/", protect, adminOnly, createAd);
-// router.get("/", protect, adminOnly, getAds);
-// router.delete("/:id", protect, adminOnly, deleteAd);
+import {
+  createAd,
+  getAds,
+  deleteAd,
+  trackClick,
+  trackImpression
+} from "../controllers/api/ad.controller.js";
 
-// export default router
+import adminAuth from "../middlewares/adminAuth.js";
+
+const router = express.Router();
+
+
+router.post(
+  "/",
+  adminAuth,
+  uploadAd.single("image"),
+  createAd
+);
+
+router.get("/", adminAuth, getAds);
+
+router.delete("/:id", adminAuth, deleteAd);
+
+router.post("/:id/click", trackClick);
+
+router.post("/:id/impression", trackImpression);
+
+export default router;

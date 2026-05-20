@@ -22,6 +22,7 @@ import feedRoutes from "./routes/feed.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import conversationRoutes from './routes/conversation.routes.js';
 import profileRoutes from './routes/profile.routes.js';
+import adRoutes from "./routes/ad.routes.js"; 
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
 
@@ -100,6 +101,26 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.use(
+  "/uploads",
+  (req, res, next) => {
+    res.header(
+      "Access-Control-Allow-Origin",
+      "*"
+    );
+
+    res.header(
+      "Cross-Origin-Resource-Policy",
+      "cross-origin"
+    );
+
+    next();
+  },
+  express.static(
+    path.join(process.cwd(), "uploads")
+  )
+);
+
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // ✅ API routes
@@ -137,6 +158,8 @@ app.use("/api/admin", adminAuth, adminRoutes);
 app.use("/admin/comments", commentRoutes);
 
 app.use("/admin/messages", adminMessageRoutes);
+
+app.use("/api/ads", adRoutes);
 
 
 // app.use("/api/admin/ads", adRoutes);

@@ -30,7 +30,22 @@ const Admin = sequelize.define("Admin", {
     isActive: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    otp: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+
+    otpExpires: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+
+    otpVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     }
+
 }, {
     tableName: "admins",
     timestamps: true

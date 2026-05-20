@@ -14,6 +14,7 @@ import Comments from '@/pages/comments/Comments';
 import Reports from '@/pages/reports/Reports';
 import LiveSessions from '@/pages/live/LiveSessions';
 import Messages from '@/pages/messages/Messages';
+import Ads from '@/pages/ads/Ads';
 
 // Protected Route Component
 function ProtectedRoute({ children }) {
@@ -113,6 +114,15 @@ export default function AppRoutes() {
                 element={
                     <ProtectedRoute>
                         <Messages />
+                    </ProtectedRoute>
+                }
+            />
+
+            <Route
+                path="/ads"
+                element={
+                    <ProtectedRoute>
+                        <Ads />
                     </ProtectedRoute>
                 }
             />
