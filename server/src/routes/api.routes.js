@@ -117,7 +117,7 @@ router.post("/posts/:id/restore", protect, restoreArchivedPost);
 
 
 router.get("/posts",protect, postController.getFeedPosts);
-router.get("/:id",protect, postController.getPostById);
+router.get("/posts/:id",protect, postController.getPostById);
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
 router.post("/comments/:commentId/like",protect, likeComment);
