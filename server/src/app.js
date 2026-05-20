@@ -153,7 +153,7 @@ app.use("/api", apiRoutes);
 
 
 // 🔐 ADMIN PANEL APIs (protected)
-app.use("/api/admin", adminAuth, adminRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use("/admin/comments", commentRoutes);
 
