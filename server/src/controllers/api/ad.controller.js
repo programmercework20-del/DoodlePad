@@ -1,6 +1,6 @@
 import Ad from "../../models/Ad.js";
 import redisClient from "../../config/redis.js";
-import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket import
+import { bucket } from "../../config/firebase.js"; 
 import sequelize from "../../config/db.js";
 
 // ============================================================
@@ -22,15 +22,13 @@ export const createAd = async (req, res) => {
 
     let imageUrl = null;
 
-    // 📂 GCS Bucket Upload Strategy (Dedicated Folder)
     if (req.file) {
-      // Alag folder 'ads_media' mein unique timestamp ke saath save hoga
       const fileName = `ads_media/ad_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       const blob = bucket.file(fileName);
       
       await blob.save(req.file.buffer, {
         metadata: { contentType: req.file.mimetype },
-        resumable: false // Ad images short hoti hain, resumable false rakhein fast uploads ke liye
+        resumable: false 
       });
       
       imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
@@ -50,10 +48,8 @@ export const createAd = async (req, res) => {
       status: "active"
     });
 
-    // 🧠 Redis Invalidation: Naya ad aate hi cache clear karein
     if (redisClient?.isReady) {
-      await redisClient.del("active_ads");
-      console.log("🧹 Redis Cache cleared for active_ads");
+      await redisClient.del("active_ads").catch(e => console.error("Redis Del Error:", e));
     }
 
     return res.status(201).json({
@@ -78,25 +74,27 @@ export const getAds = async (req, res) => {
   try {
     const cacheKey = "active_ads";
 
-    // 🚀 Redis Cache Check
     if (redisClient?.isReady) {
-      const cachedAds = await redisClient.get(cacheKey);
-      if (cachedAds) {
-        return res.json({
-          success: true,
-          ads: JSON.parse(cachedAds)
-        });
+      try {
+        const cachedAds = await redisClient.get(cacheKey);
+        if (cachedAds) {
+          return res.json({
+            success: true,
+            ads: JSON.parse(cachedAds)
+          });
+        }
+      } catch (cacheErr) {
+        console.error("⚠️ Redis Read Error (Falling back to DB):", cacheErr.message);
       }
     }
 
-    // Cache miss: Database se load karein
     const ads = await Ad.findAll({
+      where: { status: "active" }, // Live standard query verification
       order: [["createdAt", "DESC"]]
     });
 
-    // 🧠 Set Redis Cache (5 minutes expiry is perfect for Ads feed)
     if (redisClient?.isReady && ads.length > 0) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(ads));
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(ads)).catch(() => {});
     }
 
     return res.json({
@@ -121,7 +119,6 @@ export const deleteAd = async (req, res) => {
       return res.status(404).json({ message: "Ad not found" });
     }
 
-    // 🧹 GCS Se File Delete Logic (Storage clean rakhne ke liye)
     if (ad.imageUrl) {
       try {
         const fileUri = ad.imageUrl.split(`${bucket.name}/`)[1];
@@ -136,9 +133,8 @@ export const deleteAd = async (req, res) => {
 
     await ad.destroy();
 
-    // 🧠 Redis Cache clear karein delete ke baad
     if (redisClient?.isReady) {
-      await redisClient.del("active_ads");
+      await redisClient.del("active_ads").catch(() => {});
     }
 
     return res.json({
@@ -153,16 +149,15 @@ export const deleteAd = async (req, res) => {
 };
 
 // ============================================================
-// 4. TRACK CLICK (Highly Scalable Concurrent Atomic Counting)
+// 4. TRACK CLICK (Safe Postgres Atomic Literal Format)
 // ============================================================
 export const trackClick = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ⚡ PRODUCTION STANDARD: Avoid ad.clicks += 1 followed by ad.save()
-    // It creates race conditions. Use atomic increment instead.
+    // 🔥 FIXED: Standardized Postgres target parameter to avoid casing mismatches
     const [updatedCount] = await Ad.update(
-      { clicks: sequelize.literal('"clicks" + 1') },
+      { clicks: sequelize.literal('clicks + 1') },
       { where: { id } }
     );
 
@@ -179,15 +174,15 @@ export const trackClick = async (req, res) => {
 };
 
 // ============================================================
-// 5. TRACK IMPRESSION (Highly Scalable Concurrent Atomic Counting)
+// 5. TRACK IMPRESSION (Safe Postgres Atomic Literal Format)
 // ============================================================
 export const trackImpression = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ⚡ Atomic write optimization for heavy impression logs
+    // 🔥 FIXED: Standardized Postgres target parameter to avoid casing mismatches
     const [updatedCount] = await Ad.update(
-      { impressions: sequelize.literal('"impressions" + 1') },
+      { impressions: sequelize.literal('impressions + 1') },
       { where: { id } }
     );
 
