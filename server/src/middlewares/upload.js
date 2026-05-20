@@ -8,7 +8,8 @@ const fileFilter = (req, file, cb) => {
   const allowedExtensions = [
     ".jpg", ".jpeg", ".png", ".webp",
     ".mp4", ".mp3", ".wav",
-    "" // ✅ Khali extension allow karein (kuch blobs bina extension ke aate hain)
+  ".m4a", ".aac", ".ogg" ,
+   // ✅ Khali extension allow karein (kuch blobs bina extension ke aate hain)
   ];
 
   // Agar extension match ho ya MimeType image/video ho
