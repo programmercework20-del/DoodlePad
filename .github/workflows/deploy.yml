@@ -1,4 +1,49 @@
-# GA
+# # GA
+# name: Deploy DoodlePad to Server
+
+# on:
+#   push:
+#     branches:
+#       - liveServer
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v3
+
+#       - name: Deploy to Server via SSH
+#         uses: appleboy/ssh-action@v1.0.3
+#         with:
+#           host: ${{ secrets.SERVER_HOST }}
+#           username: ${{ secrets.SERVER_USERNAME }}
+#           key: ${{ secrets.SSH_PRIVATE_KEY }}
+#           script: |
+#             echo "Starting Deployment..."
+
+#             # 1. Aapke GCP server ka sahi path
+#             cd ~/Doodlepad/DoodlePad/server
+
+#             echo "Pulling latest code for liveServer..."
+#             git fetch origin
+#             git checkout liveServer
+#             git reset --hard origin/liveServer
+
+#             echo "Installing dependencies..."
+#             npm install --production
+
+#             echo "Restarting PM2..."
+#             # 2. Aapke PM2 process ka sahi naam (doodlepad-server)
+#             pm2 restart doodlepad-server || pm2 start server.js --name doodlepad-server
+
+#             echo "Saving PM2 process list..."
+#             pm2 save
+
+#             echo "Deployment Completed!"
+
+
 name: Deploy DoodlePad to Server
 
 on:
@@ -21,24 +66,55 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            echo "Starting Deployment..."
+            echo "🚀 Starting Deployment..."
 
-            # 1. Aapke GCP server ka sahi path
-            cd ~/Doodlepad/DoodlePad/server
+            # ============================================================
+            # 1. BACKEND DEPLOY
+            # ============================================================
+            cd ~/Doodlepad/DoodlePad
 
-            echo "Pulling latest code for liveServer..."
+            echo "📥 Pulling latest code..."
             git fetch origin
             git checkout liveServer
             git reset --hard origin/liveServer
 
-            echo "Installing dependencies..."
-            npm install --production
+            # 🔥 Firebase config protect karo — git reset se overwrite na ho
+            cat > ~/Doodlepad/DoodlePad/server/src/config/firebase.js << 'FIREBASE_EOF'
+            import admin from "firebase-admin";
+            if (!admin.apps.length) {
+              admin.initializeApp({
+                credential: admin.credential.applicationDefault(),
+                projectId: "doodlepad-dc0df",
+                storageBucket: "doodlepad-media-staging"
+              });
+            }
+            const bucket = admin.storage().bucket("doodlepad-media-staging");
+            const auth = admin.auth();
+            export { admin, bucket, auth };
+            export default admin;
+            FIREBASE_EOF
 
-            echo "Restarting PM2..."
-            # 2. Aapke PM2 process ka sahi naam (doodlepad-server)
-            pm2 restart doodlepad-server || pm2 start server.js --name doodlepad-server
+            echo "📦 Installing backend dependencies..."
+            cd ~/Doodlepad/DoodlePad/server
+            npm install --omit=dev
 
-            echo "Saving PM2 process list..."
+            echo "🔄 Restarting PM2..."
+            pm2 restart ecosystem.config.cjs || pm2 start ecosystem.config.cjs
+
             pm2 save
 
-            echo "Deployment Completed!"
+            # ============================================================
+            # 2. FRONTEND BUILD & DEPLOY
+            # ============================================================
+            echo "🏗️ Building frontend..."
+            cd ~/Doodlepad/DoodlePad/client
+            npm install
+            npm run build
+
+            echo "📂 Copying build to Nginx..."
+            sudo cp -r dist/* /var/www/doodlepad/
+
+            echo "🔄 Restarting Nginx..."
+            sudo systemctl restart nginx
+
+            echo "✅ Deployment Complete!"
