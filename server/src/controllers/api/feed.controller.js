@@ -1,22 +1,22 @@
-import { Op } from "sequelize";
+import { Op, literal } from "sequelize";
 import { User, Follower } from "../../models/index.js";
 import Post from "../../models/Post.js";
-import Ad from "../../models/Ad.js"; // 🔥 Direct Clean Model Access
+import Ad from "../../models/Ad.js";
 import Block from "../../models/Block.js";
 import { calculateFeedScore } from "../../utils/feedRanking.js";
 import redisClient from "../../config/redis.js";
 
-// ============================================================
-// GET FEED (With Ranking, Ads & Redis Caching)
-// ============================================================
 export const getFeed = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 15;
     const page = parseInt(req.query.page) || 1;
+    const offset = (page - 1) * limit;
     const userId = req.user.id;
 
-    // 🚀 1. REDIS CACHE CHECK (High Performance Response Layout)
-    const cacheKey = `feed:${userId}:p:${page}:l:${limit}`;
+    // =====================================
+    // 🚀 1. REDIS CACHE SYSTEM
+    // =====================================
+    const cacheKey = `user_feed:${userId}:p:${page}:l:${limit}`;
     if (redisClient?.isReady) {
       try {
         const cachedFeed = await redisClient.get(cacheKey);
@@ -28,8 +28,10 @@ export const getFeed = async (req, res) => {
       }
     }
 
-    // 🚀 2. FETCH BLOCKED USERS (Both Directions Protection)
-    const blockUsers = await Block.findAll({
+    // =====================================
+    // 🚫 2. BLOCKED USERS
+    // =====================================
+    const blockedUsers = await Block.findAll({
       where: {
         [Op.or]: [
           { blockerId: userId },
@@ -40,10 +42,11 @@ export const getFeed = async (req, res) => {
       raw: true
     });
 
-    // Dono taraf ke blocked profile IDs nikalna taaki unki posts hide ho sakein
-    const blockedUserIds = blockUsers.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+    const blockedIds = blockedUsers.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
 
-    // 🚀 3. FETCH FOLLOWING USERS LIST
+    // =====================================
+    // 👥 3. FOLLOWING USERS
+    // =====================================
     const following = await Follower.findAll({
       where: { followerId: userId, status: "accepted" },
       attributes: ["followingId"],
@@ -51,19 +54,20 @@ export const getFeed = async (req, res) => {
     });
 
     const followingIds = following.map(f => f.followingId);
-    followingIds.push(userId); // Khud ki posts bhi include karein
+    followingIds.push(userId); // Include self posts
 
-    // 🔥 Filter out blocked users from the following pool
-    const finalTargetUserIds = followingIds.filter(id => !blockedUserIds.includes(id));
+    // Filter out blocked users from target arrays to optimize indexing
+    const safeFollowingIds = followingIds.filter(id => !blockedIds.includes(id));
 
-    if (finalTargetUserIds.length === 0) {
-      return res.json({ success: true, feed: [] });
-    }
+    // Prepare safe block condition object
+    const blockCondition = blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : {};
 
-    // 🚀 4. FETCH TARGET POSTS (Optimized Slicing & Buffer fetching)
-    const posts = await Post.findAll({
+    // =====================================
+    // 🔥 4. FOLLOWING POSTS
+    // =====================================
+    const followingPosts = await Post.findAll({
       where: {
-        userId: { [Op.in]: finalTargetUserIds },
+        userId: safeFollowingIds.length > 0 ? { [Op.in]: safeFollowingIds } : { [Op.eq]: userId },
         status: "active",
         [Op.or]: [
           { isSaved: true },
@@ -76,11 +80,82 @@ export const getFeed = async (req, res) => {
         attributes: ["id", "username", "profilePhoto", "isVerified"]
       }],
       order: [["createdAt", "DESC"]],
-      limit: limit * 3 // Ranking criteria metrics layout buffer
+      limit: limit * 2, // Extra buffer for algorithm mixing
+      raw: false
     });
 
-    // 🚀 5. FORMAT POST DATA FALLBACK STRUCTURES
-    let feedData = posts.map(post => {
+    // =====================================
+    // 🌍 5. EXPLORE POSTS (Performance Optimized)
+    // =====================================
+    // FIXED: Removed ultra-slow RANDOM() query. Fetches recent high-quality public posts instead.
+    const explorePosts = await Post.findAll({
+      where: {
+        userId: {
+          [Op.notIn]: [...followingIds, ...blockedIds]
+        },
+        status: "active",
+        [Op.or]: [
+          { isSaved: true },
+          { expiresAt: { [Op.gt]: new Date() } }
+        ]
+      },
+      include: [{
+        model: User,
+        as: "author",
+        where: { isPrivate: false },
+        attributes: ["id", "username", "profilePhoto", "isVerified"]
+      }],
+      order: [["createdAt", "DESC"]], 
+      limit: limit * 2,
+      raw: false
+    });
+
+    // =====================================
+    // 🔥 6. TRENDING POSTS (Time Bound Windows)
+    // =====================================
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const trendingPosts = await Post.findAll({
+      where: {
+        userId: blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : { [Op.notIn]: [] },
+        status: "active",
+        createdAt: { [Op.gte]: sevenDaysAgo } // Fixed: Only viral trends within last 7 days
+      },
+      include: [{
+        model: User,
+        as: "author",
+        attributes: ["id", "username", "profilePhoto", "isVerified"]
+      }],
+      order: [
+        ["likesCount", "DESC"],
+        ["commentsCount", "DESC"],
+        ["sharesCount", "DESC"]
+      ],
+      limit: 15,
+      raw: false
+    });
+
+    // =====================================
+    // 🧠 7. MERGE & UNIQUE DEDUPLICATION
+    // =====================================
+    const allPosts = [...followingPosts, ...explorePosts, ...trendingPosts];
+    const uniquePosts = [];
+    const seen = new Set();
+
+    for (const post of allPosts) {
+      if (post && post.id && !seen.has(post.id)) {
+        seen.add(post.id);
+        uniquePosts.push(post);
+      }
+    }
+
+    // =====================================
+    // 🧠 8. FORMAT DATA STREAM
+    // =====================================
+    let feed = uniquePosts.map(post => {
+      if (!post.author) return null;
+      
       let parsedPaths = [];
       if (post.type === "doodle" && post.content) {
         try {
@@ -103,57 +178,78 @@ export const getFeed = async (req, res) => {
         sharesCount: post.sharesCount || 0,
         user: post.author
       };
+    }).filter(Boolean);
+
+    // =====================================
+    // 🧠 9. FEED RANKING ALGORITHM WEIGHTS
+    // =====================================
+    feed = feed.map(item => {
+      let score = (typeof calculateFeedScore === "function") ? calculateFeedScore(item) : 0;
+
+      // Relationship Boost Matrix
+      if (followingIds.includes(item.user.id)) score += 20;
+      if (item.user.isVerified) score += 10;
+
+      // Content Freshness Metrics Window
+      const hoursOld = (new Date() - new Date(item.createdAt)) / (1000 * 60 * 60);
+      if (hoursOld <= 1) score += 40;
+      else if (hoursOld <= 6) score += 30;
+      else if (hoursOld <= 24) score += 20;
+      else if (hoursOld <= 72) score += 10;
+
+      // Highly scalable organic engagement ratios
+      score += (item.likesCount * 2) + (item.commentsCount * 3) + (item.sharesCount * 4);
+
+      // Smooth organic distribution weight variation
+      score += Math.floor(Math.random() * 20);
+
+      return { ...item, score };
     });
 
-    // 🚀 6. RANKING ENGINE AGGREGATIONS
-    feedData = feedData.map(item => {
-      if (!item.user) return null;
-      const relationshipBoost = item.user.id !== userId ? 15 : 0; // External creators boosting matrix
-      const score = (calculateFeedScore ? calculateFeedScore(item) : 0) + relationshipBoost;
-      return { ...item, score };
-    }).filter(item => item !== null);
+    // =====================================
+    // 🔥 10. SORT & PAGINATE SLICE (FIXED BLUNDER)
+    // =====================================
+    // FIXED: Removed the disruptive Fisher-Yates array shuffle that was killing sorting!
+    feed.sort((a, b) => b.score - a.score);
 
-    // Sort descending order based on algorithmic results weight
-    feedData.sort((a, b) => b.score - a.score);
-    feedData = feedData.slice(0, limit).map(({ score, ...rest }) => rest);
+    // Apply strict pagination bounds dynamically
+    const paginatedFeed = feed.slice(offset, offset + limit).map(({ score, ...rest }) => rest);
 
-    // 🚀 7. FETCH ACTIVE ADS (Fixed Postgres Query Syntax)
-    const liveAds = await Ad.findAll({
+    // =====================================
+    // 💰 11. ADS INJECTION ENGINE
+    // =====================================
+    const ads = await Ad.findAll({
       where: {
         status: "active",
-        startDate: { [Op.lte]: new Date() }, // Fixed invalid original Op.or assignment
+        startDate: { [Op.lte]: new Date() },
         endDate: { [Op.gte]: new Date() }
       },
-      order: [
-        ["priority", "DESC"],
-        ["impressions", "ASC"] // Jinhe kam dikhaya gaya hai unhe prioritize karein
-      ],
-      limit: Math.ceil(feedData.length / 4), // Calculate optimized limits based on display slice
+      order: [["priority", "DESC"]],
+      limit: Math.ceil(paginatedFeed.length / 5),
       raw: true
     });
 
-    // 🚀 8. INJECT ADS INTERPOLATION LOOP (Har 4 posts ke baad 1 Ad)
     let finalFeed = [];
-    let adPointer = 0;
+    let adIndex = 0;
 
-    for (let i = 0; i < feedData.length; i++) {
-      finalFeed.push(feedData[i]);
-      
-      // Injection criteria interval checking
-      if ((i + 1) % 4 === 0 && liveAds[adPointer]) {
+    for (let i = 0; i < paginatedFeed.length; i++) {
+      finalFeed.push(paginatedFeed[i]);
+
+      // Systematic interstitial structural insertion (Every 5 items)
+      if ((i + 1) % 5 === 0 && ads[adIndex]) {
         finalFeed.push({
           type: "ad",
-          id: liveAds[adPointer].id,
-          title: liveAds[adPointer].title,
-          imageUrl: liveAds[adPointer].imageUrl,
-          redirectUrl: liveAds[adPointer].redirectUrl,
+          id: ads[adIndex].id,
+          title: ads[adIndex].title,
+          imageUrl: ads[adIndex].imageUrl,
+          redirectUrl: ads[adIndex].redirectUrl,
           isAd: true
         });
-        adPointer++;
+        adIndex++;
       }
     }
 
-    // 🚀 9. WRITE PERSISTENT STREAM TO REDIS (3 Minutes Expiry Window)
+    // Cache compiled results array to Redis for 3 Minutes
     if (redisClient?.isReady && finalFeed.length > 0) {
       await redisClient.setEx(cacheKey, 180, JSON.stringify(finalFeed)).catch(() => {});
     }
@@ -164,7 +260,7 @@ export const getFeed = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 FEED CONTROLLER CRITICAL FAILURE ENGINE:", err);
-    return res.status(500).json({ success: false, message: "Failed to load feed module stream" });
+    console.error("🔥 FEED PIPELINE CRITICAL RUNTIME ERROR:", err);
+    return res.status(500).json({ success: false, message: "Failed to load feed stream layer" });
   }
 };
