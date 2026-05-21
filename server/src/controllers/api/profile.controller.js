@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
-import { User, Follower, Post, DoodleRequest, Block } from "../../models/index.js"; // 🔥 Standalone model imports updated via main instance registry
+import { User, Follower, Post, DoodleRequest } from "../../models/index.js"; 
+import Block from "../../models/Block.js"; // 🔥 FIXED: Imported directly because it's missing in models/index.js
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
@@ -18,7 +19,7 @@ export const getUserProfile = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid ID format" });
     }
 
-    // 🛡️ CRITICAL SECURITY FIXED: Block layers check must execute BEFORE checking cache layers
+    // 🛡️ Block layers check must execute BEFORE checking cache layers
     if (viewerId) {
       const isBlocked = await Block.findOne({
         where: {
@@ -78,7 +79,7 @@ export const getUserProfile = async (req, res) => {
       posts = await Post.findAll({ 
         where: { userId: profileUserId, status: "active" }, 
         order: [["createdAt", "DESC"]],
-        limit: 100 // Scale boundaries protection limit
+        limit: 100 
       });
     }
 
@@ -135,7 +136,7 @@ export const getUserProfile = async (req, res) => {
 };
 
 // ============================================================
-// 2. UPDATE MY PROFILE (With High-Performance Invalidation Strategy)
+// 2. UPDATE MY PROFILE
 // ============================================================
 export const updateMyProfile = async (req, res) => {
   try {
@@ -176,11 +177,9 @@ export const updateMyProfile = async (req, res) => {
       profilePhoto
     });
 
-    // 🧠 FIXED: Removed heavy Redis KEYS command. Instead, safely target exact data sets
     if (redisClient?.isReady) {
       try {
         await redisClient.del(`myProfile:${userId}`);
-        // Clearing individual key streams using clean array pipelines
         const defaultGuestKey = `userProfile:${userId}:viewer:guest`;
         const defaultSelfKey = `userProfile:${userId}:viewer:${userId}`;
         await Promise.all([
@@ -240,7 +239,7 @@ export const getMyProfile = async (req, res) => {
 };
 
 // ============================================================
-// 4. SEND DOODLE REQUEST (With Native Buffers & Real-Time Engine Notify)
+// 4. SEND DOODLE REQUEST
 // ============================================================
 export const sendDoodleRequest = async (req, res) => {
   try {
@@ -298,7 +297,7 @@ export const sendDoodleRequest = async (req, res) => {
       receiverId,
       type: "DOODLE_REQUEST",
       doodleRequestId: request.id,
-    }).catch(err => console.error("⚠️ Notification Error (Non-blocking):", err.message));
+    }).catch(err => console.error("⚠️ Notification Error:", err.message));
 
     if (redisClient?.isReady) {
       await redisClient.del(`doodle_requests:${receiverId}`).catch(() => {});
