@@ -4,6 +4,7 @@ import Follower from "../../models/Follower.js";
 import DoodleRequest from "../../models/DoodleRequest.js";
 import { createNotification } from "../../services/notification.service.js";
 import Block from "../../models/Block.js";
+import { Op } from "sequelize";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 
