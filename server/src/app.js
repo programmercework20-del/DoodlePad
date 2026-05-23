@@ -26,6 +26,7 @@ import adRoutes from "./routes/ad.routes.js";
 import blockUnblockRoutes from "./routes/blockUnblock.routes.js";
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
+import errorMiddleware from "./middlewares/error.middleware.js";
 
 import path from "path";
 // import adRoutes from "./routes/ad.routes.js";
@@ -199,16 +200,8 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error("Global error:", err);
+app.use(errorMiddleware);
 
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || "Internal Server Error",
-    ...(config.nodeEnv === "development" && { stack: err.stack }),
-  });
-});
 
 
 export default app;

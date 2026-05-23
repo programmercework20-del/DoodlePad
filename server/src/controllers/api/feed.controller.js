@@ -5,9 +5,10 @@ import Ad from "../../models/Ad.js";
 import Block from "../../models/Block.js";
 import { calculateFeedScore } from "../../utils/feedRanking.js";
 import redisClient from "../../config/redis.js";
+import asyncHandler from "../../utils/asyncHandler.js";
 
-export const getFeed = async (req, res) => {
-  try {
+export const getFeed = asyncHandler(async (req, res) => {
+ 
     const limit = parseInt(req.query.limit) || 15;
     const page = parseInt(req.query.page) || 1;
     const offset = (page - 1) * limit;
@@ -259,8 +260,5 @@ export const getFeed = async (req, res) => {
       feed: finalFeed
     });
 
-  } catch (err) {
-    console.error("🔥 FEED PIPELINE CRITICAL RUNTIME ERROR:", err);
-    return res.status(500).json({ success: false, message: "Failed to load feed stream layer" });
-  }
-};
+  
+});

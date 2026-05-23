@@ -1,3 +1,19 @@
+process.on("unhandledRejection", (reason, promise) => {
+
+  console.error("🔥 UNHANDLED REJECTION");
+  console.error("Reason:", reason);
+
+  // DON'T crash app
+});
+
+process.on("uncaughtException", (error) => {
+
+  console.error("🔥 UNCAUGHT EXCEPTION");
+  console.error(error);
+
+  // optional graceful shutdown
+});
+
 import 'dotenv/config';
 import app from './src/app.js';
 import { sequelize } from './src/models/index.js';
@@ -71,3 +87,17 @@ const startServer = async () => {
 };
 
 startServer();
+
+process.on("SIGTERM", async () => {
+
+  console.log("🛑 SIGTERM RECEIVED");
+
+  await sequelize.close();
+
+  server.close(() => {
+
+    console.log("✅ Server closed");
+
+    process.exit(0);
+  });
+});

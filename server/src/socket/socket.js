@@ -82,64 +82,237 @@ export const initSocket = (server) => {
   });
 
   io.on("connection", (socket) => {
+
+  try {
+
     console.log("⚡ New Socket Connection:", socket.id);
 
-    // ✅ Register + Auto join all conversation rooms
-  // socket.js
-socket.on("register", async (userId) => {
-  if (!userId) return;
+    // =========================================
+    // ✅ REGISTER USER
+    // =========================================
 
-  // 1. Map Update (Ensure latest socket ID)
-  onlineUsers.set(userId, socket.id);
+    socket.on("register", async (userId) => {
 
-  // 2. Auto-join rooms (Backup for background updates)
-  try {
-    const entries = await ConversationParticipant.findAll({
-      where: { userId },
-      attributes: ["conversationId"],
-      raw: true
-    });
-    entries.forEach(({ conversationId }) => {
-      socket.join(conversationId);
-    });
-  } catch (err) {
-    console.error("❌ Auto-join failed:", err.message);
-  }
-  
-  // 3. User-specific room (Personal Notification Channel)
-  socket.join(`user_${userId}`); 
-});
+      try {
 
-    // ✅ Manual join — chat screen open hone pe
-    socket.on("join_conversation", (conversationId) => {
-      if (conversationId) {
-        socket.join(conversationId);
-        console.log(`🏠 Manually joined room: ${conversationId} by socket: ${socket.id}`);
+        if (!userId) {
+          console.log("❌ Invalid userId");
+          return;
+        }
+
+        // Latest socket map
+        onlineUsers.set(userId, socket.id);
+
+        socket.userId = userId;
+
+        // =========================================
+        // ✅ AUTO JOIN CONVERSATIONS
+        // =========================================
+
+        try {
+
+          const entries =
+            await ConversationParticipant.findAll({
+
+              where: { userId },
+
+              attributes: ["conversationId"],
+
+              raw: true
+            });
+
+          entries.forEach(({ conversationId }) => {
+
+            socket.join(conversationId);
+          });
+
+        } catch (err) {
+
+          console.error(
+            "❌ Auto-join failed:",
+            err.message
+          );
+        }
+
+        // =========================================
+        // ✅ PERSONAL ROOM
+        // =========================================
+
+        socket.join(`user_${userId}`);
+
+        console.log(
+          `✅ User registered: ${userId}`
+        );
+
+      } catch (err) {
+
+        console.error(
+          "❌ Register socket error:",
+          err
+        );
       }
     });
 
-    // ✅ Manual leave — chat screen close hone pe
-    socket.on("leave_conversation", (conversationId) => {
-      if (conversationId) {
-        socket.leave(conversationId);
-        console.log(`🚪 Left room: ${conversationId} by socket: ${socket.id}`);
-      }
-    });
+    // =========================================
+    // ✅ JOIN CONVERSATION
+    // =========================================
 
-    socket.on("connect_error", (err) => {
-      console.error("❌ Socket Connect Error:", err.message);
-    });
+    socket.on(
+      "join_conversation",
+      (conversationId) => {
 
-    socket.on("disconnect", (reason) => {
-      console.log(`🔌 User Disconnected: ${socket.id} (Reason: ${reason})`);
-      for (let [userId, sockId] of onlineUsers.entries()) {
-        if (sockId === socket.id) {
-          onlineUsers.delete(userId);
-          break;
+        try {
+
+          if (!conversationId) return;
+
+          socket.join(conversationId);
+
+          console.log(
+            `🏠 Joined room: ${conversationId}`
+          );
+
+        } catch (err) {
+
+          console.error(
+            "❌ Join room error:",
+            err
+          );
         }
       }
+    );
+
+    // =========================================
+    // ✅ LEAVE CONVERSATION
+    // =========================================
+
+    socket.on(
+      "leave_conversation",
+      (conversationId) => {
+
+        try {
+
+          if (!conversationId) return;
+
+          socket.leave(conversationId);
+
+          console.log(
+            `🚪 Left room: ${conversationId}`
+          );
+
+        } catch (err) {
+
+          console.error(
+            "❌ Leave room error:",
+            err
+          );
+        }
+      }
+    );
+
+    // =========================================
+    // ✅ TYPING
+    // =========================================
+
+    socket.on(
+      "typing",
+      ({ conversationId, userId }) => {
+
+        try {
+
+          socket
+            .to(conversationId)
+            .emit("typing", { userId });
+
+        } catch (err) {
+
+          console.error(
+            "❌ Typing event error:",
+            err
+          );
+        }
+      }
+    );
+
+    // =========================================
+    // ✅ STOP TYPING
+    // =========================================
+
+    socket.on(
+      "stop_typing",
+      ({ conversationId, userId }) => {
+
+        try {
+
+          socket
+            .to(conversationId)
+            .emit("stop_typing", { userId });
+
+        } catch (err) {
+
+          console.error(
+            "❌ Stop typing error:",
+            err
+          );
+        }
+      }
+    );
+
+    // =========================================
+    // ✅ SOCKET CONNECT ERROR
+    // =========================================
+
+    socket.on("connect_error", (err) => {
+
+      console.error(
+        "❌ Socket Connect Error:",
+        err.message
+      );
     });
-  });
+
+    // =========================================
+    // ✅ DISCONNECT
+    // =========================================
+
+    socket.on("disconnect", (reason) => {
+
+      try {
+
+        console.log(
+          `🔌 User Disconnected: ${socket.id}`
+        );
+
+        console.log(`Reason: ${reason}`);
+
+        for (
+          let [userId, sockId]
+          of onlineUsers.entries()
+        ) {
+
+          if (sockId === socket.id) {
+
+            onlineUsers.delete(userId);
+
+            break;
+          }
+        }
+
+      } catch (err) {
+
+        console.error(
+          "❌ Disconnect cleanup error:",
+          err
+        );
+      }
+    });
+
+  } catch (err) {
+
+    console.error(
+      "🔥 SOCKET CONNECTION ERROR:",
+      err
+    );
+  }
+});
 
   return io;
 };
