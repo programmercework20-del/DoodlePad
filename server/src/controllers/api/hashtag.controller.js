@@ -91,6 +91,9 @@ export const getPostsByHashtag = async (req, res) => {
         {
           model: User,
           as: "author",
+          where: {
+            isDeactivated: false
+          },
           attributes: [
             "id",
             "username",

@@ -1,5 +1,5 @@
 import { Op } from "sequelize";
-import { User, Follower, Post, DoodleRequest } from "../../models/index.js"; 
+import { User, Follower, Post, DoodleRequest } from "../../models/index.js";
 import Block from "../../models/Block.js"; // 🔥 FIXED: Imported directly because it's missing in models/index.js
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
@@ -48,7 +48,11 @@ export const getUserProfile = async (req, res) => {
       }
     }
 
-    const user = await User.findByPk(profileUserId, {
+    const user = await User.findOne({
+      where: {
+        id: profileUserId,
+        isDeactivated: false,
+      },
       attributes: ["id", "username", "name", "bio", "profilePhoto", "doodleImage", "doodleData", "doodleOwnerId", "isPrivate"]
     });
 
@@ -76,10 +80,10 @@ export const getUserProfile = async (req, res) => {
 
     let posts = [];
     if (canViewFullProfile) {
-      posts = await Post.findAll({ 
-        where: { userId: profileUserId, status: "active" }, 
+      posts = await Post.findAll({
+        where: { userId: profileUserId, status: "active" },
         order: [["createdAt", "DESC"]],
-        limit: 100 
+        limit: 100
       });
     }
 
@@ -124,7 +128,7 @@ export const getUserProfile = async (req, res) => {
     };
 
     if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData)).catch(() => {});
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData)).catch(() => { });
     }
 
     return res.json({ success: true, ...profileData });
@@ -145,7 +149,7 @@ export const updateMyProfile = async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     let { name, bio, dateOfBirth, gender, username } = req.body;
-    
+
     username = username?.trim();
     name = name?.trim();
     bio = bio?.trim();
@@ -159,12 +163,12 @@ export const updateMyProfile = async (req, res) => {
     if (req.file) {
       const fileName = `profile_images/user_${userId}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      
+
       await blob.save(req.file.buffer, {
         metadata: { contentType: req.file.mimetype },
         resumable: false
       });
-      
+
       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
@@ -209,20 +213,20 @@ export const getMyProfile = async (req, res) => {
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
       if (cached) {
-        return res.json({ 
-          success: true, 
-          data: { profile: { user: JSON.parse(cached) } } 
+        return res.json({
+          success: true,
+          data: { profile: { user: JSON.parse(cached) } }
         });
       }
     }
 
     const user = await User.findByPk(userId, {
-      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData"]
+      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData", "isDeactivated"]
     });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => {});
+    if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => { });
 
     return res.json({
       success: true,
@@ -267,7 +271,7 @@ export const sendDoodleRequest = async (req, res) => {
         resumable: false,
       });
       finalDoodleImage = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    } 
+    }
     else if (base64Image) {
       const base64Clean = base64Image.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Clean, "base64");
@@ -300,7 +304,7 @@ export const sendDoodleRequest = async (req, res) => {
     }).catch(err => console.error("⚠️ Notification Error:", err.message));
 
     if (redisClient?.isReady) {
-      await redisClient.del(`doodle_requests:${receiverId}`).catch(() => {});
+      await redisClient.del(`doodle_requests:${receiverId}`).catch(() => { });
     }
 
     return res.status(201).json({
@@ -325,16 +329,16 @@ export const getDoodleRequests = async (req, res) => {
       include: [
         {
           model: User,
-          as: "sender", 
-          attributes: ["id", "name", "username", "profilePhoto"], 
+          as: "sender",
+          attributes: ["id", "name", "username", "profilePhoto"],
         },
       ],
       order: [["createdAt", "DESC"]],
     });
 
-    return res.json({ 
-      success: true, 
-      requests 
+    return res.json({
+      success: true,
+      requests
     });
   } catch (error) {
     console.error("🔥 FETCH DOODLE REQUESTS ERROR:", error);
@@ -390,7 +394,7 @@ export const acceptDoodleRequest = async (req, res) => {
       receiverId: request.senderId,
       type: "DOODLE_ACCEPTED",
       doodleRequestId: request.id
-    }).catch(() => {});
+    }).catch(() => { });
 
     return res.json({
       success: true,

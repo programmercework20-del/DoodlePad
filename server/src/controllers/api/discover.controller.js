@@ -76,6 +76,7 @@ export const getDiscoverPeople = async (req, res) => {
     // 🚀 5. BATCH QUERIES: Fetch Candidate Data and Post Counts in 1-Shot
     const [users, postCounts] = await Promise.all([
       User.findAll({
+        isDeactivated: false,
         where: { id: { [Op.in]: candidateIds }, status: "active" },
         attributes: ["id", "username", "name", "profilePhoto", "bio", "isVerified", "lastActiveAt"],
         raw: true

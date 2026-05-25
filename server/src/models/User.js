@@ -49,6 +49,20 @@ const User = sequelize.define("User", {
         type: DataTypes.ENUM("active", "warned", "blocked", "banned"),
         defaultValue: "active"
     },
+    isDeactivated: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+
+    deactivatedAt: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+
+    scheduledDeletionAt: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     canComment: {
         type: DataTypes.BOOLEAN,
         defaultValue: true

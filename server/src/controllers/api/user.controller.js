@@ -167,6 +167,17 @@ export const login = async (req, res) => {
     });
 
     if (!user) return res.status(404).json({ message: "User not found" });
+
+    // ACCOUNT DEACTIVATED
+    if (user.isDeactivated) {
+
+      return res.status(403).json({
+        success: false,
+        isDeactivated: true,
+        message: "Account is deactivated",
+        restoreAvailableUntil: user.scheduledDeletionAt
+      });
+    }
     if (!user.isVerified) return res.status(403).json({ message: "Please verify your account first" });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -229,6 +240,17 @@ export const verifyResetOtp = async (req, res) => {
     });
 
     if (!user) return res.status(404).json({ message: "User not found" });
+
+    // ACCOUNT DEACTIVATED
+    if (user.isDeactivated) {
+
+      return res.status(403).json({
+        success: false,
+        isDeactivated: true,
+        message: "Account is deactivated",
+        restoreAvailableUntil: user.scheduledDeletionAt
+      });
+    }
 
     if (user.otp !== otp || user.otpExpires < new Date()) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
@@ -418,7 +440,7 @@ export const getFollowRequests = async (req, res) => {
     const userId = req.user.id;
     const requests = await Follower.findAll({
       where: { followingId: userId, status: "pending" },
-      include: [{ model: User, as: "follower", attributes: ["id", "username", "profilePhoto"] }]
+      include: [{ model: User, as: "follower", where: { isDeactivated: false }, attributes: ["id", "username", "profilePhoto"] }]
     });
     res.json(requests);
   } catch (error) {
@@ -465,7 +487,7 @@ export const getFollowers = async (req, res) => {
 
     const followers = await Follower.findAll({
       where: { followingId: userId, status: "accepted" },
-      include: [{ model: User, as: "follower", attributes: ["id", "username", "profilePhoto"] }]
+      include: [{ model: User, as: "follower",where: { isDeactivated: false }, attributes: ["id", "username", "profilePhoto"] }]
     });
 
     if (redisClient?.isReady) {
@@ -490,7 +512,7 @@ export const getFollowing = async (req, res) => {
 
     const following = await Follower.findAll({
       where: { followerId: userId, status: "accepted" },
-      include: [{ model: User, as: "following", attributes: ["id", "username", "profilePhoto"] }]
+      include: [{ model: User, as: "following", isDeactivated: false, attributes: ["id", "username", "profilePhoto"] }]
     });
 
     if (redisClient?.isReady) {

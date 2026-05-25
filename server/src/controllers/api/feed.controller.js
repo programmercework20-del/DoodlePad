@@ -78,6 +78,9 @@ export const getFeed = asyncHandler(async (req, res) => {
       include: [{
         model: User,
         as: "author",
+        where: {
+          isDeactivated: false
+        },
         attributes: ["id", "username", "profilePhoto", "isVerified"]
       }],
       order: [["createdAt", "DESC"]],
@@ -103,7 +106,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       include: [{
         model: User,
         as: "author",
-        where: { isPrivate: false },
+        where: { isPrivate: false, isDeactivated: false },
         attributes: ["id", "username", "profilePhoto", "isVerified"]
       }],
       order: [["createdAt", "DESC"]], 

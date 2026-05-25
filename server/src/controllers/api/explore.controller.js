@@ -58,6 +58,9 @@ export const getExploreFeed = async (req, res) => {
         {
           model: User,
           as: "author",
+          where:{
+            isDeactivated: false
+          },
           attributes: [
             "id",
             "username",
@@ -66,7 +69,8 @@ export const getExploreFeed = async (req, res) => {
           ],
 
           where: {
-            isPrivate: false
+            isPrivate: false,
+            isDeactivated: false
           }
         }
       ],
@@ -149,7 +153,8 @@ export const getExploreFeed = async (req, res) => {
                 ],
 
                 where: {
-                  isPrivate: false
+                  isPrivate: false,
+                  isDeactivated: false
                 }
               }
             ]
@@ -197,7 +202,8 @@ export const getExploreFeed = async (req, res) => {
           ],
 
           where: {
-            isPrivate: false
+            isPrivate: false,
+            isDeactivated: false
           }
         }
       ],
@@ -216,12 +222,14 @@ export const getExploreFeed = async (req, res) => {
     const suggestedCreators = await User.findAll({
 
       where: {
+        isDeactivated: false,
 
         id: {
           [Op.notIn]: [...blockedIds, userId]
         },
 
-        isPrivate: false
+        isPrivate: false,
+        
       },
 
       attributes: [
