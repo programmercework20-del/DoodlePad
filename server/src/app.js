@@ -24,6 +24,8 @@ import conversationRoutes from './routes/conversation.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import adRoutes from "./routes/ad.routes.js"; 
 import blockUnblockRoutes from "./routes/blockUnblock.routes.js";
+import hashtagRoutes from "./routes/hashtag.routes.js";
+import exploreRoutes from "./routes/explore.routes.js";
 import "./jobs/cron.js"; // ✅ ADD THIS LINE
 import archiveExpiredPosts from "./jobs/archivePosts.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
@@ -140,6 +142,8 @@ app.use("/api/live", liveRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/block", blockUnblockRoutes);
+app.use("/api/hashtags", hashtagRoutes);
+app.use("/api/explore", exploreRoutes);
 app.use("/api", apiRoutes);
 // app.use(express.static("public"));
 

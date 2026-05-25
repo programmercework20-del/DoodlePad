@@ -12,75 +12,118 @@ export const globalSearch = async (req, res) => {
     let query = req.query.q;
 
     if (!query) {
-      return res.json({ success: true, type: "empty", users: [], hashtags: [] });
+      return res.json({
+        success: true,
+        users: [],
+        hashtags: []
+      });
     }
 
-    // 🔥 Decode encoded query (%23 -> #) aur clean
     query = decodeURIComponent(query).trim();
+
     const userId = req.user.id;
 
-    if (query === "#") {
-      return res.json({ success: true, type: "hashtag", hashtags: [] });
-    }
-
-    // 🚀 Redis Cache Check (Fast Search)
-    const cacheKey = `search:${query.toLowerCase()}`;
-    if (redisClient?.isReady) {
-      const cachedData = await redisClient.get(cacheKey);
-      if (cachedData) {
-        return res.json({ success: true, ...JSON.parse(cachedData) });
+    // ===============================
+    // SAVE SEARCH HISTORY
+    // ===============================
+    await SearchHistory.destroy({
+      where: {
+        userId,
+        keyword: query.toLowerCase()
       }
-    }
+    });
 
-    // ===============================
-    // 🔎 SEARCH LOGIC
-    // ===============================
-    let responseData = {};
+    await SearchHistory.create({
+      userId,
+      keyword: query.toLowerCase()
+    });
 
+    // =====================================================
+    // 🔥 HASHTAG SEARCH ONLY WHEN USER TYPES #
+    // =====================================================
     if (query.startsWith("#")) {
-      // HASHTAG SEARCH
-      const keyword = query.slice(1).toLowerCase();
+
+      const cleanQuery = query.replace("#", "").toLowerCase();
+
+      // avoid empty #
+      if (!cleanQuery) {
+        return res.json({
+          success: true,
+          hashtags: []
+        });
+      }
+
       const hashtags = await Hashtag.findAll({
-        where: { name: { [Op.iLike]: `${keyword}%` } },
-        attributes: ["id", "name", "postsCount"],
-        order: [["postsCount", "DESC"]],
-        limit: 15
-      });
-      responseData = { type: "hashtag", hashtags };
-    } else {
-      // USER SEARCH
-      const users = await User.findAll({
         where: {
-          [Op.or]: [
-            { username: { [Op.iLike]: `${query}%` } },
-            { name: { [Op.iLike]: `${query}%` } }
-          ]
+          name: {
+            [Op.iLike]: `%${cleanQuery}%`
+          }
         },
-        attributes: ["id", "username", "name", "profilePhoto", "isVerified"],
-        order: [["isVerified", "DESC"], ["username", "ASC"]],
-        limit: 15
+        attributes: [
+          "id",
+          "name",
+          "postsCount"
+        ],
+        order: [
+          ["postsCount", "DESC"]
+        ],
+        limit: 10
       });
-      responseData = { type: "user", users };
+
+      return res.json({
+        success: true,
+        type: "hashtag",
+        hashtags
+      });
     }
 
-    // 🚀 Save to Redis (Cache for 5 minutes)
-    if (redisClient?.isReady && (responseData.users?.length > 0 || responseData.hashtags?.length > 0)) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(responseData));
-    }
+    // =====================================================
+    // 👤 USER SEARCH
+    // =====================================================
 
-    // 📝 Save Search History (Silently in background)
-    // Dedupe: Pehle purana delete, phir naya create
-    SearchHistory.destroy({ where: { userId, keyword: query.toLowerCase() } })
-      .then(() => {
-        SearchHistory.create({ userId, keyword: query.toLowerCase() });
-      })
-      .catch(err => console.error("History Save Error:", err));
+    const users = await User.findAll({
+      where: {
+        [Op.or]: [
+          {
+            username: {
+              [Op.iLike]: `%${query}%`
+            }
+          },
+          {
+            name: {
+              [Op.iLike]: `%${query}%`
+            }
+          }
+        ]
+      },
+      attributes: [
+        "id",
+        "username",
+        "name",
+        "profilePhoto",
+        "isVerified"
+      ],
+      order: [
+        ["isVerified", "DESC"],
+        ["username", "ASC"]
+      ],
+      limit: 10
+    });
 
-    return res.json({ success: true, ...responseData });
+    return res.json({
+      success: true,
+      type: "user",
+      users
+    });
 
   } catch (error) {
+
     console.error("Search error:", error);
-    res.status(500).json({ success: false, message: "Search failed" });
+
+    res.status(500).json({
+      success: false,
+      message: "Search failed"
+    });
   }
 };
 

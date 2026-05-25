@@ -201,7 +201,12 @@ export const createPost = async (req, res) => {
     });
 
     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
-
+    
+    await processHashtags({
+      caption,
+      postId: post.id
+    });
+    
     return res.status(201).json({ success: true, message: "Post created!", post });
 
   } catch (error) {
