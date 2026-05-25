@@ -16,6 +16,8 @@ import Notification from "./Notification.js";
 import Conversation from "./Conversation.js";
 import ConversationParticipant from "./ConversationParticipant.js";
 import DoodleRequest from "./DoodleRequest.js";
+import Hashtag from "./Hashtag.js";
+import HashtagUsage from "./HashtagUsage.js";
 import Block from "./Block.js";
 
 
