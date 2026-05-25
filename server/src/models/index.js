@@ -229,6 +229,30 @@ Post.hasMany(Message, {
   as: "messages"
 });
 
+// ================= HASHTAG =================
+
+// hashtag -> usages
+Hashtag.hasMany(HashtagUsage, {
+  foreignKey: "hashtagId",
+  as: "usages"
+});
+
+HashtagUsage.belongsTo(Hashtag, {
+  foreignKey: "hashtagId",
+  as: "hashtag"
+});
+
+// post -> hashtag usages
+Post.hasMany(HashtagUsage, {
+  foreignKey: "postId",
+  as: "hashtagUsages"
+});
+
+HashtagUsage.belongsTo(Post, {
+  foreignKey: "postId",
+  as: "post"
+});
+
 
 // =====================================================
 // ================= BLOCK/UNBLOCK ============================
