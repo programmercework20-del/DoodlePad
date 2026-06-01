@@ -633,6 +633,183 @@ const validateUUID = (uuid) => {
 // ============================================================
 // SEND MESSAGE (Optimized & Stable)
 // ============================================================
+// export const sendMessage = async (req, res) => {
+//   const transaction = await sequelize.transaction();
+
+//   try {
+//     const senderId = req.user.id;
+//     const { receiverId, content, type = "text", postId, conversationId } = req.body;
+
+//     // 1. VALIDATION
+//     if (!receiverId || !validateUUID(receiverId)) {
+//       await transaction.rollback();
+//       return res.status(400).json({ success: false, message: "Valid receiverId is required" });
+//     }
+
+//     if (!content && !req.file && type !== "shared_post") {
+//       await transaction.rollback();
+//       return res.status(400).json({ success: false, message: "Message content or file is required" });
+//     }
+
+//     let mediaUrl = null;
+//     let thumbnail = null;
+//     let finalType = type;
+
+//     // 2. FILE UPLOAD & VIDEO THUMBNAIL LOGIC
+//     if (req.file) {
+//       const fileName = `chat_media/chat_${Date.now()}_${req.file.originalname}`;
+//       const blob = bucket.file(fileName);
+//       await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+//       mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+//       const mime = req.file.mimetype;
+//       if (mime.startsWith("image")) finalType = "image";
+//       else if (mime.startsWith("audio")) finalType = "audio";
+//       else if (mime.startsWith("video")) {
+//         finalType = "video";
+//         try {
+//           const tempVideoPath = path.join(os.tmpdir(), `chat_v_${Date.now()}.mp4`);
+//           const tempThumbPath = path.join(os.tmpdir(), `chat_t_${Date.now()}.jpg`);
+//           fs.writeFileSync(tempVideoPath, req.file.buffer);
+
+//           await new Promise((resolve, reject) => {
+//             ffmpeg(tempVideoPath)
+//               .inputOptions('-threads 2') // Keep CPU load low
+//               .screenshots({
+//                 count: 1,
+//                 timemarks: ['00:00:01'],
+//                 filename: path.basename(tempThumbPath),
+//                 folder: os.tmpdir(),
+//                 size: '320x?'
+//               })
+//               .on('end', resolve)
+//               .on('error', reject);
+//           });
+
+//           const thumbFileName = `chat_thumbnails/t_${Date.now()}.jpg`;
+//           const thumbBlob = bucket.file(thumbFileName);
+//           await thumbBlob.save(fs.readFileSync(tempThumbPath), {
+//             metadata: { contentType: 'image/jpeg' }
+//           });
+//           thumbnail = `https://storage.googleapis.com/${bucket.name}/${thumbFileName}`;
+
+//           if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
+//           if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
+//         } catch (e) {
+//           console.error("⚠️ Chat video thumbnail generation failed:", e);
+//         }
+//       }
+//     }
+
+//     // 3. FIND OR CREATE CONVERSATION
+//     let conversation = null;
+
+//     if (conversationId && validateUUID(conversationId)) {
+//       conversation = await Conversation.findByPk(conversationId, { transaction });
+//     }
+
+//     if (!conversation) {
+//       const senderConvs = await ConversationParticipant.findAll({
+//         where: { userId: senderId },
+//         attributes: ["conversationId"],
+//         transaction
+//       });
+
+//       const convIds = senderConvs.map(c => c.conversationId);
+
+//       if (convIds.length > 0) {
+//         const match = await ConversationParticipant.findOne({
+//           where: { conversationId: { [Op.in]: convIds }, userId: receiverId },
+//           transaction
+//         });
+//         if (match) {
+//           conversation = await Conversation.findByPk(match.conversationId, { transaction });
+//         }
+//       }
+//     }
+
+//     if (!conversation) {
+//       const follow = await Follower.findOne({
+//         where: { followerId: receiverId, followingId: senderId, status: "accepted" },
+//         transaction
+//       });
+
+//       conversation = await Conversation.create({ isRequest: !follow }, { transaction });
+//       await ConversationParticipant.bulkCreate([
+//         { conversationId: conversation.id, userId: senderId },
+//         { conversationId: conversation.id, userId: receiverId }
+//       ], { transaction });
+//     }
+
+//     // 4. CREATE MESSAGE
+//     const message = await Message.create({
+//       conversationId: conversation.id,
+//       senderId,
+//       receiverId,
+//       content: finalType === "shared_post" ? "Shared a post" : (content || ""),
+//       mediaUrl,
+//       thumbnail,
+//       type: finalType,
+//       postId: postId || null,
+//       status: "sent"
+//     }, { transaction });
+
+//     // 5. UPDATE CONVERSATION PREVIEW
+//     const lastMsgPreview = finalType === "shared_post"
+//       ? "🔗 Post"
+//       : (content || (finalType === "image" ? "📸 Image" : finalType === "audio" ? "🎤 Audio" : "🎬 Video"));
+
+//     await conversation.update({
+//       lastMessage: lastMsgPreview,
+//       lastMessageAt: new Date()
+//     }, { transaction });
+
+//     await transaction.commit();
+
+//     // 🚀 BACKGROUND TASKS (Safe and non-blocking execution)
+//     const messageData = message.get({ plain: true });
+
+//     if (redisClient?.isReady) {
+//       Promise.all([
+//         redisClient.del(`conversations:${senderId}`),
+//         redisClient.del(`conversations:${receiverId}`)
+//       ]).catch(e => console.error("❌ Redis Cache clear error:", e));
+//     }
+
+//     try {
+//       const io = getIO();
+//       const onlineUsers = getOnlineUsers();
+//       const receiverSocketId = onlineUsers.get(receiverId);
+
+//       // Room distribution (Active users inside room)
+//       io.to(conversation.id).emit("receive_message", messageData);
+
+//       // Direct channel (Active users outside current room layout)
+//       io.to(`user_${receiverId}`).emit("receive_message", messageData);
+
+//       if (receiverSocketId) {
+//         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
+//         io.to(`user_${senderId}`).emit("message_status_update", {
+//           messageId: message.id,
+//           status: "delivered",
+//           conversationId: conversation.id
+//         });
+//       }
+//     } catch (socketErr) {
+//       console.error("⚠️ Socket delivery module failure context:", socketErr.message);
+//     }
+
+//     createNotification({ senderId, receiverId, type: "MESSAGE" }).catch(() => {});
+
+//     return res.json({ success: true, message: messageData });
+
+//   } catch (err) {
+//     await transaction.rollback();
+//     console.error("🔥 SEND CRITICAL SYSTEM REJECTION:", err);
+//     return res.status(500).json({ success: false, message: "Send message failed", error: err.message });
+//   }
+// };
+
 export const sendMessage = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -654,8 +831,9 @@ export const sendMessage = async (req, res) => {
     let mediaUrl = null;
     let thumbnail = null;
     let finalType = type;
+    let duration = null; // 🔥 ADDED: Variable to store audio duration
 
-    // 2. FILE UPLOAD & VIDEO THUMBNAIL LOGIC
+    // 2. FILE UPLOAD & MEDIA LOGIC
     if (req.file) {
       const fileName = `chat_media/chat_${Date.now()}_${req.file.originalname}`;
       const blob = bucket.file(fileName);
@@ -663,8 +841,34 @@ export const sendMessage = async (req, res) => {
       mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
 
       const mime = req.file.mimetype;
-      if (mime.startsWith("image")) finalType = "image";
-      else if (mime.startsWith("audio")) finalType = "audio";
+      
+      if (mime.startsWith("image")) {
+        finalType = "image";
+      } 
+      else if (mime.startsWith("audio")) {
+        finalType = "audio";
+        // 🔥 ADDED: Calculate Audio Duration using ffprobe
+        try {
+          const tempAudioPath = path.join(os.tmpdir(), `chat_a_${Date.now()}.mp3`);
+          fs.writeFileSync(tempAudioPath, req.file.buffer);
+
+          duration = await new Promise((resolve, reject) => {
+            ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
+              if (err) {
+                reject(err);
+              } else {
+                // metadata.format.duration seconds me float value deta hai (e.g., 45.342)
+                const exactDuration = metadata.format.duration;
+                resolve(exactDuration ? Math.round(exactDuration) : null);
+              }
+            });
+          });
+
+          if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
+        } catch (e) {
+          console.error("⚠️ Audio duration calculation failed:", e);
+        }
+      } 
       else if (mime.startsWith("video")) {
         finalType = "video";
         try {
@@ -749,6 +953,7 @@ export const sendMessage = async (req, res) => {
       content: finalType === "shared_post" ? "Shared a post" : (content || ""),
       mediaUrl,
       thumbnail,
+      duration, // 🔥 ADDED: Save duration to database
       type: finalType,
       postId: postId || null,
       status: "sent"
