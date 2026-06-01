@@ -2,6 +2,7 @@
 import { Message, Conversation, ConversationParticipant, User } from "../../models/index.js";
 import { Op } from "sequelize";
 import redisClient from "../../config/redis.js";
+import Block from "../../models/Block.js";
 
 
 export const getConversations = async (req, res) => {
@@ -18,7 +19,19 @@ export const getConversations = async (req, res) => {
       }
     }
 
-    // 🚀 2. Fetch Conversation IDs for the User
+    // 🔥 2. FETCH ALL BLOCKS IN ONE GO (Optimization)
+    const myBlocks = await Block.findAll({
+      where: {
+        [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
+      },
+      raw: true
+    });
+
+    // Create fast lookup Sets for O(1) performance
+    const usersIBlocked = new Set(myBlocks.filter(b => b.blockerId === userId).map(b => b.blockedId));
+    const usersWhoBlockedMe = new Set(myBlocks.filter(b => b.blockedId === userId).map(b => b.blockerId));
+
+    // 🚀 3. Fetch Conversation IDs for the User
     const participantEntries = await ConversationParticipant.findAll({
       where: { userId },
       attributes: ['conversationId'],
@@ -31,7 +44,7 @@ export const getConversations = async (req, res) => {
       return res.json({ success: true, conversations: [] });
     }
 
-    // 🚀 3. Fetch Full Details with Participants
+    // 🚀 4. Fetch Full Details with Participants
     const conversations = await Conversation.findAll({
       where: { id: { [Op.in]: conversationIds } },
       include: [
@@ -51,10 +64,11 @@ export const getConversations = async (req, res) => {
       limit: 50 
     });
 
-    // 🚀 4. Format Result with dynamic Unread Count, IST Time & Media Data
+    // 🚀 5. Format Result with Block Flags, Media Data, Unread Count & IST Time
     const result = await Promise.all(conversations.map(async (conv) => {
       const otherParticipant = conv.participants.find(p => p.userId !== userId);
       const otherUser = otherParticipant ? otherParticipant.user : null;
+      const otherUserId = otherUser ? otherUser.id : null;
 
       // Unread count nikal rahe hain
       const unreadCount = await Message.count({
@@ -89,16 +103,20 @@ export const getConversations = async (req, res) => {
         isRequest: conv.isRequest,
         user: otherUser,
         
-        // Naye add kiye gaye media payload fields (Fallback to "text" if no message)
+        // Media payload fields
         type: latestMessage?.type || "text",
         mediaUrl: latestMessage?.mediaUrl || null,
-        duration: latestMessage?.duration || null
+        duration: latestMessage?.duration || null,
+
+        // 🔥 NAYE FLAGS FE DEV KE LIYE (Block Logic):
+        isBlockedByMe: otherUserId ? usersIBlocked.has(otherUserId) : false,
+        hasBlockedMe: otherUserId ? usersWhoBlockedMe.has(otherUserId) : false
       };
     }));
 
     const finalResult = result.filter(c => c.user !== null);
 
-    // 🚀 5. Set Redis Cache
+    // 🚀 6. Set Redis Cache
     if (redisClient?.isReady && finalResult.length > 0) {
       await redisClient.setEx(cacheKey, 60, JSON.stringify(finalResult));
     }
@@ -116,7 +134,6 @@ export const getConversations = async (req, res) => {
     });
   }
 };
-
 
 
 

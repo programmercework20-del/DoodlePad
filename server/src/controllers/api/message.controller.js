@@ -624,6 +624,8 @@ import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import Block from "../../models/Block.js";
+
 
 const validateUUID = (uuid) => {
   const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -826,6 +828,25 @@ export const sendMessage = async (req, res) => {
     if (!content && !req.file && type !== "shared_post") {
       await transaction.rollback();
       return res.status(400).json({ success: false, message: "Message content or file is required" });
+    }
+
+    // 🔥 1.5 BLOCK STATUS CHECK (SECURITY GUARD)
+    const blockCheck = await Block.findOne({
+      where: {
+        [Op.or]: [
+          { blockerId: senderId, blockedId: receiverId },
+          { blockerId: receiverId, blockedId: senderId }
+        ]
+      },
+      transaction // Transaction lock
+    });
+
+    if (blockCheck) {
+      await transaction.rollback();
+      return res.status(403).json({ 
+        success: false, 
+        message: "Message cannot be sent due to block status." 
+      });
     }
 
     let mediaUrl = null;
