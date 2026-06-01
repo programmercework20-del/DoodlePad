@@ -6,6 +6,7 @@ import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket
 import { getIO } from "../../socket/socket.js";
+import { injectCommentIsLikedFlag } from "../../utils/commentHelpers.js";
 // ============================================================
 // ADD COMMENT / REPLY (With GCS & Cache Clear)
 // ============================================================
@@ -185,52 +186,61 @@ export const addComment = async (req, res) => {
 export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
+    const currentUserId = req.user?.id; // 🔥 Current user ID (safely extracted)
     const cacheKey = `comments:${postId}`;
 
-    // 🚀 Redis Check
+    let rawComments = null;
+
+    // 🚀 1. Redis Check (Fetch raw data first)
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
-      if (cached) return res.json({ success: true, comments: JSON.parse(cached) });
+      if (cached) {
+        rawComments = JSON.parse(cached);
+      }
     }
 
-    const comments = await Comment.findAll({
-      // ✅ Sirf main comments (parentId: null) fetch karein
-      where: { postId, parentId: null, status: "active" },
-      include: [
-        {
-          model: User,
-          as: "user",
-          attributes: ["id", "username", "profilePhoto"]
-        },
-        {
-          // ✅ Replies include karein
-          model: Comment,
-          as: "replies",
-          // Status check zaroori hai
-          where: { status: "active" },
-          required: false, // Taaki bina reply wale comments bhi dikhein
-          include: [
-            {
-              model: User,
-              as: "user",
-              attributes: ["id", "username", "profilePhoto"]
-            }
-          ]
-        }
-      ],
-      // ✅ Naye comments upar dikhein
-      order: [
-        ["createdAt", "DESC"],
-        [{ model: Comment, as: 'replies' }, "createdAt", "ASC"] // Replies purani upar (conversation style)
-      ]
-    });
+    // 🚀 2. DB Fetch (If cache is empty)
+    if (!rawComments) {
+      const comments = await Comment.findAll({
+        where: { postId, parentId: null, status: "active" },
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "username", "profilePhoto"]
+          },
+          {
+            model: Comment,
+            as: "replies",
+            where: { status: "active" },
+            required: false,
+            include: [
+              {
+                model: User,
+                as: "user",
+                attributes: ["id", "username", "profilePhoto"]
+              }
+            ]
+          }
+        ],
+        order: [
+          ["createdAt", "DESC"],
+          [{ model: Comment, as: 'replies' }, "createdAt", "ASC"] 
+        ]
+      });
 
-    if (redisClient?.isReady) {
-      // 🚀 Expiry thoda kam karein real-time feel ke liye (e.g., 2 min)
-      await redisClient.setEx(cacheKey, 120, JSON.stringify(comments));
+      // Convert full Sequelize instances to plain JSON before caching
+      rawComments = comments.map(c => c.get({ plain: true }));
+
+      if (redisClient?.isReady) {
+        await redisClient.setEx(cacheKey, 120, JSON.stringify(rawComments));
+      }
     }
 
-    return res.json({ success: true, comments });
+    // 🔥 3. Dynamic Injection: Add 'isLiked' to comments and replies for THIS user
+    const finalizedComments = await injectCommentIsLikedFlag(rawComments, currentUserId);
+
+    return res.json({ success: true, comments: finalizedComments });
 
   } catch (error) {
     console.error("🔥 GET COMMENTS ERROR:", error);
