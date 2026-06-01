@@ -425,8 +425,9 @@ export const deletePost = async (req, res) => {
 
 export const getUserPosts = async (req, res) => {
   try {
-    const { id } = req.params; // Jiski profile open hui hai
-    const currentUserId = req.user.id; // Jo app chala raha hai (Logged in viewer)
+    const { id } = req.params;
+    // 🔥 FIX: Added '?' to handle undefined user in public profile views
+    const currentUserId = req.user?.id; 
     const cacheKey = `userPosts:${id}`;
 
     // 🚀 1. Database se Fresh Data nikalna
@@ -465,12 +466,12 @@ export const getUserPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 2. Update Redis with this RAW fresh data (Bina isLiked ke taaki cache shareable rahe)
+    // 🚀 2. Update Redis with this RAW fresh data
     if (redisClient?.isReady && posts.length > 0) {
       await redisClient.setEx(cacheKey, 300, JSON.stringify(posts)); 
     }
 
-    // 🔥 3. Inject isLiked flag dynamically for the CURRENT VIEWER
+    // 🔥 3. Inject isLiked flag dynamically (Helper will skip safely if currentUserId is undefined)
     const finalizedPosts = await injectIsLikedFlag(posts, currentUserId);
 
     return res.json({
