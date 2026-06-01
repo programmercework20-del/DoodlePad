@@ -9,9 +9,11 @@ import path from "path";
 import os from "os";
 
 
+
 // 🔥 REDIS & BUCKET IMPORT
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
+import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 // export const createPost = async (req, res) => {
 //   try {
@@ -423,10 +425,11 @@ export const deletePost = async (req, res) => {
 
 export const getUserPosts = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // Jiski profile open hui hai
+    const currentUserId = req.user.id; // Jo app chala raha hai (Logged in viewer)
     const cacheKey = `userPosts:${id}`;
 
-    // 🚀 1. Database se Fresh Data nikalna (Redis ko bypass kar rahe hain for count accuracy)
+    // 🚀 1. Database se Fresh Data nikalna
     const posts = await Post.findAll({
       where: {
         userId: id,
@@ -441,7 +444,6 @@ export const getUserPosts = async (req, res) => {
       },
       attributes: {
         include: [
-          // ✅ Real-time Accurate Count (Database se live calculate karega)
           [
             Sequelize.literal(`(
               SELECT COUNT(*)::int
@@ -463,15 +465,18 @@ export const getUserPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 2. Update Redis with this fresh data
+    // 🚀 2. Update Redis with this RAW fresh data (Bina isLiked ke taaki cache shareable rahe)
     if (redisClient?.isReady && posts.length > 0) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(posts)); // Expiry 5 mins kar di hai
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(posts)); 
     }
+
+    // 🔥 3. Inject isLiked flag dynamically for the CURRENT VIEWER
+    const finalizedPosts = await injectIsLikedFlag(posts, currentUserId);
 
     return res.json({
       success: true,
-      count: posts.length,
-      posts
+      count: finalizedPosts.length,
+      posts: finalizedPosts
     });
 
   } catch (error) {
