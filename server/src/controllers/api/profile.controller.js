@@ -202,19 +202,14 @@ export const getUserProfile = async (req, res) => {
 //     return res.status(500).json({ success: false, message: "Profile update execution failed" });
 //   }
 // };
+
 export const updateMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const user = await User.findByPk(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    // 🔥 TRAP 1: Dekhte hain Frontend ne actual mein kya bheja hai
-    console.log("🕵️‍♂️ [DEBUG] Frontend se ye payload aaya:", req.body);
-
     let { name, bio, dateOfBirth, gender, username, isPrivate } = req.body;
-
-    // 🔥 TRAP 2: Dekhte hain extract kya hua
-    console.log("🕵️‍♂️ [DEBUG] isPrivate ki raw value:", isPrivate);
 
     username = username?.trim();
     name = name?.trim();
@@ -227,40 +222,50 @@ export const updateMyProfile = async (req, res) => {
 
     let profilePhoto = user.profilePhoto;
     if (req.file) {
-      // image upload logic...
+      const fileName = `profile_images/user_${userId}_${Date.now()}`;
+      const blob = bucket.file(fileName);
+      await blob.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype },
+        resumable: false
+      });
+      profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
+    // Boolean Parsing
     let parsedIsPrivate = user.isPrivate;
     if (isPrivate !== undefined) {
-      parsedIsPrivate = isPrivate === "true" || isPrivate === true;
+      parsedIsPrivate = (isPrivate === "true" || isPrivate === true);
     }
 
-    // 🔥 TRAP 3: DB mein save hone se pehle final value kya bani
-    console.log("🕵️‍♂️ [DEBUG] Database mein save hone wali value:", parsedIsPrivate);
+    // 🔥 HARDCORE DB UPDATE (Bypasses .update() ignores)
+    user.name = name ?? user.name;
+    user.username = username ?? user.username;
+    user.bio = bio ?? user.bio;
+    user.dateOfBirth = dateOfBirth ?? user.dateOfBirth;
+    user.gender = gender || null;
+    user.profilePhoto = profilePhoto;
+    user.isPrivate = parsedIsPrivate; 
+    
+    // Save command DB mein pakka force-write karegi
+    await user.save();
+    console.log("✅ DB Update Fired! New isPrivate value in DB:", user.isPrivate);
 
-    await user.update({
-      name: name ?? user.name,
-      username: username ?? user.username,
-      bio: bio ?? user.bio,
-      dateOfBirth: dateOfBirth ?? user.dateOfBirth,
-      gender: gender || null,
-      profilePhoto,
-      isPrivate: parsedIsPrivate 
-    });
-
-    // Cache logic...
-    try {
-      if (redisClient?.isReady) {
-        await redisClient.del(`myProfile:${userId}`);
-        const defaultGuestKey = `userProfile:${userId}:viewer:guest`;
-        const defaultSelfKey = `userProfile:${userId}:viewer:${userId}`;
-        await Promise.all([
-          redisClient.del(defaultGuestKey),
-          redisClient.del(defaultSelfKey)
-        ]);
+    // 🔥 CACHE CARPET BOMBING (Clear all possible profile keys)
+    if (redisClient?.isReady) {
+      try {
+        const keysToDelete = [
+          `myProfile:${userId}`,
+          `profile:${userId}`,
+          `userProfile:${userId}:viewer:guest`,
+          `userProfile:${userId}:viewer:${userId}`
+        ];
+        
+        // Saari keys ko ek saath delete karo
+        await Promise.all(keysToDelete.map(key => redisClient.del(key)));
+        console.log("🧹 Profile Caches wiped out!");
+      } catch (cacheErr) {
+        console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
       }
-    } catch (cacheErr) {
-      console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
     }
 
     return res.json({ success: true, message: "Profile updated successfully", user });
@@ -269,6 +274,7 @@ export const updateMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
   }
 };
+
 // ============================================================
 // 3. GET MY PROFILE
 // ============================================================
