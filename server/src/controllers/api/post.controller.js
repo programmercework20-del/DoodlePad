@@ -7,105 +7,9 @@ import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import path from "path";
 import os from "os";
-
-
-
-// 🔥 REDIS & BUCKET IMPORT
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
-
-// export const createPost = async (req, res) => {
-//   try {
-//     const { type, content, caption, isSaved } = req.body;
-//     const userId = req.user.id;
-//     const cleanType = type?.toLowerCase();
-//     const isSavedBool = isSaved === "true" || isSaved === true;
-
-//     console.log(`🚀 Creating Post: Type=${cleanType}, ContentLength=${content?.length || 0}`);
-
-//     let mediaUrls = [];
-
-
-//    // 🎨 if DOODLE 
-// if (cleanType === "doodle") {
-//   // 🔥 Content = paths JSON hai, base64 nahi
-//   // File (media) already req.files mein aa rahi hai — wahi use karo
-//   // Koi alag GCS upload mat karo doodle ke liye
-  
-//   if (req.files && req.files.length > 0) {
-//     const file = req.files[0]; // doodle JPEG file
-    
-//     const fileName = `post_doodles/doodle_${userId}_${Date.now()}.jpg`;
-//     const blob = bucket.file(fileName);
-
-//     await new Promise((resolve, reject) => {
-//       const stream = blob.createWriteStream({
-//         metadata: { contentType: file.mimetype },
-//         resumable: false,
-//       });
-//       stream.on("error", reject);
-//       stream.on("finish", resolve);
-//       stream.end(file.buffer);
-//     });
-
-//     mediaUrls.push(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-//     console.log("✅ Doodle file uploaded:", fileName);
-//   }
-// }
-
-//     // 📂 AGAR REGULAR FILES HAIN
-//     if (req.files && req.files.length > 0) {
-//       const uploadPromises = req.files.map((file) => {
-//         return new Promise((resolve, reject) => {
-//           let folderName = 'post_images';
-//           if (file.mimetype.startsWith('video')) folderName = 'post_videos';
-//           else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
-
-//           const fileName = `${folderName}/user_${userId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-//           const blob = bucket.file(fileName);
-
-//           blob.save(file.buffer, {
-//             metadata: { contentType: file.mimetype },
-//             resumable: file.size > 5 * 1024 * 1024,
-//           }, (err) => {
-//             if (err) return reject(err);
-//             resolve(`https://storage.googleapis.com/${bucket.name}/${fileName}`);
-//           });
-//         });
-//       });
-//       const uploadedFiles = await Promise.all(uploadPromises);
-//       mediaUrls = [...mediaUrls, ...uploadedFiles];
-//     }
-
-//     // 🔥 Final Check
-//     if (["image", "video", "audio", "doodle"].includes(cleanType) && mediaUrls.length === 0) {
-//        console.error("❌ Validation Failed: No mediaUrls generated");
-//        return res.status(400).json({ message: "Media file or Doodle data is missing/invalid!" });
-//     }
-
-//     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-//     const post = await Post.create({
-//       userId,
-//       type: cleanType,
-//       content: cleanType === "doodle" ? "Doodle Post" : content,
-//       caption,
-//       mediaUrls,
-//       isSaved: isSavedBool,
-//       expiresAt
-//     });
-
-//     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
-
-//     return res.status(201).json({ success: true, message: "Post created!", post });
-
-//   } catch (error) {
-//     console.error("Create Post Error:", error);
-//     res.status(500).json({ success: false, message: "Failed", error: error.message });
-//   }
-// };
-
 
 export const createPost = async (req, res) => {
   try {
@@ -115,7 +19,7 @@ export const createPost = async (req, res) => {
     const isSavedBool = isSaved === "true" || isSaved === true;
 
     let mediaUrls = [];
-    let thumbnail = null; // 🔥 Thumbnail field
+    let thumbnail = null; 
 
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map(async (file, index) => {
@@ -127,32 +31,27 @@ export const createPost = async (req, res) => {
         const fileName = `${folderName}/user_${userId}_${Date.now()}_${index}`;
         const blob = bucket.file(fileName);
 
-        // --- 🔥 VIDEO THUMBNAIL LOGIC START ---
         if (file.mimetype.startsWith('video') && !thumbnail) {
-          // File names mein index add kiya taaki parallel uploads mein conflict na ho
           const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}.mp4`);
           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
           
           try {
-            // 1. Video ko temporary save karein
             fs.writeFileSync(tempVideoPath, file.buffer);
 
-            // 2. FFmpeg se 1st frame extract karein
             await new Promise((resolve, reject) => {
               ffmpeg(tempVideoPath)
-                .inputOptions('-threads 2') // 🚀 CPU Optimization: Prevent server freeze
+                .inputOptions('-threads 2')
                 .screenshots({
                   count: 1,
-                  timemarks: ['00:00:01'], // 1st second ka frame
+                  timemarks: ['00:00:01'],
                   filename: path.basename(tempThumbPath),
                   folder: os.tmpdir(),
-                  size: '640x?' // Resize for performance
+                  size: '640x?'
                 })
                 .on('end', resolve)
                 .on('error', reject);
             });
 
-            // 3. Thumbnail ko Bucket mein upload karein
             const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
             const thumbBlob = bucket.file(thumbFileName);
             await thumbBlob.save(fs.readFileSync(tempThumbPath), {
@@ -164,14 +63,11 @@ export const createPost = async (req, res) => {
           } catch (thumbErr) {
             console.error("⚠️ Thumbnail extraction failed:", thumbErr);
           } finally {
-            // 🧹 4. GUARANTEED CLEANUP: Ye code har haal mein chalega (Success ya Error dono mein)
             if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
             if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
           }
         }
-        // --- 🔥 VIDEO THUMBNAIL LOGIC END ---
 
-        // Main file ko upload karein
         await blob.save(file.buffer, {
           metadata: { contentType: file.mimetype },
           resumable: file.size > 5 * 1024 * 1024,
@@ -183,7 +79,6 @@ export const createPost = async (req, res) => {
       mediaUrls = await Promise.all(uploadPromises);
     }
 
-    // Validation
     const mediaRequiredTypes = ["image", "video", "audio"];
     if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
       return res.status(400).json({ success: false, message: "Media file missing" });
@@ -197,7 +92,7 @@ export const createPost = async (req, res) => {
       content: cleanType === "doodle" ? (content || "Doodle Post") : content,
       caption: caption || "",
       mediaUrls,
-      thumbnail, // ✅ Now saving to DB safely
+      thumbnail, 
       isSaved: isSavedBool,
       expiresAt
     });
@@ -222,41 +117,39 @@ export const getArchivedPosts = async (req, res) => {
     const userId = req.user.id;
     const cacheKey = `archivedPosts:${userId}`;
 
-    // 🔥 IMPORTANT FIX (Original logic maintained)
     await markExpiredPosts();
 
-    // 🚀 1. Check Redis Cache
     if (redisClient?.isReady) {
       const cachedData = await redisClient.get(cacheKey);
       if (cachedData) {
         const parsedData = JSON.parse(cachedData);
-        return res.json({ success: true, count: parsedData.length, posts: parsedData });
+        // 🔥 Inject isLiked
+        const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
+        return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
       }
     }
 
-    // 🚀 2. Fetch from DB if not in Cache
     const posts = await Post.findAll({
       where: { userId, status: "archived" },
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 3. Set Cache for 1 Hour
     if (redisClient?.isReady) {
       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
     }
 
+    // 🔥 Inject isLiked
+    const finalizedPosts = await injectIsLikedFlag(posts, userId);
+
     return res.json({
       success: true,
-      count: posts.length,
-      posts
+      count: finalizedPosts.length,
+      posts: finalizedPosts
     });
 
   } catch (error) {
     console.error("ARCHIVE FETCH ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch archived posts"
-    });
+    return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
   }
 };
 
@@ -264,25 +157,11 @@ export const getArchivedPosts = async (req, res) => {
 export const markExpiredPosts = async () => {
   try {
     const now = new Date();
-
     const [updatedRows] = await Post.update(
-      {
-        status: "archived",
-        expiresAt: null   // 🔥 IMPORTANT FIX
-      },
-      {
-        where: {
-          isSaved: false,
-          status: "active",
-          expiresAt: {
-            [Op.lte]: now
-          }
-        }
-      }
+      { status: "archived", expiresAt: null },
+      { where: { isSaved: false, status: "active", expiresAt: { [Op.lte]: now } } }
     );
-
     console.log(`Archived ${updatedRows} posts`);
-
   } catch (error) {
     console.error(error);
   }
@@ -301,18 +180,18 @@ export const getExpiredPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
+    // 🔥 Inject isLiked
+    const finalizedPosts = await injectIsLikedFlag(posts, userId);
+
     return res.json({
       success: true,
-      count: posts.length,
-      posts
+      count: finalizedPosts.length,
+      posts: finalizedPosts
     });
 
   } catch (error) {
     console.error("EXPIRED FETCH ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch expired posts"
-    });
+    return res.status(500).json({ success: false, message: "Failed to fetch expired posts" });
   }
 };
 
@@ -331,13 +210,8 @@ export const restoreArchivedPost = async (req, res) => {
       return res.status(400).json({ success: false, message: "Post is not archived" });
     }
 
-    await post.update({
-      status: "active",
-      isSaved: true,   // 🔥 now permanent
-      expiresAt: null
-    });
+    await post.update({ status: "active", isSaved: true, expiresAt: null });
 
-    // 🚀 CACHE INVALIDATION
     if (redisClient?.isReady) {
       await redisClient.del(`userPosts:${userId}`);
       await redisClient.del(`archivedPosts:${userId}`);
@@ -366,12 +240,8 @@ export const archivePost = async (req, res) => {
       return res.status(400).json({ success: false, message: "Post already archived" });
     }
 
-    await post.update({
-      status: "archived",
-      expiresAt: null // 🔥 IMPORTANT (stop expiry)
-    });
+    await post.update({ status: "archived", expiresAt: null });
 
-    // 🚀 CACHE INVALIDATION
     if (redisClient?.isReady) {
       await redisClient.del(`userPosts:${userId}`);
       await redisClient.del(`archivedPosts:${userId}`);
@@ -396,19 +266,16 @@ export const deletePost = async (req, res) => {
       return res.status(404).json({ success: false, message: "Post not found" });
     }
 
-    // ✅ Ownership check
     if (post.userId !== userId && req.user.role !== "admin") {
       return res.status(403).json({ success: false, message: "You are not allowed to delete this post" });
     }
 
-    // ✅ Already deleted check
     if (post.status === "deleted") {
       return res.status(400).json({ success: false, message: "Post already deleted" });
     }
 
     await post.update({ status: "deleted" });
 
-    // 🚀 CACHE INVALIDATION
     if (redisClient?.isReady) {
       await redisClient.del(`userPosts:${userId}`);
       await redisClient.del(`archivedPosts:${userId}`);
@@ -422,15 +289,12 @@ export const deletePost = async (req, res) => {
   }
 };
 
-
 export const getUserPosts = async (req, res) => {
   try {
     const { id } = req.params;
-    // 🔥 FIX: Added '?' to handle undefined user in public profile views
     const currentUserId = req.user?.id; 
     const cacheKey = `userPosts:${id}`;
 
-    // 🚀 1. Database se Fresh Data nikalna
     const posts = await Post.findAll({
       where: {
         userId: id,
@@ -466,12 +330,10 @@ export const getUserPosts = async (req, res) => {
       order: [["createdAt", "DESC"]]
     });
 
-    // 🚀 2. Update Redis with this RAW fresh data
     if (redisClient?.isReady && posts.length > 0) {
       await redisClient.setEx(cacheKey, 300, JSON.stringify(posts)); 
     }
 
-    // 🔥 3. Inject isLiked flag dynamically (Helper will skip safely if currentUserId is undefined)
     const finalizedPosts = await injectIsLikedFlag(posts, currentUserId);
 
     return res.json({
@@ -488,65 +350,3 @@ export const getUserPosts = async (req, res) => {
     });
   }
 };
-
-// export const getUserPosts = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const cacheKey = `userPosts:${id}`;
-
-//     // 🚀 1. Check Redis Cache First
-//     if (redisClient?.isReady) {
-//       const cachedData = await redisClient.get(cacheKey);
-//       if (cachedData) {
-//         const parsedData = JSON.parse(cachedData);
-//         return res.json({ success: true, count: parsedData.length, posts: parsedData });
-//       }
-//     }
-
-//     // 🚀 2. Fetch from DB if Cache is empty
-//     const posts = await Post.findAll({
-//       where: {
-//         userId: id,
-//         status: "active",
-//         [Op.or]: [
-//           { isSaved: true },
-//           {
-//             isSaved: false,
-//             expiresAt: { [Op.gt]: new Date() } // ✅ NOT expired
-//           }
-//         ]
-//       },
-//       include: [
-//         {
-//           model: User,
-//           as: "author",
-//           attributes: ["id", "username", "profilePhoto"]
-//         },
-//         {
-//           model: Comment,
-//           as: "comments",
-//           attributes: ["id", "content", "createdAt"]
-//         }
-//       ],
-//       order: [["createdAt", "DESC"]]
-//     });
-
-//     // 🚀 3. Save to Redis Cache (1 Hour Expiry)
-//     if (redisClient?.isReady) {
-//       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
-//     }
-
-//     return res.json({
-//       success: true,
-//       count: posts.length,
-//       posts
-//     });
-
-//   } catch (error) {
-//     console.error("Get user posts error:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch user posts"
-//     });
-//   }
-// };

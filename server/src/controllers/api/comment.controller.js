@@ -111,15 +111,9 @@ export const addComment = async (req, res) => {
 
     // 🚀 PRODUCTION REDIS MANAGEMENT
     if (redisClient?.isReady) {
-      // 1. Is post ki puri comment list delete karein
       await redisClient.del(`comments:${postId}`);
-      
-      // 2. Individual post detail cache delete karein
       await redisClient.del(`post:${postId}`);
-
-      // 3. User profile cache delete karein (Post count update ke liye)
       await redisClient.del(`userPosts:${post.userId}`);
-      
       console.log(`🧹 Cache cleared for postId: ${postId}`);
     }
 
@@ -131,12 +125,11 @@ export const addComment = async (req, res) => {
       const parentComment = await Comment.findByPk(parentId);
       if (parentComment) {
         receiverId = parentComment.userId;
-        notificationType = "REPLY_COMMENT"; // ✅ Triggering Reply Notification
+        notificationType = "REPLY_COMMENT"; 
       }
     }
 
     if (receiverId !== userId) {
-      // Notification send (Background task)
       createNotification({
         senderId: userId,
         receiverId,
@@ -146,30 +139,34 @@ export const addComment = async (req, res) => {
       }).catch(e => console.error("Notification delivery failed:", e));
     }
 
-   // ... (Existing addComment logic)
+    // 🔥 FORMAT THE NEW COMMENT FOR FRONTEND & SOCKET
+    // Frontend ko naya comment directly UI mein dikhane ke liye ye exact format chahiye
+    const formattedNewComment = {
+      ...comment.get({ plain: true }),
+      isLiked: false, // Default false rahega naye comment pe
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        profilePhoto: req.user.profilePhoto
+      },
+      replies: [] // By default koi reply nahi hota
+    };
 
-    // 📡 6. REAL-TIME SOCKET BROADCAST (Add this)
+    // 📡 6. REAL-TIME SOCKET BROADCAST
     try {
       const io = getIO();
       if (io) {
-        // Post ke room mein naye comment/reply ki details bhej do
-        io.to(postId).emit("new_comment", {
-          ...comment.toJSON(),
-          user: {
-            id: req.user.id,
-            username: req.user.username,
-            profilePhoto: req.user.profilePhoto
-          }
-        });
+        io.to(postId).emit("new_comment", formattedNewComment);
       }
     } catch (socketErr) {
       console.log("⚠️ Socket broadcast failed");
     }
 
+    // 🚀 FINAL API RESPONSE
     return res.status(201).json({
       success: true,
       message: parentId ? "Reply added" : "Comment added",
-      comment
+      comment: formattedNewComment // 🔥 Ab yahan proper data jayega
     });
 
   } catch (error) {
@@ -186,41 +183,27 @@ export const addComment = async (req, res) => {
 export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
-    const currentUserId = req.user?.id; // 🔥 Current user ID (safely extracted)
+    const currentUserId = req.user?.id; 
     const cacheKey = `comments:${postId}`;
 
     let rawComments = null;
 
-    // 🚀 1. Redis Check (Fetch raw data first)
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
-      if (cached) {
-        rawComments = JSON.parse(cached);
-      }
+      if (cached) rawComments = JSON.parse(cached);
     }
 
-    // 🚀 2. DB Fetch (If cache is empty)
     if (!rawComments) {
       const comments = await Comment.findAll({
         where: { postId, parentId: null, status: "active" },
         include: [
-          {
-            model: User,
-            as: "user",
-            attributes: ["id", "username", "profilePhoto"]
-          },
+          { model: User, as: "user", attributes: ["id", "username", "profilePhoto"] },
           {
             model: Comment,
             as: "replies",
             where: { status: "active" },
             required: false,
-            include: [
-              {
-                model: User,
-                as: "user",
-                attributes: ["id", "username", "profilePhoto"]
-              }
-            ]
+            include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }]
           }
         ],
         order: [
@@ -229,15 +212,11 @@ export const getPostComments = async (req, res) => {
         ]
       });
 
-      // Convert full Sequelize instances to plain JSON before caching
       rawComments = comments.map(c => c.get({ plain: true }));
-
-      if (redisClient?.isReady) {
-        await redisClient.setEx(cacheKey, 120, JSON.stringify(rawComments));
-      }
+      if (redisClient?.isReady) await redisClient.setEx(cacheKey, 120, JSON.stringify(rawComments));
     }
 
-    // 🔥 3. Dynamic Injection: Add 'isLiked' to comments and replies for THIS user
+    // 🔥 MAGIC: Yeh line Comments AND Replies dono mein isLiked daal degi!
     const finalizedComments = await injectCommentIsLikedFlag(rawComments, currentUserId);
 
     return res.json({ success: true, comments: finalizedComments });
