@@ -237,7 +237,7 @@ export const updateMyProfile = async (req, res) => {
       parsedIsPrivate = (isPrivate === "true" || isPrivate === true);
     }
 
-    // 1. Baaki fields ke liye normal Sequelize update chalne do
+    // Normal Updates
     user.name = name ?? user.name;
     user.username = username ?? user.username;
     user.bio = bio ?? user.bio;
@@ -246,8 +246,7 @@ export const updateMyProfile = async (req, res) => {
     user.profilePhoto = profilePhoto;
     await user.save();
 
-    // 🔥 FIX: THE RAW SQL FORCE-WRITE (Direct PostgreSQL attack)
-    // Yeh command Sequelize ke saare filters ko bypass karke direct column me value thonk dega
+    // Raw SQL Force-Update for isPrivate
     if (User.sequelize) {
       await User.sequelize.query(
         `UPDATE users SET "isPrivate" = :isPrivate WHERE id = :userId`,
@@ -256,26 +255,9 @@ export const updateMyProfile = async (req, res) => {
           type: User.sequelize.QueryTypes.UPDATE
         }
       );
-      console.log(`🚀 [RAW SQL SUCCESS] Force-updated isPrivate to ${parsedIsPrivate} inside PostgreSQL`);
     }
 
-    // 🔥 CACHE CARPET BOMBING
-    if (redisClient?.isReady) {
-      try {
-        const keysToDelete = [
-          `myProfile:${userId}`,
-          `profile:${userId}`,
-          `userProfile:${userId}:viewer:guest`,
-          `userProfile:${userId}:viewer:${userId}`
-        ];
-        await Promise.all(keysToDelete.map(key => redisClient.del(key)));
-        console.log("🧹 Profile Caches wiped out!");
-      } catch (cacheErr) {
-        console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
-      }
-    }
-
-    // Ekdum fresh state database se load karke response me bhejo
+    // 🔥 Redis code completely removed from this function
     const freshUser = await User.findByPk(userId);
 
     return res.json({ success: true, message: "Profile updated successfully", user: freshUser });
@@ -284,7 +266,6 @@ export const updateMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
   }
 };
-
 // ============================================================
 // 3. GET MY PROFILE
 // ============================================================
