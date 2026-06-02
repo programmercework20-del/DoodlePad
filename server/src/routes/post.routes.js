@@ -11,6 +11,7 @@ const router = express.Router();
 // router.get("/:id",protect, postController.getPostById);
 router.post("/:id/hide",adminAuth, postController.hidePost);
 // router.delete("/:id",adminAuth, postController.deletePost);
+router.delete("/:id",adminAuth, postController.deletePost);
 router.post("/:id/mark-sensitive",adminAuth, postController.markSensitive);
 router.patch("/:id/comments", postController.disableComments);
 

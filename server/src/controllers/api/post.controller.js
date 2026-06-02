@@ -255,37 +255,69 @@ export const archivePost = async (req, res) => {
   }
 };
 
+// ============================================================
+// 🔥 DELETE OWN OR ADMIN POST (Soft Delete + Full Cache Clear)
+// ============================================================
 export const deletePost = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const postId = req.params.id;
+    const userId = req.user.id; // Logged-in user ID
+    const postId = req.params.id; // URL se mili Post ID
 
+    // 1. Database se post dhoondo
     const post = await Post.findByPk(postId);
 
     if (!post) {
       return res.status(404).json({ success: false, message: "Post not found" });
     }
 
+    // 2. 🛡️ Ownership Check: Sirf post ka owner ya Admin hi delete kar sakta hai
     if (post.userId !== userId && req.user.role !== "admin") {
-      return res.status(403).json({ success: false, message: "You are not allowed to delete this post" });
+      return res.status(403).json({ 
+        success: false, 
+        message: "You are not authorized to delete this post" 
+      });
     }
 
+    // 3. Already deleted check
     if (post.status === "deleted") {
-      return res.status(400).json({ success: false, message: "Post already deleted" });
+      return res.status(400).json({ success: false, message: "Post is already deleted" });
     }
 
+    // 4. Soft Delete Execution (Status 'deleted' mark karo)
     await post.update({ status: "deleted" });
 
+    // 5. 🚀 PRODUCTION CACHE INVALIDATION (Disappear instantly from Everywhere)
     if (redisClient?.isReady) {
-      await redisClient.del(`userPosts:${userId}`);
-      await redisClient.del(`archivedPosts:${userId}`);
+      try {
+        // User ke profile ki posts ka cache delete karo
+        await redisClient.del(`userPosts:${post.userId}`);
+        
+        // User ke archive posts ka cache delete karo
+        await redisClient.del(`archivedPosts:${post.userId}`);
+        
+        // Individual single post view ka cache clear karo
+        await redisClient.del(`post:${postId}`);
+        
+        // Is post ke comments ka cache bhi clear kardo
+        await redisClient.del(`comments:${postId}`);
+        
+        console.log(`🧹 All Redis caches wiped out for deleted postId: ${postId}`);
+      } catch (cacheErr) {
+        console.error("⚠️ Redis Cache clear failed during deletion:", cacheErr.message);
+      }
     }
 
-    return res.json({ success: true, message: "Post deleted successfully" });
+    return res.json({ 
+      success: true, 
+      message: "Post deleted successfully" 
+    });
 
   } catch (error) {
-    console.error("Delete post error:", error);
-    res.status(500).json({ success: false, message: "Failed to delete post" });
+    console.error("🔥 DELETE POST ERROR:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal Server Error during post deletion" 
+    });
   }
 };
 
