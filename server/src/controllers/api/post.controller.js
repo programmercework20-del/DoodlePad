@@ -114,8 +114,15 @@ import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 export const createPost = async (req, res) => {
   try {
-    // 🔥 FIX 1: req.body se duration extract kiya
+
+
+    console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
+
     const { type, content, caption, isSaved, duration } = req.body;
+    
+    // 🔥 TRAP 2: Duration ki exact raw value kya aayi?
+    console.log("🕵️‍♂️ [DEBUG] Raw Duration received:", duration);
+    // 🔥 FIX 1: req.body se duration extract kiya
     const userId = req.user.id;
     const cleanType = type?.toLowerCase();
     const isSavedBool = isSaved === "true" || isSaved === true;
