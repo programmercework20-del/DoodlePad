@@ -237,20 +237,29 @@ export const updateMyProfile = async (req, res) => {
       parsedIsPrivate = (isPrivate === "true" || isPrivate === true);
     }
 
-    // 🔥 HARDCORE DB UPDATE (Bypasses .update() ignores)
+    // 1. Baaki fields ke liye normal Sequelize update chalne do
     user.name = name ?? user.name;
     user.username = username ?? user.username;
     user.bio = bio ?? user.bio;
     user.dateOfBirth = dateOfBirth ?? user.dateOfBirth;
     user.gender = gender || null;
     user.profilePhoto = profilePhoto;
-    user.isPrivate = parsedIsPrivate; 
-    
-    // Save command DB mein pakka force-write karegi
     await user.save();
-    console.log("✅ DB Update Fired! New isPrivate value in DB:", user.isPrivate);
 
-    // 🔥 CACHE CARPET BOMBING (Clear all possible profile keys)
+    // 🔥 FIX: THE RAW SQL FORCE-WRITE (Direct PostgreSQL attack)
+    // Yeh command Sequelize ke saare filters ko bypass karke direct column me value thonk dega
+    if (User.sequelize) {
+      await User.sequelize.query(
+        `UPDATE users SET "isPrivate" = :isPrivate WHERE id = :userId`,
+        {
+          replacements: { isPrivate: parsedIsPrivate, userId },
+          type: User.sequelize.QueryTypes.UPDATE
+        }
+      );
+      console.log(`🚀 [RAW SQL SUCCESS] Force-updated isPrivate to ${parsedIsPrivate} inside PostgreSQL`);
+    }
+
+    // 🔥 CACHE CARPET BOMBING
     if (redisClient?.isReady) {
       try {
         const keysToDelete = [
@@ -259,8 +268,6 @@ export const updateMyProfile = async (req, res) => {
           `userProfile:${userId}:viewer:guest`,
           `userProfile:${userId}:viewer:${userId}`
         ];
-        
-        // Saari keys ko ek saath delete karo
         await Promise.all(keysToDelete.map(key => redisClient.del(key)));
         console.log("🧹 Profile Caches wiped out!");
       } catch (cacheErr) {
@@ -268,7 +275,10 @@ export const updateMyProfile = async (req, res) => {
       }
     }
 
-    return res.json({ success: true, message: "Profile updated successfully", user });
+    // Ekdum fresh state database se load karke response me bhejo
+    const freshUser = await User.findByPk(userId);
+
+    return res.json({ success: true, message: "Profile updated successfully", user: freshUser });
   } catch (error) {
     console.error("🔥 UPDATE PROFILE ERROR:", error);
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
