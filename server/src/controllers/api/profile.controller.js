@@ -5,6 +5,7 @@ import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 
+
 // ============================================================
 // 1. GET USER PROFILE (With Strict Block Validation Prioritization)
 // ============================================================
@@ -142,13 +143,73 @@ export const getUserProfile = async (req, res) => {
 // ============================================================
 // 2. UPDATE MY PROFILE
 // ============================================================
+// export const updateMyProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const user = await User.findByPk(userId);
+//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+//     let { name, bio, dateOfBirth, gender, username } = req.body;
+
+//     username = username?.trim();
+//     name = name?.trim();
+//     bio = bio?.trim();
+
+//     if (username && username !== user.username) {
+//       const existing = await User.findOne({ where: { username } });
+//       if (existing) return res.status(400).json({ success: false, message: "Username already taken" });
+//     }
+
+//     let profilePhoto = user.profilePhoto;
+//     if (req.file) {
+//       const fileName = `profile_images/user_${userId}_${Date.now()}`;
+//       const blob = bucket.file(fileName);
+
+//       await blob.save(req.file.buffer, {
+//         metadata: { contentType: req.file.mimetype },
+//         resumable: false
+//       });
+
+//       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+//     }
+
+//     await user.update({
+//       name: name ?? user.name,
+//       username: username ?? user.username,
+//       bio: bio ?? user.bio,
+//       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
+//       gender: gender || null,
+//       profilePhoto
+//     });
+
+//     if (redisClient?.isReady) {
+//       try {
+//         await redisClient.del(`myProfile:${userId}`);
+//         const defaultGuestKey = `userProfile:${userId}:viewer:guest`;
+//         const defaultSelfKey = `userProfile:${userId}:viewer:${userId}`;
+//         await Promise.all([
+//           redisClient.del(defaultGuestKey),
+//           redisClient.del(defaultSelfKey)
+//         ]);
+//       } catch (cacheErr) {
+//         console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
+//       }
+//     }
+
+//     return res.json({ success: true, message: "Profile updated successfully", user });
+//   } catch (error) {
+//     console.error("🔥 UPDATE PROFILE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Profile update execution failed" });
+//   }
+// };
 export const updateMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const user = await User.findByPk(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    let { name, bio, dateOfBirth, gender, username } = req.body;
+    // 🔥 FIX 1: req.body se isPrivate extract kiya
+    let { name, bio, dateOfBirth, gender, username, isPrivate } = req.body;
 
     username = username?.trim();
     name = name?.trim();
@@ -172,13 +233,21 @@ export const updateMyProfile = async (req, res) => {
       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
 
+    // 🔥 FIX 2: FormData string boolean ("true"/"false") ko real boolean mein convert karna
+    let parsedIsPrivate = user.isPrivate; // Default to current DB value
+    if (isPrivate !== undefined) {
+      parsedIsPrivate = isPrivate === "true" || isPrivate === true;
+    }
+
+    // 🔥 FIX 3: user.update ke andar isPrivate ko map kar diya
     await user.update({
       name: name ?? user.name,
       username: username ?? user.username,
       bio: bio ?? user.bio,
       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
       gender: gender || null,
-      profilePhoto
+      profilePhoto,
+      isPrivate: parsedIsPrivate 
     });
 
     if (redisClient?.isReady) {
@@ -201,7 +270,6 @@ export const updateMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
   }
 };
-
 // ============================================================
 // 3. GET MY PROFILE
 // ============================================================
