@@ -11,9 +11,111 @@ import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
+// export const createPost = async (req, res) => {
+//   try {
+//     const { type,  content, caption, isSaved } = req.body;
+//     const userId = req.user.id;
+//     const cleanType = type?.toLowerCase();
+//     const isSavedBool = isSaved === "true" || isSaved === true;
+
+//     let mediaUrls = [];
+//     let thumbnail = null; 
+
+//     if (req.files && req.files.length > 0) {
+//       const uploadPromises = req.files.map(async (file, index) => {
+//         let folderName = 'post_images';
+//         if (cleanType === "doodle" && index === 0) folderName = 'post_doodles';
+//         else if (file.mimetype.startsWith('video')) folderName = 'post_videos';
+//         else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
+
+//         const fileName = `${folderName}/user_${userId}_${Date.now()}_${index}`;
+//         const blob = bucket.file(fileName);
+
+//         if (file.mimetype.startsWith('video') && !thumbnail) {
+//           const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}.mp4`);
+//           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
+          
+//           try {
+//             fs.writeFileSync(tempVideoPath, file.buffer);
+
+//             await new Promise((resolve, reject) => {
+//               ffmpeg(tempVideoPath)
+//                 .inputOptions('-threads 2')
+//                 .screenshots({
+//                   count: 1,
+//                   timemarks: ['00:00:01'],
+//                   filename: path.basename(tempThumbPath),
+//                   folder: os.tmpdir(),
+//                   size: '640x?'
+//                 })
+//                 .on('end', resolve)
+//                 .on('error', reject);
+//             });
+
+//             const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
+//             const thumbBlob = bucket.file(thumbFileName);
+//             await thumbBlob.save(fs.readFileSync(tempThumbPath), {
+//               metadata: { contentType: 'image/jpeg' }
+//             });
+
+//             thumbnail = `https://storage.googleapis.com/${bucket.name}/${thumbFileName}`;
+
+//           } catch (thumbErr) {
+//             console.error("⚠️ Thumbnail extraction failed:", thumbErr);
+//           } finally {
+//             if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
+//             if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
+//           }
+//         }
+
+//         await blob.save(file.buffer, {
+//           metadata: { contentType: file.mimetype },
+//           resumable: file.size > 5 * 1024 * 1024,
+//         });
+
+//         return `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+//       });
+
+//       mediaUrls = await Promise.all(uploadPromises);
+//     }
+
+//     const mediaRequiredTypes = ["image", "video", "audio"];
+//     if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
+//       return res.status(400).json({ success: false, message: "Media file missing" });
+//     }
+
+//     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+//     const post = await Post.create({
+//       userId,
+//       type: cleanType,
+//       content: cleanType === "doodle" ? (content || "Doodle Post") : content,
+//       caption: caption || "",
+//       mediaUrls,
+//       thumbnail, 
+//       isSaved: isSavedBool,
+//       expiresAt
+//     });
+
+//     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+    
+//     await processHashtags({
+//       caption,
+//       postId: post.id
+//     });
+    
+//     return res.status(201).json({ success: true, message: "Post created!", post });
+
+//   } catch (error) {
+//     console.error("Create Post Error:", error);
+//     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
+//   }
+// };
+
 export const createPost = async (req, res) => {
   try {
-    const { type, content, caption, isSaved } = req.body;
+    // 🔥 FIX 1: req.body se duration extract kiya
+    const { type, content, caption, isSaved, duration } = req.body;
     const userId = req.user.id;
     const cleanType = type?.toLowerCase();
     const isSavedBool = isSaved === "true" || isSaved === true;
@@ -86,6 +188,7 @@ export const createPost = async (req, res) => {
 
     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // 🔥 FIX 2: Post database creation ke andar duration add kar diya
     const post = await Post.create({
       userId,
       type: cleanType,
@@ -94,7 +197,8 @@ export const createPost = async (req, res) => {
       mediaUrls,
       thumbnail, 
       isSaved: isSavedBool,
-      expiresAt
+      expiresAt,
+      duration: duration ? parseInt(duration, 10) : 0  // Text ko proper number mein convert karega
     });
 
     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
@@ -321,6 +425,7 @@ export const deletePost = async (req, res) => {
   }
 };
 
+
 export const getUserPosts = async (req, res) => {
   try {
     const { id } = req.params;
@@ -382,3 +487,65 @@ export const getUserPosts = async (req, res) => {
     });
   }
 };
+
+// export const getUserPosts = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const currentUserId = req.user?.id; 
+//     const cacheKey = `userPosts:${id}`;
+
+//     const posts = await Post.findAll({
+//       where: {
+//         userId: id,
+//         status: "active",
+//         [Op.or]: [
+//           { isSaved: true },
+//           {
+//             isSaved: false,
+//             expiresAt: { [Op.gt]: new Date() } 
+//           }
+//         ]
+//       },
+//       attributes: {
+//         include: [
+//           [
+//             Sequelize.literal(`(
+//               SELECT COUNT(*)::int
+//               FROM "comments" AS c
+//               WHERE c."postId" = "Post"."id"
+//               AND c."status" = 'active'
+//             )`),
+//             "commentsCount"
+//           ]
+//         ]
+//       },
+//       include: [
+//         {
+//           model: User,
+//           as: "author",
+//           attributes: ["id", "username", "profilePhoto"]
+//         }
+//       ],
+//       order: [["createdAt", "DESC"]]
+//     });
+
+//     if (redisClient?.isReady && posts.length > 0) {
+//       await redisClient.setEx(cacheKey, 300, JSON.stringify(posts)); 
+//     }
+
+//     const finalizedPosts = await injectIsLikedFlag(posts, currentUserId);
+
+//     return res.json({
+//       success: true,
+//       count: finalizedPosts.length,
+//       posts: finalizedPosts
+//     });
+
+//   } catch (error) {
+//     console.error("Get user posts error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch user posts"
+//     });
+//   }
+// };
