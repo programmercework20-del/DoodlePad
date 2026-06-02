@@ -390,7 +390,7 @@ export const followUser = async (req, res) => {
 export const acceptFollowRequest = async (req, res) => {
   try {
     const requestId = req.params.id;
-    const userId = req.user.id;
+    const userId = req.user.id; // Profile Owner (Jo accept kar raha hai)
 
     const request = await Follower.findByPk(requestId);
     if (!request) return res.status(404).json({ message: "Request not found" });
@@ -402,12 +402,19 @@ export const acceptFollowRequest = async (req, res) => {
 
     await createNotification({ senderId: userId, receiverId: request.followerId, type: "FOLLOW_ACCEPTED" });
 
-    // 🚀 CACHE INVALIDATION
+    // 🚀 CACHE INVALIDATION LAYER
     if (redisClient?.isReady) {
       await redisClient.del(`followers:${userId}`);
       await redisClient.del(`following:${request.followerId}`);
       await redisClient.del(`followCounts:${userId}`);
       await redisClient.del(`followCounts:${request.followerId}`);
+      
+      // 🔥 NEW FIX: Clear specific userProfile cache combination instantly!
+      // Jab follower profile check karega ya owner follower ka profile check karega, dono cache clear honge.
+      await redisClient.del(`userProfile:${userId}:viewer:${request.followerId}`);
+      await redisClient.del(`userProfile:${request.followerId}:viewer:${userId}`);
+      
+      console.log(`🧹 Cleared profile caches between ${userId} and ${request.followerId}`);
     }
 
     res.json({ message: "Follow request accepted" });
