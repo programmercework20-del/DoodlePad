@@ -269,6 +269,43 @@ export const updateMyProfile = async (req, res) => {
 // ============================================================
 // 3. GET MY PROFILE
 // ============================================================
+// export const getMyProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const cacheKey = `myProfile:${userId}`;
+
+//     if (redisClient?.isReady) {
+//       const cached = await redisClient.get(cacheKey);
+//       if (cached) {
+//         return res.json({
+//           success: true,
+//           data: { profile: { user: JSON.parse(cached) } }
+//         });
+//       }
+//     }
+
+//     const user = await User.findByPk(userId, {
+//       attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData", "isDeactivated"]
+//     });
+
+//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+//     if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => { });
+
+//     return res.json({
+//       success: true,
+//       data: {
+//         profile: {
+//           user: user
+//         }
+//       }
+//     });
+//   } catch (error) {
+//     console.error("🔥 GET PROFILE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
+//   }
+// };
+
 export const getMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -284,8 +321,13 @@ export const getMyProfile = async (req, res) => {
       }
     }
 
+    // 🔥 FIX: 'isPrivate' ko attributes array mein add kar diya gaya hai
     const user = await User.findByPk(userId, {
-      attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData", "isDeactivated"]
+      attributes: [
+        "id", "name", "username", "profilePhoto", "bio", 
+        "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
+        "doodleData", "isDeactivated", "isPrivate" 
+      ]
     });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
