@@ -1,9 +1,89 @@
-import Notification from "../models/Notification.js";
-import Comment from "../models/Comment.js";
-import User from "../models/User.js";
-import Post from "../models/Post.js";
+import Notification from "../../models/Notification.js";
+import Comment from "../../models/Comment.js";
+import User from "../../models/User.js";
+import Post from "../../models/Post.js";
+import Message from "../../models/Message.js";
 import { Op } from "sequelize";
 import redisClient from "../../config/redis.js";
+
+// ============================================================
+// GET MESSAGE NOTIFICATIONS (For Chat Tab)
+// ============================================================
+export const getMessageNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const cacheKey = `message_notifications:${userId}`;
+
+    // 🚀 Redis Check
+    if (redisClient?.isReady) {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) return res.json({ success: true, notifications: JSON.parse(cached) });
+    }
+
+    const notifications = await Notification.findAll({
+      where: {
+        receiverId: userId,
+        type: "MESSAGE"
+      },
+      include: [
+        {
+          model: User,
+          as: "sender",
+          attributes: ["id", "username", "profilePhoto"]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+      limit: 50
+    });
+
+    // 🚀 Set Cache (Short duration - 2 minutes)
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 120, JSON.stringify(notifications));
+    }
+
+    return res.json({
+      success: true,
+      notifications
+    });
+
+  } catch (error) {
+    console.error("GET MESSAGE NOTIFICATION ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch message notifications" });
+  }
+};
+
+// ============================================================
+// GET MESSAGE UNREAD COUNT (For Chat Badge)
+// ============================================================
+export const getMessageUnreadCount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const cacheKey = `message_unread_count:${userId}`;
+
+    // Redis Check
+    if (redisClient?.isReady) {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) return res.json({ success: true, unreadCount: parseInt(cached) });
+    }
+
+    const count = await Notification.count({
+      where: {
+        receiverId: userId,
+        isRead: false,
+        type: "MESSAGE"
+      }
+    });
+
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 60, count.toString());
+    }
+
+    return res.json({ success: true, unreadCount: count });
+
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to get message unread count" });
+  }
+};
 
 // ============================================================
 // GET NOTIFICATIONS (With Redis Cache & Exclusion Logic)
@@ -107,13 +187,13 @@ export const getNotificationRedirect = async (req, res) => {
 
     let exists = true;
     let parentId = null;
-    let conversationId = null; // 🔥 New Field
+    let conversationId = null;
 
-    // 🚀 1. Handle MESSAGE Redirect
+    // 🚀 1. Handle MESSAGE Redirect (Use conversationId from notification)
     if (notification.type === "MESSAGE") {
-      const msg = await Message.findByPk(notification.commentId); // Hum messageId ko commentId field mein save karte hain notification model mein
-      if (msg) {
-        conversationId = msg.conversationId;
+      if (notification.conversationId) {
+        conversationId = notification.conversationId;
+        exists = true;
       } else {
         exists = false;
       }

@@ -1025,7 +1025,14 @@ export const sendMessage = async (req, res) => {
       console.error("⚠️ Socket delivery module failure context:", socketErr.message);
     }
 
-    createNotification({ senderId, receiverId, type: "MESSAGE" }).catch(() => {});
+    createNotification({
+      senderId,
+      receiverId,
+      type: "MESSAGE",
+      conversationId: conversation.id,
+      messageContent: finalType === "shared_post" ? "Shared a post" : (content || ""),
+      messageType: finalType
+    }).catch(() => {});
 
     return res.json({ success: true, message: messageData });
 

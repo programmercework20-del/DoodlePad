@@ -35,6 +35,16 @@ const Notification = sequelize.define("Notification", {
   commentId: DataTypes.UUID,
   doodleRequestId: DataTypes.UUID,
 
+  conversationId: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
+
+  messagePreview: {
+    type: DataTypes.STRING(150),
+    allowNull: true
+  },
+
   isRead: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
