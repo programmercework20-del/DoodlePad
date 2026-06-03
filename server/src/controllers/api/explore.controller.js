@@ -152,20 +152,36 @@ export const getExploreFeed = async (req, res) => {
     });
 
     // ========================================
-    // 🔥 DYNAMIC isLiked INJECTION FOR ALL ARRAYS
+    // 🔥 FORMAT POSTS & DYNAMIC isLiked INJECTION
     // ========================================
+    const formatPost = (post) => ({
+      id: post.id,
+      type: post.type,
+      caption: post.caption,
+      content: post.content,
+      mediaUrls: post.mediaUrls || [],
+      thumbnail: post.thumbnail || null,
+      duration: post.duration || 0,
+      createdAt: post.createdAt,
+      likesCount: post.likesCount || 0,
+      commentsCount: post.commentsCount || 0,
+      sharesCount: post.sharesCount || 0,
+      user: post.author
+    });
 
-    // 1. Inject into Trending Posts
-    const formattedTrendingPosts = await injectIsLikedFlag(trendingPosts, userId);
-    
-    // 2. Inject into Recent Posts
-    const formattedRecentPosts = await injectIsLikedFlag(recentPosts, userId);
+    // 1. Format and inject into Trending Posts
+    const formattedTrendingPostsRaw = trendingPosts.map(formatPost);
+    const formattedTrendingPosts = await injectIsLikedFlag(formattedTrendingPostsRaw, userId);
 
-    // 3. Inject into Hashtag Posts (Iterate over hashtag groups and inject into their inner posts arrays)
+    // 2. Format and inject into Recent Posts
+    const formattedRecentPostsRaw = recentPosts.map(formatPost);
+    const formattedRecentPosts = await injectIsLikedFlag(formattedRecentPostsRaw, userId);
+
+    // 3. Format and inject into Hashtag Posts
     const formattedTrendingHashtagPosts = await Promise.all(
       trendingHashtagPosts.map(async (group) => ({
         ...group,
-        posts: await injectIsLikedFlag(group.posts, userId)
+        posts: await injectIsLikedFlag(group.posts.map(formatPost), userId)
       }))
     );
 

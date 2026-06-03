@@ -175,6 +175,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       content: post.content,
       mediaUrls: post.mediaUrls || [],
       thumbnail: post.thumbnail || null, // 🔥 YE LINE MISSING THI! FIX HO GAYI.
+      duration: post.duration || 0,
       paths: parsedPaths,
       createdAt: post.createdAt,
       likesCount: post.likesCount || 0,
