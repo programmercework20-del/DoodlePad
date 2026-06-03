@@ -127,14 +127,43 @@ export const hidePost = async (req, res) => {
 export const deletePost = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id; // 🔥 protect middleware se logged-in user ki ID milegi
+
+    // 1. Database se post fetch karo
     const post = await Post.findByPk(id);
-    if (!post) return res.status(404).json({ success: false, message: "Post not found" });
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    // 2. 🛡️ SECURITY CHECK: Ownership Validation
+    // Agar post ka userId req.user.id se match nahi karta (aur user admin bhi nahi hai), toh block karo
+    if (post.userId !== userId && req.user.role !== "admin") {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Access denied. You can only delete your own posts." 
+      });
+    }
+
+    // 3. Soft Delete Execution
     post.status = "deleted";
     await post.save();
-    res.json({ success: true, message: "Post deleted successfully" });
+
+    // 4. 🧹 REDIS CACHE CLEARING
+    if (typeof redisClient !== 'undefined' && redisClient?.isReady) {
+      try {
+        await redisClient.del(`userPosts:${post.userId}`);
+        await redisClient.del(`post:${id}`);
+        console.log(`🧹 Cache wiped out for userPosts:${post.userId}`);
+      } catch (cacheErr) {
+        console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
+      }
+    }
+
+    return res.json({ success: true, message: "Post deleted successfully" });
   } catch (error) {
-    console.error("Delete post error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("🔥 DELETE POST ERROR:", error);
+    return res.status(500).json({ success: false, message: "Server error during deletion" });
   }
 };
 
