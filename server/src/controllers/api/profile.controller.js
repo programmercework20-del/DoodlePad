@@ -409,10 +409,37 @@ export const sendDoodleRequest = async (req, res) => {
 // ============================================================
 // 5. GET DOODLE REQUESTS
 // ============================================================
+// export const getDoodleRequests = async (req, res) => {
+//   try {
+//     const requests = await DoodleRequest.findAll({
+//       where: { receiverId: req.user.id, status: "pending" },
+//       include: [
+//         {
+//           model: User,
+//           as: "sender",
+//           attributes: ["id", "name", "username", "profilePhoto"],
+//         },
+//       ],
+//       order: [["createdAt", "DESC"]],
+//     });
+
+//     return res.json({
+//       success: true,
+//       requests
+//     });
+//   } catch (error) {
+//     console.error("🔥 FETCH DOODLE REQUESTS ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch requests" });
+//   }
+// };
+
 export const getDoodleRequests = async (req, res) => {
   try {
-    const requests = await DoodleRequest.findAll({
-      where: { receiverId: req.user.id, status: "pending" },
+    const userId = req.user.id;
+
+    // 1. Fetch Active Pending Doodle Requests
+    const pendingRequests = await DoodleRequest.findAll({
+      where: { receiverId: userId, status: "pending" },
       include: [
         {
           model: User,
@@ -423,10 +450,29 @@ export const getDoodleRequests = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
+    // 2. 🔥 NEW: Fetch Recent Doodle History (Accepted / Rejected)
+    const historyRequests = await DoodleRequest.findAll({
+      where: { 
+        receiverId: userId, 
+        status: { [Op.in]: ["accepted", "rejected"] } 
+      },
+      include: [
+        {
+          model: User,
+          as: "sender",
+          attributes: ["id", "name", "username", "profilePhoto"],
+        },
+      ],
+      order: [["updatedAt", "DESC"]],
+      limit: 20
+    });
+
     return res.json({
       success: true,
-      requests
+      pending: pendingRequests,
+      history: historyRequests
     });
+
   } catch (error) {
     console.error("🔥 FETCH DOODLE REQUESTS ERROR:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch requests" });

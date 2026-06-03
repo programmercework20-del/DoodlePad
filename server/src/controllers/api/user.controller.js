@@ -442,16 +442,65 @@ export const rejectFollowRequest = async (req, res) => {
   }
 };
 
+// export const getFollowRequests = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const requests = await Follower.findAll({
+//       where: { followingId: userId, status: "pending" },
+//       include: [{ model: User, as: "follower", where: { isDeactivated: false }, attributes: ["id", "username", "profilePhoto"] }]
+//     });
+//     res.json(requests);
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// };
+
 export const getFollowRequests = async (req, res) => {
   try {
     const userId = req.user.id;
-    const requests = await Follower.findAll({
+
+    // 1. Fetch Active Pending Follow Requests (Jinpar action lena baki hai)
+    const pendingRequests = await Follower.findAll({
       where: { followingId: userId, status: "pending" },
-      include: [{ model: User, as: "follower", where: { isDeactivated: false }, attributes: ["id", "username", "profilePhoto"] }]
+      include: [
+        { 
+          model: User, 
+          as: "follower", 
+          where: { isDeactivated: false }, 
+          attributes: ["id", "username", "profilePhoto"] 
+        }
+      ],
+      order: [["createdAt", "DESC"]]
     });
-    res.json(requests);
+
+    // 2. 🔥 NEW: Fetch Recent History (Accepted / Rejected requests)
+    const historyRequests = await Follower.findAll({
+      where: { 
+        followingId: userId, 
+        status: { [Op.in]: ["accepted", "rejected"] } 
+      },
+      include: [
+        { 
+          model: User, 
+          as: "follower", 
+          where: { isDeactivated: false }, 
+          attributes: ["id", "username", "profilePhoto"] 
+        }
+      ],
+      order: [["updatedAt", "DESC"]], // Jo haal hi me accept/reject hui wo sabse upar
+      limit: 20 // Database performance optimize rakhne ke liye limit lagayi hai
+    });
+
+    // Clean structural object structure for frontend
+    return res.json({
+      success: true,
+      pending: pendingRequests,
+      history: historyRequests
+    });
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("🔥 GET FOLLOW REQUESTS ERROR:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
