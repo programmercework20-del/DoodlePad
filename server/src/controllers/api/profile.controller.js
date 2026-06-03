@@ -37,7 +37,19 @@ export const getUserProfile = async (req, res) => {
       }
     }
 
-    const cacheKey = `userProfile:${profileUserId}:viewer:${viewerId || "guest"}`;
+    // 🔥 Get profile cache version to invalidate old caches when privacy changes
+    let cacheVersion = "v1";
+    if (redisClient?.isReady) {
+      try {
+        const versionKey = `profileCacheVersion:${profileUserId}`;
+        const cachedVersion = await redisClient.get(versionKey);
+        if (cachedVersion) cacheVersion = cachedVersion;
+      } catch (e) {
+        console.error("⚠️ Redis Version Read Error:", e.message);
+      }
+    }
+
+    const cacheKey = `userProfile:${profileUserId}:viewer:${viewerId || "guest"}:${cacheVersion}`;
 
     // Redis Memory Fetch Execution
     if (redisClient?.isReady) {
@@ -248,16 +260,21 @@ export const updateMyProfile = async (req, res) => {
       isPrivate: parsedIsPrivate 
     });
 
-    // Cache logic...
+    // 🔥 COMPLETE CACHE INVALIDATION - Increment version to invalidate all cached variants
     try {
       if (redisClient?.isReady) {
+        // Increment cache version to invalidate all old caches for all viewers
+        const versionKey = `profileCacheVersion:${userId}`;
+        const currentVersion = await redisClient.get(versionKey);
+        const newVersion = currentVersion ? `v${parseInt(currentVersion.replace('v', '')) + 1}` : 'v2';
+
+        // Set new version with long TTL (so it persists even if profile is accessed later)
+        await redisClient.setEx(versionKey, 86400, newVersion);
+
+        // Also clear personal profile cache
         await redisClient.del(`myProfile:${userId}`);
-        const defaultGuestKey = `userProfile:${userId}:viewer:guest`;
-        const defaultSelfKey = `userProfile:${userId}:viewer:${userId}`;
-        await Promise.all([
-          redisClient.del(defaultGuestKey),
-          redisClient.del(defaultSelfKey)
-        ]);
+
+        console.log(`✅ Profile cache invalidated. New version: ${newVersion}`);
       }
     } catch (cacheErr) {
       console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
