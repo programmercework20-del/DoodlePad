@@ -152,7 +152,6 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
-// ============================================================
 // 2. UPDATE MY PROFILE
 // ============================================================
 // export const updateMyProfile = async (req, res) => {
@@ -286,46 +285,8 @@ export const updateMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
   }
 };
-// ============================================================
-// 3. GET MY PROFILE
-// ============================================================
-// export const getMyProfile = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const cacheKey = `myProfile:${userId}`;
 
-//     if (redisClient?.isReady) {
-//       const cached = await redisClient.get(cacheKey);
-//       if (cached) {
-//         return res.json({
-//           success: true,
-//           data: { profile: { user: JSON.parse(cached) } }
-//         });
-//       }
-//     }
-
-//     const user = await User.findByPk(userId, {
-//       attributes: ["id", "name", "username", "profilePhoto", "bio", "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", "doodleData", "isDeactivated"]
-//     });
-
-//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-//     if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => { });
-
-//     return res.json({
-//       success: true,
-//       data: {
-//         profile: {
-//           user: user
-//         }
-//       }
-//     });
-//   } catch (error) {
-//     console.error("🔥 GET PROFILE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
-//   }
-// };
-
+// get my profile (with caching)
 export const getMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -473,12 +434,12 @@ export const getDoodleRequests = async (req, res) => {
 };
 
 // ============================================================
-// 6. ACCEPT DOODLE REQUEST
+// 6. ACCEPT DOODLE REQUEST (PRO-LEVEL CACHE FIX)
 // ============================================================
 export const acceptDoodleRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user.id; // Jisne accept kiya (Receiver)
 
     const request = await DoodleRequest.findByPk(requestId);
 
@@ -490,8 +451,10 @@ export const acceptDoodleRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: "Already processed" });
     }
 
+    // 1. Status Update
     await request.update({ status: "accepted" });
 
+    // 2. User Table Update
     await User.update(
       {
         doodleImage: request.doodleImage || null,
@@ -501,20 +464,28 @@ export const acceptDoodleRequest = async (req, res) => {
       { where: { id: userId } }
     );
 
+    // 3. 🚀 CARPET BOMBING CACHE (Invisible Bug Killer)
     if (redisClient?.isReady) {
       try {
-        await redisClient.del(`myProfile:${userId}`);
-        const guestKey = `userProfile:${userId}:viewer:guest`;
-        const selfKey = `userProfile:${userId}:viewer:${userId}`;
-        const senderKey = `userProfile:${userId}:viewer:${request.senderId}`;
-        await Promise.all([
-          redisClient.del(guestKey),
-          redisClient.del(selfKey),
-          redisClient.del(senderKey)
-        ]);
-      } catch (ce) { console.error(ce); }
+        const keysToDelete = [
+          `myProfile:${userId}`,
+          `profile:${userId}`,
+          `userProfile:${userId}:viewer:guest`,
+          `userProfile:${userId}:viewer:${userId}`,
+          `userProfile:${userId}:viewer:${request.senderId}`,
+          // Sender ka apna cache bhi clear karo in case frontend wahan se data uthata ho
+          `myProfile:${request.senderId}`,
+          `profile:${request.senderId}`
+        ];
+        
+        await Promise.all(keysToDelete.map(key => redisClient.del(key)));
+        console.log(`🧹 [DOODLE CACHE CLEARED] Wiped profile caches for Receiver: ${userId} & Sender: ${request.senderId}`);
+      } catch (ce) { 
+        console.error("⚠️ Redis Cache clearance exception:", ce.message); 
+      }
     }
 
+    // 4. Send Notification
     await createNotification({
       senderId: userId,
       receiverId: request.senderId,
@@ -526,7 +497,8 @@ export const acceptDoodleRequest = async (req, res) => {
       success: true,
       message: "Doodle applied to profile",
       doodleImage: request.doodleImage || null,
-      doodleData: request.doodleData || null
+      doodleData: request.doodleData || null,
+      doodleOwnerId: request.senderId // Frontend ko state update karne me kaam aayega
     });
   } catch (error) {
     console.error("🔥 DOODLE ACCEPT ERROR:", error);
