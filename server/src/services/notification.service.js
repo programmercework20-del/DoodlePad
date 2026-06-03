@@ -110,10 +110,17 @@ export const createNotification = async ({
       title: type === "MESSAGE" ? sender.username : "DoodlePad",
       body: pushBody,
       data: {
-        type,
+        type: type,
         postId: postId || "",
         commentId: commentId || "",
-        conversationId: conversationId || ""
+        conversationId: conversationId || "",
+        // 🔥 FLATTENED FCM PAYLOAD (No nested objects)
+        ...(type === "MESSAGE" && {
+          senderId: sender.id || "",
+          senderUsername: sender.username || "",
+          senderAvatar: sender.profilePhoto || "",
+          messagePreview: messagePreview || ""
+        })
       }
     });
 
