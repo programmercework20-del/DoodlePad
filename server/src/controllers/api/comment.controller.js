@@ -7,76 +7,8 @@ import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket
 import { getIO } from "../../socket/socket.js";
 import { injectCommentIsLikedFlag } from "../../utils/commentHelpers.js";
-// ============================================================
-// ADD COMMENT / REPLY (With GCS & Cache Clear)
-// ============================================================
-// export const addComment = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { postId } = req.params;
-//     const { type, content, parentId } = req.body;
 
-//     let mediaUrl = null;
 
-//     // 🔥 GCS Bucket Upload logic
-//     if (req.file) {
-//       const fileName = `comments/comment_${userId}_${Date.now()}`;
-//       const blob = bucket.file(fileName);
-//       await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
-//       mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-//     }
-
-//     const post = await Post.findByPk(postId);
-//     if (!post) return res.status(404).json({ success: false, message: "Post not found" });
-
-//     const comment = await Comment.create({
-//       postId,
-//       userId,
-//       type: type || "text",
-//       content,
-//       mediaUrl,
-//       parentId: parentId || null
-//     });
-
-//     await post.increment("commentsCount");
-
-//     // 🚀 Clear Redis Cache for this post's comments
-//     if (redisClient?.isReady) {
-//       await redisClient.del(`comments:${postId}`);
-//       await redisClient.del(`post:${postId}`);
-//     }
-
-//     // 🔔 Notification Logic
-//     let receiverId = post.userId;
-//     if (parentId) {
-//       const parentComment = await Comment.findByPk(parentId);
-//       if (parentComment && parentComment.userId !== userId) {
-//         receiverId = parentComment.userId;
-//       }
-//     }
-
-//     if (receiverId !== userId) {
-//       createNotification({
-//         senderId: userId,
-//         receiverId,
-//         type: parentId ? "REPLY_COMMENT" : "COMMENT_POST",
-//         postId,
-//         commentId: comment.id
-//       }).catch(e => console.error(e));
-//     }
-
-//     return res.status(201).json({
-//       success: true,
-//       message: parentId ? "Reply added" : "Comment added",
-//       comment
-//     });
-
-//   } catch (error) {
-//     console.error("ADD COMMENT ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to add comment" });
-//   }
-// };
-// comment.controller.js
 export const addComment = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -174,12 +106,7 @@ export const addComment = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to add comment" });
   }
 };
-// ============================================================
-// GET POST COMMENTS (Top-level + Replies)
-// ============================================================
-// ============================================================
-// GET POST COMMENTS (Optimized for Real-time & Replies)
-// ============================================================
+
 export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -226,9 +153,7 @@ export const getPostComments = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch" });
   }
 };
-// ============================================================
-// DELETE OWN COMMENT (Soft Delete)
-// ============================================================
+
 export const deleteOwnComment = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -261,47 +186,6 @@ export const deleteOwnComment = async (req, res) => {
   }
 };
 
-// ============================================================
-// LIKE COMMENT (Toggle)
-// ============================================================
-// export const likeComment = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { commentId } = req.params;
-
-//     const comment = await Comment.findByPk(commentId);
-//     if (!comment) return res.status(404).json({ message: "Comment not found" });
-
-//     const existing = await CommentLike.findOne({ where: { commentId, userId } });
-
-//     if (existing) {
-//       await existing.destroy();
-//       await comment.decrement("likesCount");
-//       await comment.reload();
-//       return res.json({ success: true, action: "unliked", likesCount: comment.likesCount });
-//     }
-
-//     await CommentLike.create({ commentId, userId });
-//     await comment.increment("likesCount");
-//     await comment.reload();
-
-//     if (comment.userId !== userId) {
-//       createNotification({
-//         senderId: userId,
-//         receiverId: comment.userId,
-//         type: "LIKE_COMMENT",
-//         postId: comment.postId,
-//         commentId
-//       }).catch(e => console.error(e));
-//     }
-
-//     return res.json({ success: true, action: "liked", likesCount: comment.likesCount });
-
-//   } catch (error) {
-//     return res.status(500).json({ success: false, message: "Like failed" });
-//   }
-// };
-
 export const likeComment = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -324,7 +208,6 @@ export const likeComment = async (req, res) => {
     let newLikesCount;
 
     if (existing) {
-      // 🔥 FIX: DB aur in-memory ek saath update
       await existing.destroy();
       newLikesCount = Math.max(0, comment.likesCount - 1);
       await Comment.update(
@@ -342,18 +225,17 @@ export const likeComment = async (req, res) => {
       action = "liked";
     }
 
-    // ⚡ INSTANT RESPONSE — reload() nahi, delay nahi
+    // ⚡ INSTANT RESPONSE
     res.json({ success: true, action, likesCount: newLikesCount });
 
     // ============================================================
-    // ⚙️ BACKGROUND TASKS — response ke baad
+    // ⚙️ BACKGROUND TASKS
     // ============================================================
 
-    // 📡 Socket — saare users ko instant update
+    // 📡 Socket Broadcast
     try {
       const io = getIO();
       if (io) {
-        // 🔥 Post room mein saare users ko emit karo
         io.to(comment.postId).emit("comment_like_updated", {
           commentId,
           postId: comment.postId,
@@ -366,7 +248,7 @@ export const likeComment = async (req, res) => {
       console.error("⚠️ Socket emit failed:", socketErr.message);
     }
 
-    // 🔔 Notification
+    // 🔔 Notification Logic
     if (action === "liked" && comment.userId !== userId) {
       createNotification({
         senderId: userId,
@@ -377,10 +259,12 @@ export const likeComment = async (req, res) => {
       }).catch(e => console.error("⚠️ Notification Error:", e));
     }
 
-    // 🧠 Redis cache clear
+    // 🔥 FIX: Correct Cache Key Deletion
     if (redisClient?.isReady) {
-      redisClient.del(`post_comments:${comment.postId}`)
-        .catch(e => console.error(e));
+      // Ab ye wahi key delete karega jisme data fetch ho raha hai
+      redisClient.del(`comments:${comment.postId}`)
+        .then(() => console.log(`🧹 Cache cleared for comments:${comment.postId}`))
+        .catch(e => console.error("Redis clear error:", e));
     }
 
   } catch (error) {
