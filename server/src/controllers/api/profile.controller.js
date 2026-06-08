@@ -153,66 +153,6 @@ export const getUserProfile = async (req, res) => {
 };
 
 // 2. UPDATE MY PROFILE
-// ============================================================
-// export const updateMyProfile = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const user = await User.findByPk(userId);
-//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-//     let { name, bio, dateOfBirth, gender, username } = req.body;
-
-//     username = username?.trim();
-//     name = name?.trim();
-//     bio = bio?.trim();
-
-//     if (username && username !== user.username) {
-//       const existing = await User.findOne({ where: { username } });
-//       if (existing) return res.status(400).json({ success: false, message: "Username already taken" });
-//     }
-
-//     let profilePhoto = user.profilePhoto;
-//     if (req.file) {
-//       const fileName = `profile_images/user_${userId}_${Date.now()}`;
-//       const blob = bucket.file(fileName);
-
-//       await blob.save(req.file.buffer, {
-//         metadata: { contentType: req.file.mimetype },
-//         resumable: false
-//       });
-
-//       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-//     }
-
-//     await user.update({
-//       name: name ?? user.name,
-//       username: username ?? user.username,
-//       bio: bio ?? user.bio,
-//       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
-//       gender: gender || null,
-//       profilePhoto
-//     });
-
-//     if (redisClient?.isReady) {
-//       try {
-//         await redisClient.del(`myProfile:${userId}`);
-//         const defaultGuestKey = `userProfile:${userId}:viewer:guest`;
-//         const defaultSelfKey = `userProfile:${userId}:viewer:${userId}`;
-//         await Promise.all([
-//           redisClient.del(defaultGuestKey),
-//           redisClient.del(defaultSelfKey)
-//         ]);
-//       } catch (cacheErr) {
-//         console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
-//       }
-//     }
-
-//     return res.json({ success: true, message: "Profile updated successfully", user });
-//   } catch (error) {
-//     console.error("🔥 UPDATE PROFILE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Profile update execution failed" });
-//   }
-// };
 export const updateMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -236,9 +176,17 @@ export const updateMyProfile = async (req, res) => {
       if (existing) return res.status(400).json({ success: false, message: "Username already taken" });
     }
 
+    // 🔥 FIX: Restored Google Cloud Storage Upload Logic
     let profilePhoto = user.profilePhoto;
     if (req.file) {
-      // image upload logic...
+      const fileName = `profile_images/user_${userId}_${Date.now()}`;
+      const blob = bucket.file(fileName);
+      await blob.save(req.file.buffer, { 
+        metadata: { contentType: req.file.mimetype },
+        resumable: false 
+      });
+      profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+      console.log("📸 [SUCCESS] New profile photo uploaded to GCS:", profilePhoto);
     }
 
     let parsedIsPrivate = user.isPrivate;
@@ -249,6 +197,7 @@ export const updateMyProfile = async (req, res) => {
     // 🔥 TRAP 3: DB mein save hone se pehle final value kya bani
     console.log("🕵️‍♂️ [DEBUG] Database mein save hone wali value:", parsedIsPrivate);
 
+    // Update the database record
     await user.update({
       name: name ?? user.name,
       username: username ?? user.username,
@@ -259,18 +208,14 @@ export const updateMyProfile = async (req, res) => {
       isPrivate: parsedIsPrivate 
     });
 
-    // 🔥 COMPLETE CACHE INVALIDATION - Increment version to invalidate all cached variants
+    // 🔥 COMPLETE CACHE INVALIDATION
     try {
       if (redisClient?.isReady) {
-        // Increment cache version to invalidate all old caches for all viewers
         const versionKey = `profileCacheVersion:${userId}`;
         const currentVersion = await redisClient.get(versionKey);
         const newVersion = currentVersion ? `v${parseInt(currentVersion.replace('v', '')) + 1}` : 'v2';
 
-        // Set new version with long TTL (so it persists even if profile is accessed later)
         await redisClient.setEx(versionKey, 86400, newVersion);
-
-        // Also clear personal profile cache
         await redisClient.del(`myProfile:${userId}`);
 
         console.log(`✅ Profile cache invalidated. New version: ${newVersion}`);
@@ -285,6 +230,9 @@ export const updateMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
   }
 };
+
+
+
 
 // get my profile (with caching)
 export const getMyProfile = async (req, res) => {
