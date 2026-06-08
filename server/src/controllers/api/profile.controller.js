@@ -208,21 +208,31 @@ export const updateMyProfile = async (req, res) => {
       isPrivate: parsedIsPrivate 
     });
 
-    // 🔥 COMPLETE CACHE INVALIDATION
-    try {
-      if (redisClient?.isReady) {
-        const versionKey = `profileCacheVersion:${userId}`;
-        const currentVersion = await redisClient.get(versionKey);
-        const newVersion = currentVersion ? `v${parseInt(currentVersion.replace('v', '')) + 1}` : 'v2';
+   // 🔥 COMPLETE CACHE INVALIDATION (Updated with Feed & Posts clearing)
+try {
+  if (redisClient?.isReady) {
+    // 1. Profile cache version badhao
+    const versionKey = `profileCacheVersion:${userId}`;
+    const currentVersion = await redisClient.get(versionKey);
+    const newVersion = currentVersion ? `v${parseInt(currentVersion.replace('v', '')) + 1}` : 'v2';
+    await redisClient.setEx(versionKey, 86400, newVersion);
 
-        await redisClient.setEx(versionKey, 86400, newVersion);
-        await redisClient.del(`myProfile:${userId}`);
+    // 2. Personal profile cache delete karo
+    await redisClient.del(`myProfile:${userId}`);
 
-        console.log(`✅ Profile cache invalidated. New version: ${newVersion}`);
-      }
-    } catch (cacheErr) {
-      console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
-    }
+    // 3. 🔥 NEW FIX: User ke apne posts ka cache clear karo (Taaki uski purani pic posts se hate)
+    await redisClient.del(`userPosts:${userId}`);
+
+    // 4. 🔥 NEW FIX: Feed ka cache clear karo (Apni feed aur common feed key jo bhi aap use kar rahe ho)
+    await redisClient.del(`feed:${userId}`); 
+    // Agar aapke paas koi global ya main feed ki key hai jaise 'mainFeed' ya 'globalFeed', toh use bhi yahan del karein:
+    // await redisClient.del(`mainFeed`);
+
+    console.log(`🧹 [PROFILE UPDATE] All related caches (Profile, Posts, Feed) cleared for user: ${userId}`);
+  }
+} catch (cacheErr) {
+  console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
+}
 
     return res.json({ success: true, message: "Profile updated successfully", user });
   } catch (error) {
