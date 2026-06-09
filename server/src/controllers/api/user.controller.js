@@ -504,26 +504,87 @@ export const getFollowRequests = async (req, res) => {
   }
 };
 
+// export const unfollowUser = async (req, res) => {
+//   try {
+//     const followerId = req.user.id;
+//     const followingId = req.params.id;
+
+//     const deleted = await Follower.destroy({ where: { followerId, followingId } });
+
+//     if (!deleted) return res.status(404).json({ message: "Not following this user" });
+
+//     // 🚀 CACHE INVALIDATION
+//     if (redisClient?.isReady) {
+//       await redisClient.del(`followers:${followingId}`);
+//       await redisClient.del(`following:${followerId}`);
+//       await redisClient.del(`followCounts:${followingId}`);
+//       await redisClient.del(`followCounts:${followerId}`);
+//     }
+
+//     res.json({ message: "Unfollowed successfully" });
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// };
+
 export const unfollowUser = async (req, res) => {
   try {
-    const followerId = req.user.id;
-    const followingId = req.params.id;
+    const followerId = req.user.id; // Jo user unfollow kar raha hai
+    const followingId = req.params.id; // Jise unfollow kiya ja raha hai (Target User)
 
+    // 1. Database se relation destroy karo
     const deleted = await Follower.destroy({ where: { followerId, followingId } });
 
-    if (!deleted) return res.status(404).json({ message: "Not following this user" });
-
-    // 🚀 CACHE INVALIDATION
-    if (redisClient?.isReady) {
-      await redisClient.del(`followers:${followingId}`);
-      await redisClient.del(`following:${followerId}`);
-      await redisClient.del(`followCounts:${followingId}`);
-      await redisClient.del(`followCounts:${followerId}`);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Not following this user" });
     }
 
-    res.json({ message: "Unfollowed successfully" });
+    // 2. 🚀 CARPET BOMBING CACHE INVALIDATION (Future-Proof Fix)
+    if (redisClient?.isReady) {
+      try {
+        const keysToDelete = [
+          `followers:${followingId}`,
+          `following:${followerId}`,
+          `followCounts:${followingId}`,
+          `followCounts:${followerId}`,
+          
+          // 🔥 FIX: Dono users ke aamne-saamne ke saare profile relation cache delete karo
+          `userProfile:${followingId}:viewer:${followerId}`,
+          `userProfile:${followerId}:viewer:${followingId}`,
+          `profile:${followingId}`,
+          `profile:${followerId}`
+        ];
+
+        // Saari keys ko ek saath flush karo
+        await Promise.all(keysToDelete.map(key => redisClient.del(key)));
+
+        // 🔥 OMNI-VERSION FIX: Agar aap profile versioning use kar rahe hain toh dono ke versions badhao
+        const myVersionKey = `profileCacheVersion:${followerId}`;
+        const targetVersionKey = `profileCacheVersion:${followingId}`;
+        
+        const [myVer, targetVer] = await Promise.all([
+          redisClient.get(myVersionKey),
+          redisClient.get(targetVersionKey)
+        ]);
+
+        const newMyVer = myVer ? `v${parseInt(myVer.replace('v', '')) + 1}` : 'v2';
+        const newTargetVer = targetVer ? `v${parseInt(targetVer.replace('v', '')) + 1}` : 'v2';
+
+        await Promise.all([
+          redisClient.setEx(myVersionKey, 86400, newMyVer),
+          redisClient.setEx(targetVersionKey, 86400, newTargetVer)
+        ]);
+
+        console.log(`🧹 [UNFOLLOW SUCCESS] Cleared all mutual caches and bumped versions for ${followerId} and ${followingId}`);
+      } catch (cacheErr) {
+        console.error("⚠️ Redis Unfollow cache invalidation failed:", cacheErr.message);
+      }
+    }
+
+    return res.json({ success: true, message: "Unfollowed successfully" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("🔥 UNFOLLOW CONTROLLER ERROR:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 

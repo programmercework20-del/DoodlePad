@@ -22,14 +22,15 @@ const Comment = sequelize.define("Comment", {
             model: "users",
             key: "id"
         }
-    },parentId: {
-  type: DataTypes.UUID,
-  allowNull: true,
-  references: {
-    model: "comments",
-    key: "id"
-  }
-},
+    },
+    parentId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: "comments",
+            key: "id"
+        }
+    },
     type: {
         type: DataTypes.ENUM(
             "text",
@@ -42,13 +43,25 @@ const Comment = sequelize.define("Comment", {
         ),
         defaultValue: "text"
     },
-
     content: {
         type: DataTypes.TEXT,
         allowNull: true
     },
     mediaUrl: {
         type: DataTypes.STRING,
+        allowNull: true
+    },
+    // 🔥 NEW PREMIUM FIELDS ADDED HERE
+    mediaWidth: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    mediaHeight: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    audioDuration: {
+        type: DataTypes.FLOAT, // Float taaki 2.5 seconds jaisi value bhi save ho sake
         allowNull: true
     },
     status: {

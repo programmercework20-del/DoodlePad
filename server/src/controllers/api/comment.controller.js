@@ -4,16 +4,16 @@ import User from "../../models/User.js";
 import CommentLike from "../../models/CommentLike.js";
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
-import { bucket } from "../../config/firebase.js"; // 🔥 GCS Bucket
+import { bucket } from "../../config/firebase.js"; 
 import { getIO } from "../../socket/socket.js";
 import { injectCommentIsLikedFlag } from "../../utils/commentHelpers.js";
-
 
 export const addComment = async (req, res) => {
   try {
     const userId = req.user.id;
     const { postId } = req.params;
-    const { type, content, parentId } = req.body;
+    // 🔥 FE se metadata variables extract kiye
+    const { type, content, parentId, mediaWidth, mediaHeight, audioDuration } = req.body;
 
     let mediaUrl = null;
 
@@ -36,7 +36,10 @@ export const addComment = async (req, res) => {
       type: type || "text",
       content,
       mediaUrl,
-      parentId: parentId || null
+      parentId: parentId || null,
+      mediaWidth: mediaWidth ? parseInt(mediaWidth) : null,
+      mediaHeight: mediaHeight ? parseInt(mediaHeight) : null,
+      audioDuration: audioDuration ? parseFloat(audioDuration) : null
     });
 
     await post.increment("commentsCount");
@@ -72,16 +75,16 @@ export const addComment = async (req, res) => {
     }
 
     // 🔥 FORMAT THE NEW COMMENT FOR FRONTEND & SOCKET
-    // Frontend ko naya comment directly UI mein dikhane ke liye ye exact format chahiye
     const formattedNewComment = {
       ...comment.get({ plain: true }),
-      isLiked: false, // Default false rahega naye comment pe
+      isLiked: false, 
       user: {
         id: req.user.id,
         username: req.user.username,
         profilePhoto: req.user.profilePhoto
       },
-      replies: [] // By default koi reply nahi hota
+      replies: [],
+      repliesCount: 0 // New comment pe 0 replies
     };
 
     // 📡 6. REAL-TIME SOCKET BROADCAST
@@ -94,11 +97,10 @@ export const addComment = async (req, res) => {
       console.log("⚠️ Socket broadcast failed");
     }
 
-    // 🚀 FINAL API RESPONSE
     return res.status(201).json({
       success: true,
       message: parentId ? "Reply added" : "Comment added",
-      comment: formattedNewComment // 🔥 Ab yahan proper data jayega
+      comment: formattedNewComment 
     });
 
   } catch (error) {
@@ -121,29 +123,35 @@ export const getPostComments = async (req, res) => {
     }
 
     if (!rawComments) {
-      const comments = await Comment.findAll({
+      // 1. Sirf main comments nikaalo
+      const topLevelComments = await Comment.findAll({
         where: { postId, parentId: null, status: "active" },
-        include: [
-          { model: User, as: "user", attributes: ["id", "username", "profilePhoto"] },
-          {
-            model: Comment,
-            as: "replies",
-            where: { status: "active" },
-            required: false,
-            include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }]
-          }
-        ],
-        order: [
-          ["createdAt", "DESC"],
-          [{ model: Comment, as: 'replies' }, "createdAt", "ASC"] 
-        ]
+        include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }],
+        order: [["createdAt", "DESC"]]
       });
 
-      rawComments = comments.map(c => c.get({ plain: true }));
+      // 2. Har comment ke max 2 replies aur total count nikaalo (Pro-level Pagination)
+      const commentsWithReplies = await Promise.all(topLevelComments.map(async (c) => {
+        const commentJSON = c.get({ plain: true });
+        
+        const repliesCount = await Comment.count({ where: { parentId: c.id, status: "active" } });
+        
+        const replies = await Comment.findAll({
+          where: { parentId: c.id, status: "active" },
+          include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }],
+          order: [["createdAt", "ASC"]], // Purane replies pehle
+          limit: 2
+        });
+
+        commentJSON.repliesCount = repliesCount;
+        commentJSON.replies = replies.map(r => r.get({ plain: true }));
+        return commentJSON;
+      }));
+
+      rawComments = commentsWithReplies;
       if (redisClient?.isReady) await redisClient.setEx(cacheKey, 120, JSON.stringify(rawComments));
     }
 
-    // 🔥 MAGIC: Yeh line Comments AND Replies dono mein isLiked daal degi!
     const finalizedComments = await injectCommentIsLikedFlag(rawComments, currentUserId);
 
     return res.json({ success: true, comments: finalizedComments });
@@ -151,6 +159,33 @@ export const getPostComments = async (req, res) => {
   } catch (error) {
     console.error("🔥 GET COMMENTS ERROR:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch" });
+  }
+};
+
+// 🔥 NEW PREMIUM FUNCTION: Baki bache hue replies mangwane ke liye
+export const getCommentReplies = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const currentUserId = req.user?.id;
+    const offset = (page - 1) * limit;
+
+    const replies = await Comment.findAll({
+      where: { parentId: commentId, status: "active" },
+      include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }],
+      order: [["createdAt", "ASC"]],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    const rawReplies = replies.map(r => r.get({ plain: true }));
+    const finalizedReplies = await injectCommentIsLikedFlag(rawReplies, currentUserId);
+
+    return res.json({ success: true, replies: finalizedReplies });
+
+  } catch (error) {
+    console.error("🔥 GET REPLIES ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch replies" });
   }
 };
 
@@ -173,14 +208,12 @@ export const deleteOwnComment = async (req, res) => {
       await post.decrement("commentsCount");
     }
 
-    // 🚀 Clear Cache
     if (redisClient?.isReady) {
       await redisClient.del(`comments:${comment.postId}`);
       await redisClient.del(`post:${comment.postId}`);
     }
 
     return res.json({ success: true, message: "Comment deleted" });
-
   } catch (error) {
     return res.status(500).json({ success: false, message: "Delete failed" });
   }
@@ -195,14 +228,9 @@ export const likeComment = async (req, res) => {
       attributes: ['id', 'userId', 'postId', 'likesCount'] 
     });
     
-    if (!comment) return res.status(404).json({ 
-      success: false, 
-      message: "Comment not found" 
-    });
+    if (!comment) return res.status(404).json({ success: false, message: "Comment not found" });
 
-    const existing = await CommentLike.findOne({ 
-      where: { commentId, userId } 
-    });
+    const existing = await CommentLike.findOne({ where: { commentId, userId } });
 
     let action;
     let newLikesCount;
@@ -210,58 +238,35 @@ export const likeComment = async (req, res) => {
     if (existing) {
       await existing.destroy();
       newLikesCount = Math.max(0, comment.likesCount - 1);
-      await Comment.update(
-        { likesCount: newLikesCount },
-        { where: { id: commentId } }
-      );
+      await Comment.update({ likesCount: newLikesCount }, { where: { id: commentId } });
       action = "unliked";
     } else {
       await CommentLike.create({ commentId, userId });
       newLikesCount = comment.likesCount + 1;
-      await Comment.update(
-        { likesCount: newLikesCount },
-        { where: { id: commentId } }
-      );
+      await Comment.update({ likesCount: newLikesCount }, { where: { id: commentId } });
       action = "liked";
     }
 
-    // ⚡ INSTANT RESPONSE
     res.json({ success: true, action, likesCount: newLikesCount });
 
-    // ============================================================
-    // ⚙️ BACKGROUND TASKS
-    // ============================================================
-
-    // 📡 Socket Broadcast
     try {
       const io = getIO();
       if (io) {
         io.to(comment.postId).emit("comment_like_updated", {
-          commentId,
-          postId: comment.postId,
-          likesCount: newLikesCount,
-          action,
-          userId
+          commentId, postId: comment.postId, likesCount: newLikesCount, action, userId
         });
       }
     } catch (socketErr) {
       console.error("⚠️ Socket emit failed:", socketErr.message);
     }
 
-    // 🔔 Notification Logic
     if (action === "liked" && comment.userId !== userId) {
       createNotification({
-        senderId: userId,
-        receiverId: comment.userId,
-        type: "LIKE_COMMENT",
-        postId: comment.postId,
-        commentId
+        senderId: userId, receiverId: comment.userId, type: "LIKE_COMMENT", postId: comment.postId, commentId
       }).catch(e => console.error("⚠️ Notification Error:", e));
     }
 
-    // 🔥 FIX: Correct Cache Key Deletion
     if (redisClient?.isReady) {
-      // Ab ye wahi key delete karega jisme data fetch ho raha hai
       redisClient.del(`comments:${comment.postId}`)
         .then(() => console.log(`🧹 Cache cleared for comments:${comment.postId}`))
         .catch(e => console.error("Redis clear error:", e));
@@ -270,10 +275,7 @@ export const likeComment = async (req, res) => {
   } catch (error) {
     console.error("🔥 LIKE COMMENT ERROR:", error);
     if (!res.headersSent) {
-      return res.status(500).json({ 
-        success: false, 
-        message: "Like failed" 
-      });
+      return res.status(500).json({ success: false, message: "Like failed" });
     }
   }
 };
