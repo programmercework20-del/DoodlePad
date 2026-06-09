@@ -1,8 +1,8 @@
 import express from 'express';
 import * as postController from '../controllers/post.controller.js';
+import * as commentController from '../controllers/comment.controller.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import { protect } from '../middlewares/auth.middleware.js';
-import * as commentController from '../controllers/comment.controller.js';
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ router.patch("/:id/comments", protect, postController.disableComments);
 // 🛑 ADMIN ONLY ROUTES (Uses 'adminAuth')
 // ==========================================
 
-r
+
 
 router.post("/:id/hide", adminAuth, postController.hidePost);
 router.post("/:id/mark-sensitive", adminAuth, postController.markSensitive);
