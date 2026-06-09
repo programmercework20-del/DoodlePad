@@ -131,21 +131,6 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // ✅ API routes
 app.use("/api/profile", profileRoutes);
-
-// test route delete after testing
-// 🧪 TEST ROUTE: Safety net check karne ke liye (Testing ke baad hata dena)
-app.get("/api/test-crash", (req, res, next) => {
-  // Hum jaan-boojh kar ek achanak aane wala error paida kar rahe hain
-  throw new Error("Boom! 💥 Yeh ek test explosion hai!");
-});
-
-// 🧪 TEST ROUTE 2: Background Promise fail check karne ke liye
-app.get("/api/test-promise", (req, res) => {
-  // Yeh background mein achanak fail hoga
-  Promise.reject(new Error("Background task phat gaya!"));
-  res.json({ success: true, message: "Request accept ho gayi, par background error aayega." });
-});
-
 app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/messages", messageRoutes);
