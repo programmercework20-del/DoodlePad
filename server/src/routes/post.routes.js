@@ -1,9 +1,9 @@
 import express from 'express';
 import * as postController from '../controllers/post.controller.js';
 // 🔥 NAMED IMPORT: Ab hum seedha function ko hi import kar rahe hain
-import { getCommentReplies } from '../controllers/comment.controller.js'; 
 import adminAuth from '../middlewares/adminAuth.js';
 import { protect } from '../middlewares/auth.middleware.js';
+import { getCommentReplies } from '../controllers/api/comment.controller.js';
 
 const router = express.Router();
 
