@@ -1,16 +1,12 @@
 process.on("unhandledRejection", (reason, promise) => {
-
   console.error("🔥 UNHANDLED REJECTION");
   console.error("Reason:", reason);
-
   // DON'T crash app
 });
 
 process.on("uncaughtException", (error) => {
-
   console.error("🔥 UNCAUGHT EXCEPTION");
   console.error(error);
-
   // optional graceful shutdown
 });
 
@@ -22,10 +18,9 @@ import config from './src/config/env.js';
 import http from "http";
 import { initSocket } from "./src/socket/socket.js";
 import { markExpiredPosts } from "./src/controllers/api/post.controller.js";
-import express from 'express'; // 
+import express from 'express'; 
 import Ad from './src/models/Ad.js';
 import { Op } from 'sequelize'; 
-
 
 const PORT = config.port || 5000;
 
@@ -41,19 +36,33 @@ cron.schedule("* * * * *", async () => {
     console.log("⏳ Checking expired posts (every 1 hour)...");
     await markExpiredPosts();
 
+    // 🔥 FIX: Brackets ko Sequelize format ke hisaab se theek kar diya hai
     await Ad.update(
-      
-      { status: "expired" } ,
-      { where: { endDate: { [Op.lt]: new Date() } } ,
-
-      status: "active"
-
-    }
+      { status: "expired" },
+      { 
+        where: { 
+          endDate: { [Op.lt]: new Date() },
+          status: "active" 
+        }
+      }
     );
 
   } catch (err) {
     console.error("Cron Job Error:", err);
   }
+});
+
+// ==========================================
+// 🛡️ SAFETY NET 1: GLOBAL ERROR HANDLER
+// ==========================================
+// Agar kisi bhi route ya module mein error aayega, toh server yahan catch kar lega aur 502 nahi dega!
+app.use((err, req, res, next) => {
+  console.error("🔥 [GLOBAL ERROR CAUGHT]:", err.message);
+  
+  res.status(500).json({
+    success: false,
+    message: "Something went wrong in this module, but the app is still running!"
+  });
 });
 
 const server = http.createServer(app);
@@ -89,15 +98,10 @@ const startServer = async () => {
 startServer();
 
 process.on("SIGTERM", async () => {
-
   console.log("🛑 SIGTERM RECEIVED");
-
   await sequelize.close();
-
   server.close(() => {
-
     console.log("✅ Server closed");
-
     process.exit(0);
   });
 });

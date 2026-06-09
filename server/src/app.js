@@ -204,8 +204,25 @@ app.use((req, res) => {
   });
 });
 
+// Aapka existing error middleware
 app.use(errorMiddleware);
 
+// ==========================================
+// 🛡️ SAFETY NET 1: ULTIMATE GLOBAL ERROR HANDLER
+// ==========================================
+app.use((err, req, res, next) => {
+  console.error("🔥 [GLOBAL ERROR CAUGHT BY SAFETY NET]:", err.message);
+  
+  // Agar response pehle hi bheja ja chuka hai, toh Express ko aage badhne do (crash prevent karne ke liye)
+  if (res.headersSent) {
+    return next(err);
+  }
 
+  // App ko zinda rakhte hue clean error response bhejo
+  res.status(500).json({
+    success: false,
+    message: "Something went wrong in this module, but the app is still running!"
+  });
+});
 
 export default app;
