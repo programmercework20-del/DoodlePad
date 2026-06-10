@@ -11,18 +11,21 @@ import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 export const getFeed = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 15;
   const page = parseInt(req.query.page) || 1;
+  // 🔥 NAYA FEATURE: Frontend se check karenge ki user ne "Pull-to-refresh" kiya hai ya nahi
+  const isRefresh = req.query.refresh === 'true'; 
   const offset = (page - 1) * limit;
   const userId = req.user.id;
 
   // =====================================
-  // 🚀 1. REDIS CACHE SYSTEM (With Realtime Like Injection)
+  // 🚀 1. REDIS CACHE SYSTEM (With Bypass)
   // =====================================
   const cacheKey = `user_feed:${userId}:p:${page}:l:${limit}`;
-  if (redisClient?.isReady) {
+  
+  // Agar isRefresh true hai, toh hum Redis ko check hi nahi karenge, seedha fresh data layenge
+  if (redisClient?.isReady && !isRefresh) {
     try {
       const cachedFeed = await redisClient.get(cacheKey);
       if (cachedFeed) {
-        // 🔥 Cache se data lene ke baad bhi fresh like status inject karein
         const parsedFeed = JSON.parse(cachedFeed);
         const feedWithLikes = await injectIsLikedFlag(parsedFeed, userId);
         return res.json({ success: true, feed: feedWithLikes });
@@ -174,7 +177,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       caption: post.caption,
       content: post.content,
       mediaUrls: post.mediaUrls || [],
-      thumbnail: post.thumbnail || null, // 🔥 YE LINE MISSING THI! FIX HO GAYI.
+      thumbnail: post.thumbnail || null, 
       duration: post.duration || 0,
       paths: parsedPaths,
       createdAt: post.createdAt,
@@ -201,7 +204,10 @@ export const getFeed = asyncHandler(async (req, res) => {
     else if (hoursOld <= 72) score += 10;
 
     score += (item.likesCount * 2) + (item.commentsCount * 3) + (item.sharesCount * 4);
-    score += Math.floor(Math.random() * 20);
+    
+    // 🔥 INSTAGRAM FEEL: Har refresh par score mein thoda random element jod diya hai 
+    // Jisse purane posts bhi thode shuffe hokar upar-neeche ho jayenge
+    score += Math.floor(Math.random() * 50);
 
     return { ...item, score };
   });
@@ -249,12 +255,10 @@ export const getFeed = asyncHandler(async (req, res) => {
   // 🔥 12. FINALIZE & SEND (Cache Raw -> Inject -> Send)
   // =====================================
   
-  // Cache compiled results array to Redis for 3 Minutes (Without isLiked flag)
   if (redisClient?.isReady && finalFeed.length > 0) {
     await redisClient.setEx(cacheKey, 180, JSON.stringify(finalFeed)).catch(() => {});
   }
 
-  // Inject isLiked property exclusively for the current user
   const feedWithLikes = await injectIsLikedFlag(finalFeed, userId);
 
   return res.json({
