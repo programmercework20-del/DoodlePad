@@ -14,12 +14,12 @@ import { bucket } from "../../config/firebase.js";
 
 export const signup = async (req, res) => {
   try {
-    let { fullName, username, password,dateOfBirth, confirmPassword } = req.body;
+    let { fullName, username, password,gender, confirmPassword } = req.body;
 
     fullName = fullName?.trim();
     username = username?.trim();
 
-    if (!fullName || !username || !password || !dateOfBirth || !confirmPassword) {
+    if (!fullName || !username || !password || !gender || !confirmPassword) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -43,7 +43,7 @@ export const signup = async (req, res) => {
       name: fullName,
       username,
       password: hashedPassword,
-      dateOfBirth,
+      gender,
       isVerified: false,
       email: null,
       phone: null
