@@ -43,7 +43,7 @@ export const signup = async (req, res) => {
       name: fullName,
       username,
       password: hashedPassword,
-      gender,
+      gender: gender ? gender.toLowerCase() : null,
       isVerified: false,
       email: null,
       phone: null
@@ -316,11 +316,7 @@ export const logout = async (req, res) => {
     res.status(500).json({ message: "Logout failed" });
   }
 };
-
-// ==========================================
-// 🔥 FOLLOW / UNFOLLOW (CACHE INVALIDATION)
-// ==========================================
-
+ 
 export const followUser = async (req, res) => {
   try {
     const followerId = req.user.id;
@@ -505,29 +501,6 @@ export const getFollowRequests = async (req, res) => {
   }
 };
 
-// export const unfollowUser = async (req, res) => {
-//   try {
-//     const followerId = req.user.id;
-//     const followingId = req.params.id;
-
-//     const deleted = await Follower.destroy({ where: { followerId, followingId } });
-
-//     if (!deleted) return res.status(404).json({ message: "Not following this user" });
-
-//     // 🚀 CACHE INVALIDATION
-//     if (redisClient?.isReady) {
-//       await redisClient.del(`followers:${followingId}`);
-//       await redisClient.del(`following:${followerId}`);
-//       await redisClient.del(`followCounts:${followingId}`);
-//       await redisClient.del(`followCounts:${followerId}`);
-//     }
-
-//     res.json({ message: "Unfollowed successfully" });
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
-
 export const unfollowUser = async (req, res) => {
   try {
     const followerId = req.user.id; // Jo user unfollow kar raha hai
@@ -588,10 +561,6 @@ export const unfollowUser = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
-
-// ==========================================
-// 🚀 CACHED GET METHODS
-// ==========================================
 
 export const getFollowers = async (req, res) => {
   try {
@@ -735,10 +704,6 @@ export const saveFcmToken = async (req, res) => {
 
   res.json({ success: true });
 };
-
-// ==========================================
-// 🚀 UPLOAD PROFILE PHOTO TO GCP BUCKET
-// ==========================================
 
 export const uploadProfilePhoto = async (req, res) => {
   try {
