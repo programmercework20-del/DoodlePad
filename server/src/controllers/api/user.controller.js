@@ -65,10 +65,33 @@ export const sendVerificationOtp = async (req, res) => {
     const { userId, method, value } = req.body;
     const user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
+    // 🔥 NAYA SECURITY CHECK: Email/Phone update karne se pehle check karo ki kisi aur ka toh nahi!
+    if (method === "email") {
+      const existingEmail = await User.findOne({ where: { email: value } });
+      if (existingEmail && existingEmail.id !== userId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "This email is already registered to another account." 
+        });
+      }
+    }
+
+    if (method === "phone") {
+      const existingPhone = await User.findOne({ where: { phone: value } });
+      if (existingPhone && existingPhone.id !== userId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "This phone number is already registered to another account." 
+        });
+      }
+    }
+
+    // 🎲 OTP Generation
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
+    // 💾 Update database
     await user.update({
       otp,
       otpExpires: new Date(Date.now() + 5 * 60 * 1000), // 5 min
@@ -76,6 +99,7 @@ export const sendVerificationOtp = async (req, res) => {
       phone: method === "phone" ? value : user.phone
     });
 
+    // 📩 Send OTP
     if (method === "email") {
       await sendEmail(value, "Your OTP", "otp", { otp });
     }
@@ -84,10 +108,11 @@ export const sendVerificationOtp = async (req, res) => {
       console.log(`📱 OTP for ${value}: ${otp}`);
     }
 
-    res.json({ message: "OTP sent successfully" });
+    return res.json({ success: true, message: "OTP sent successfully" });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to send OTP" });
+    console.error("🔥 OTP SEND ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
   }
 };
 
