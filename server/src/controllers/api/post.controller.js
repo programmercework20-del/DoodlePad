@@ -333,12 +333,12 @@ export const getUserPosts = async (req, res) => {
       attributes: {
         include: [
           [
-            Sequelize.literal(`(
-              SELECT COUNT(*)::int
-              FROM "comments" AS c
-              WHERE c."postId" = "posts"."id"
-              AND c."status" = 'active'
-            )`),
+           Sequelize.literal(`(
+  SELECT COUNT(*)::int
+  FROM "comments" AS c
+  WHERE c."postId" = "Post"."id" 
+  AND c."status" = 'active'
+)`),
             "commentsCount"
           ]
         ]
