@@ -31,6 +31,12 @@ const Post = sequelize.define("Post", {
         type: DataTypes.TEXT,
         allowNull: true
     },
+
+    location: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+
     status: {
         type: DataTypes.ENUM("active", "archived", "deleted", "hidden", "sensitive"),
         defaultValue: "active"

@@ -176,6 +176,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       type: post.type,
       caption: post.caption,
       content: post.content,
+      location: post.location || null,
       mediaUrls: post.mediaUrls || [],
       thumbnail: post.thumbnail || null, 
       duration: post.duration || 0,
