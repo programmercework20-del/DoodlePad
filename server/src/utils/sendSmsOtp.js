@@ -34,3 +34,4 @@ export const sendSmsOtp = async (phone, otp, templateId) => {
     throw new Error("Failed to send SMS via MSG91");
   }
 };
+// Note: Ensure you have the correct template ID and that your MSG91 account is properly set up to send OTPs.
