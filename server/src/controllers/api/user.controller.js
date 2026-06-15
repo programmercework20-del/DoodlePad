@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
 import { createNotification } from "../../services/notification.service.js";
 import Block from "../../models/Block.js";
+import { sendSmsOtp } from "../../utils/sendSms.js";
 
 // 🔥 REDIS & BUCKET IMPORT (Check paths carefully)
 import redisClient from "../../config/redis.js"; 
@@ -14,27 +15,27 @@ import { bucket } from "../../config/firebase.js";
 
 export const signup = async (req, res) => {
   try {
-    let { fullName, username, password,gender, confirmPassword } = req.body;
+    let { fullName, username, password, gender, confirmPassword } = req.body;
 
     fullName = fullName?.trim();
     username = username?.trim();
 
     if (!fullName || !username || !password || !gender || !confirmPassword) {
-      return res.status(400).json({ message: "All fields are required" });
+      return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
     if (password !== confirmPassword) {
-      return res.status(400).json({ message: "Passwords do not match" });
+      return res.status(400).json({ success: false, message: "Passwords do not match" });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
     }
 
     const existingUser = await User.findOne({ where: { username } });
 
     if (existingUser) {
-      return res.status(400).json({ message: "Username already exists" });
+      return res.status(400).json({ success: false, message: "Username already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -43,20 +44,21 @@ export const signup = async (req, res) => {
       name: fullName,
       username,
       password: hashedPassword,
-      gender: gender ? gender.toLowerCase() : null,
+      gender: gender ? gender.toLowerCase() : null, // 🔥 Our custom fix
       isVerified: false,
       email: null,
       phone: null
     });
 
     res.status(201).json({
+      success: true,
       message: "Signup successful. Please verify your account",
       userId: user.id
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Signup failed" });
+    console.error("🔥 SIGNUP ERROR:", error);
+    res.status(500).json({ success: false, message: "Signup failed", error: error.message });
   }
 };
 
@@ -67,45 +69,55 @@ export const sendVerificationOtp = async (req, res) => {
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    // 🔥 NAYA SECURITY CHECK: Email/Phone update karne se pehle check karo ki kisi aur ka toh nahi!
+    // ==========================================
+    // 🛡️ STEP 1: STRICT VALIDATION (Pehle check karo)
+    // ==========================================
     if (method === "email") {
-      const existingEmail = await User.findOne({ where: { email: value } });
-      if (existingEmail && existingEmail.id !== userId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: "This email is already registered to another account." 
-        });
+      const existingEmail = await User.findOne({
+        where: { email: value, id: { [Op.ne]: user.id } }
+      });
+      if (existingEmail) {
+        return res.status(400).json({ success: false, message: "Email is already registered to another account." });
       }
     }
 
     if (method === "phone") {
-      const existingPhone = await User.findOne({ where: { phone: value } });
-      if (existingPhone && existingPhone.id !== userId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: "This phone number is already registered to another account." 
-        });
+      // 🧹 Sanitization: Agar frontend galti se '+91' bhej de, toh use hata do
+      const cleanPhone = value.replace(/^\+91/, '').trim();
+      const existingPhone = await User.findOne({
+        where: { phone: cleanPhone, id: { [Op.ne]: user.id } }
+      });
+      
+      if (existingPhone) {
+        return res.status(400).json({ success: false, message: "Phone number already registered to another account." });
       }
     }
 
-    // 🎲 OTP Generation
+    // ==========================================
+    // 🎲 STEP 2: OTP GENERATION
+    // ==========================================
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const cleanValue = method === "phone" ? value.replace(/^\+91/, '').trim() : value;
 
-    // 💾 Update database
+    // ==========================================
+    // 💾 STEP 3: DATABASE UPDATE (Ab Safe Hai)
+    // ==========================================
     await user.update({
       otp,
       otpExpires: new Date(Date.now() + 5 * 60 * 1000), // 5 min
-      email: method === "email" ? value : user.email,
-      phone: method === "phone" ? value : user.phone
+      email: method === "email" ? cleanValue : user.email,
+      phone: method === "phone" ? cleanValue : user.phone
     });
 
-    // 📩 Send OTP
+    // ==========================================
+    // 🚀 STEP 4: DISPATCH OTP
+    // ==========================================
     if (method === "email") {
-      await sendEmail(value, "Your OTP", "otp", { otp });
+      await sendEmail(cleanValue, "Your OTP", "otp", { otp });
     }
 
     if (method === "phone") {
-      console.log(`📱 OTP for ${value}: ${otp}`);
+      await sendSmsOtp(cleanValue, otp, process.env.MSG91_VERIFY_TEMPLATE_ID);
     }
 
     return res.json({ success: true, message: "OTP sent successfully" });
@@ -121,30 +133,45 @@ export const sendOtp = async (req, res) => {
     const { phone } = req.body;
 
     if (!phone) {
-      return res.status(400).json({ message: "Phone number required" });
+      return res.status(400).json({ success: false, message: "Phone number required" });
     }
 
+    // 🧹 Sanitization
+    const cleanPhone = phone.toString().replace(/^\+91/, '').trim();
+
+    // Generate 4 digit OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    let user = await User.findOne({ where: { phone } });
+
+    let user = await User.findOne({ where: { phone: cleanPhone } });
 
     if (!user) {
-      user = await User.create({ phone });
+      // ⚠️ Note: Agar Database mein username vaghera required hai, 
+      // toh yahan unko dummy values assign karni padengi, warna crash hoga.
+      user = await User.create({ phone: cleanPhone });
     }
 
     await user.update({
-      phoneOtp: otp,
-      phoneOtpExpires: new Date(Date.now() + 5 * 60 * 1000)
+      phoneOtp: otp, // Dhyan rahe, 'sendVerificationOtp' mein aap 'otp' column use kar rahe the, yahan 'phoneOtp' hai. Ensure database has this column!
+      phoneOtpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
     });
 
-    console.log(`📱 OTP for ${phone}: ${otp}`);
+    // 🔥 FIX: MSG91 ki API ko call karke asli mein SMS bhejo
+    // Template ID .env file mein MSG91_LOGIN_TEMPLATE_ID ke naam se save kar lena
+    await sendSmsOtp(
+      cleanPhone, 
+      otp, 
+      process.env.MSG91_LOGIN_TEMPLATE_ID || process.env.MSG91_VERIFY_TEMPLATE_ID
+    );
 
     return res.json({
-      message: "OTP sent successfully",
-      otp 
+      success: true,
+      message: "OTP sent successfully"
+      // 🔒 PRO-SECURITY: Production mein OTP kabhi response mein nahi bhejte!
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to send OTP" });
+    console.error("🔥 SEND OTP ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
   }
 };
 
@@ -229,30 +256,51 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { identifier } = req.body;
-    if (!identifier) return res.status(400).json({ message: "Email or phone required" });
 
-    const user = await User.findOne({
-      where: { [Op.or]: [{ email: identifier }, { phone: identifier }] }
-    });
-
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    await user.update({
-      otp,
-      otpExpires: new Date(Date.now() + 5 * 60 * 1000)
-    });
-
-    if (user.email) {
-      await sendEmail(user.email, "Reset Password OTP", "otp", { otp });
-    } else {
-      console.log(`📱 Reset OTP for ${user.phone}: ${otp}`);
+    if (!identifier) {
+      return res.status(400).json({ success: false, message: "Email or phone required" });
     }
 
-    res.json({ message: "OTP sent successfully" });
+    // 🧹 Sanitization: Agar phone hai toh +91 hata do taaki DB mein accurately match ho
+    const cleanIdentifier = identifier.trim().replace(/^\+91/, '');
+
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: identifier.trim() },
+          { phone: cleanIdentifier }
+        ]
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    await user.update({
+      otp,
+      otpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
+    });
+
+    // 🔥 SMART DISPATCH: User ne jo request kiya hai wahi bhejo
+    const isEmail = identifier.includes("@");
+
+    if (isEmail && user.email) {
+      await sendEmail(user.email, "Reset Password OTP", "otp", { otp });
+    } else if (!isEmail && user.phone) {
+      // Dhyan dein: .env mein MSG91_RESET_TEMPLATE_ID zaroor hona chahiye
+      await sendSmsOtp(user.phone, otp, process.env.MSG91_RESET_TEMPLATE_ID);
+    } else {
+      return res.status(400).json({ success: false, message: "Valid contact method not found for this user." });
+    }
+
+    return res.json({ success: true, message: "OTP sent successfully" });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to send OTP" });
+    console.error("🔥 FORGOT PASSWORD ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
   }
 };
 
