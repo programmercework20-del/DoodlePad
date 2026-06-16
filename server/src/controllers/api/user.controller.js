@@ -252,21 +252,73 @@ export const login = async (req, res) => {
   }
 };
 
+// export const forgotPassword = async (req, res) => {
+//   try {
+//     const { identifier } = req.body;
+
+//     if (!identifier) {
+//       return res.status(400).json({ success: false, message: "Email or phone required" });
+//     }
+
+//     // 🧹 Sanitization: Agar phone hai toh +91 hata do taaki DB mein accurately match ho
+//     const cleanIdentifier = identifier.trim().replace(/^\+91/, '');
+
+//     const user = await User.findOne({
+//       where: {
+//         [Op.or]: [
+//           { email: identifier.trim() },
+//           { phone: cleanIdentifier }
+//         ]
+//       }
+//     });
+
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
+
+//     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+//     await user.update({
+//       otp,
+//       otpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
+//     });
+
+//     // 🔥 SMART DISPATCH: User ne jo request kiya hai wahi bhejo
+//     const isEmail = identifier.includes("@");
+
+//     if (isEmail && user.email) {
+//       await sendEmail(user.email, "Reset Password OTP", "otp", { otp });
+//     } else if (!isEmail && user.phone) {
+//       // Dhyan dein: .env mein MSG91_RESET_TEMPLATE_ID zaroor hona chahiye
+//       await sendSmsOtp(user.phone, otp, process.env.MSG91_RESET_TEMPLATE_ID);
+//     } else {
+//       return res.status(400).json({ success: false, message: "Valid contact method not found for this user." });
+//     }
+
+//     return res.json({ success: true, message: "OTP sent successfully" });
+
+//   } catch (error) {
+//     console.error("🔥 FORGOT PASSWORD ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
+//   }
+// };
+
 export const forgotPassword = async (req, res) => {
   try {
-    const { identifier } = req.body;
+    // 🔥 SMART PAYLOAD CATCHER: Frontend chahe 'identifier', 'email' ya 'phone' bheje, yeh catch kar lega!
+    const incomingValue = req.body.identifier || req.body.email || req.body.phone;
 
-    if (!identifier) {
+    if (!incomingValue) {
       return res.status(400).json({ success: false, message: "Email or phone required" });
     }
 
-    // 🧹 Sanitization: Agar phone hai toh +91 hata do taaki DB mein accurately match ho
-    const cleanIdentifier = identifier.trim().replace(/^\+91/, '');
+    // 🧹 Sanitization
+    const cleanIdentifier = incomingValue.toString().trim().replace(/^\+91/, '');
 
     const user = await User.findOne({
       where: {
         [Op.or]: [
-          { email: identifier.trim() },
+          { email: cleanIdentifier },
           { phone: cleanIdentifier }
         ]
       }
@@ -283,13 +335,12 @@ export const forgotPassword = async (req, res) => {
       otpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
     });
 
-    // 🔥 SMART DISPATCH: User ne jo request kiya hai wahi bhejo
-    const isEmail = identifier.includes("@");
+    const isEmail = cleanIdentifier.includes("@");
 
+    // 🔥 SMART DISPATCH: Decide whether to send Email or SMS
     if (isEmail && user.email) {
       await sendEmail(user.email, "Reset Password OTP", "otp", { otp });
     } else if (!isEmail && user.phone) {
-      // Dhyan dein: .env mein MSG91_RESET_TEMPLATE_ID zaroor hona chahiye
       await sendSmsOtp(user.phone, otp, process.env.MSG91_RESET_TEMPLATE_ID);
     } else {
       return res.status(400).json({ success: false, message: "Valid contact method not found for this user." });
