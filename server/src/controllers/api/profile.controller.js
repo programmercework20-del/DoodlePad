@@ -120,13 +120,13 @@ export const getMyProfile = async (req, res) => {
     }
 
     // 🔥 FIX: 'isPrivate' ko attributes array mein add kar diya gaya hai
-    // const user = await User.findByPk(userId, {
-    //   attributes: [
-    //     "id", "name", "username", "profilePhoto", "bio", 
-    //     "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
-    //     "doodleData", "isDeactivated", "isPrivate" 
-    //   ]
-    // });
+    const user = await User.findByPk(userId, {
+      attributes: [
+        "id", "name", "username", "profilePhoto", "bio", 
+        "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
+        "doodleData", "isDeactivated", "isPrivate" 
+      ]
+    });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
