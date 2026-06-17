@@ -104,48 +104,150 @@ try {
 
 
 // get my profile (with caching)
-export const getMyProfile = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const cacheKey = `myProfile:${userId}`;
+// export const getMyProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const cacheKey = `myProfile:${userId}`;
 
-    if (redisClient?.isReady) {
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
-        return res.json({
-          success: true,
-          data: { profile: { user: JSON.parse(cached) } }
-        });
+//     if (redisClient?.isReady) {
+//       const cached = await redisClient.get(cacheKey);
+//       if (cached) {
+//         return res.json({
+//           success: true,
+//           data: { profile: { user: JSON.parse(cached) } }
+//         });
+//       }
+//     }
+
+//     // 🔥 FIX: 'isPrivate' ko attributes array mein add kar diya gaya hai
+//     const user = await User.findByPk(userId, {
+//       attributes: [
+//         "id", "name", "username", "profilePhoto", "bio", 
+//         "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
+//         "doodleData", "isDeactivated", "isPrivate" 
+//       ]
+//     });
+
+//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+//     if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => { });
+
+//     return res.json({
+//       success: true,
+//       data: {
+//         profile: {
+//           user: user
+//         }
+//       }
+//     });
+//   } catch (error) {
+//     console.error("🔥 GET PROFILE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
+//   }
+// };
+
+export const getUserProfile = async (req, res) => {
+  try {
+    const profileUserId = req.params.id;
+    const viewerId = req.user?.id;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(profileUserId)) {
+      return res.status(400).json({ success: false, message: "Invalid ID format" });
+    }
+
+    if (viewerId) {
+      const isBlocked = await Block.findOne({
+        where: {
+          [Op.or]: [
+            { blockerId: viewerId, blockedId: profileUserId },
+            { blockerId: profileUserId, blockedId: viewerId }
+          ]
+        },
+        raw: true
+      });
+      if (isBlocked) {
+        return res.status(403).json({ success: false, message: "Action not allowed due to block status" });
       }
     }
 
-    // 🔥 FIX: 'isPrivate' ko attributes array mein add kar diya gaya hai
-    const user = await User.findByPk(userId, {
-      attributes: [
-        "id", "name", "username", "profilePhoto", "bio", 
-        "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
-        "doodleData", "isDeactivated", "isPrivate" 
-      ]
+    const cacheKey = `userProfile:${profileUserId}:viewer:${viewerId || "guest"}`;
+
+    if (redisClient?.isReady) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) return res.json({ success: true, ...JSON.parse(cached) });
+      } catch (e) {
+        console.error("Redis Read Error:", e.message);
+      }
+    }
+
+    const user = await User.findByPk(profileUserId, {
+      attributes: ["id", "username", "name", "bio", "profilePhoto", "doodleImage", "doodleData", "doodleOwnerId", "isPrivate"]
     });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => { });
+    const [followersCount, followingCount, postsCount] = await Promise.all([
+      Follower.count({ where: { followingId: profileUserId, status: "accepted" } }),
+      Follower.count({ where: { followerId: profileUserId, status: "accepted" } }),
+      Post.count({ where: { userId: profileUserId, status: "active" } })
+    ]);
 
-    return res.json({
-      success: true,
-      data: {
-        profile: {
-          user: user
-        }
+    let follow = null;
+    if (viewerId) {
+      follow = await Follower.findOne({ where: { followerId: viewerId, followingId: profileUserId } });
+    }
+
+    const isFollowing = follow?.status === "accepted";
+    let canViewFullProfile = true;
+    if (user.isPrivate && viewerId !== profileUserId && !isFollowing) {
+      canViewFullProfile = false;
+    }
+
+    const showDoodle = viewerId === profileUserId || isFollowing;
+
+    let posts = [];
+    if (canViewFullProfile) {
+      posts = await Post.findAll({
+        where: { userId: profileUserId, status: "active" },
+        order: [["createdAt", "DESC"]],
+        limit: 100
+      });
+    }
+
+    const profileData = {
+      profile: {
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          bio: user.bio,
+          profilePhoto: user.profilePhoto,
+          doodleImage: showDoodle ? user.doodleImage : null,
+          doodleData: showDoodle ? user.doodleData : null,
+          doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+          isPrivate: user.isPrivate
+        },
+        stats: { followers: followersCount, following: followingCount, posts: postsCount },
+        isFollowing,
+        canViewFullProfile,
+        showDoodle,
+        posts
       }
-    });
+    };
+
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData)).catch(() => {});
+    }
+
+    return res.json({ success: true, ...profileData });
+
   } catch (error) {
-    console.error("🔥 GET PROFILE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
+    console.error("GET USER PROFILE ERROR:", error);
+    return res.status(500).json({ success: false, message: "Profile failed" });
   }
 };
-
 // ============================================================
 // 4. SEND DOODLE REQUEST
 // ============================================================
