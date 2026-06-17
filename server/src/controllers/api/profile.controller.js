@@ -9,7 +9,54 @@ import { bucket } from "../../config/firebase.js";
 // ============================================================
 // 1. GET USER PROFILE (With Strict Block Validation Prioritization)
 // ============================================================
+export const getUserProfile = async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const targetUserId = req.params.id; // URL se target user ki ID aayegi
 
+    // Agar khud ki profile mang raha hai, toh roko (uske liye getMyProfile hai)
+    if (currentUserId === targetUserId) {
+      return res.status(400).json({ success: false, message: "Use /my-profile endpoint for your own profile" });
+    }
+
+    // 🛡️ STRICT BLOCK VALIDATION (Jaisa aapne comment mein manga tha)
+    const blockRecord = await Block.findOne({
+      where: {
+        [Op.or]: [
+          { blockerId: currentUserId, blockedId: targetUserId },
+          { blockerId: targetUserId, blockedId: currentUserId }
+        ]
+      }
+    });
+
+    // Agar block hai (kisi ne bhi kisi ko kiya ho), toh profile mat dikhao
+    if (blockRecord) {
+      return res.status(403).json({ success: false, message: "This profile is not available." });
+    }
+
+    // 👤 FETCH USER DATA (Sensitive data jaise password hide karke)
+    const user = await User.findByPk(targetUserId, {
+      attributes: { exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires'] }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        profile: {
+          user: user
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("🔥 GET USER PROFILE ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch user profile" });
+  }
+};
 
 // 2. UPDATE MY PROFILE
 export const updateMyProfile = async (req, res) => {
@@ -145,7 +192,6 @@ export const getMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
   }
 };
-
 
 // ============================================================
 // 4. SEND DOODLE REQUEST
