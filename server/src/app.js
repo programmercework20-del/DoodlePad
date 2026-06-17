@@ -210,18 +210,22 @@ app.use(errorMiddleware);
 // ==========================================
 // 🛡️ SAFETY NET 1: ULTIMATE GLOBAL ERROR HANDLER
 // ==========================================
+// Global error handler — app crash nahi hoga
 app.use((err, req, res, next) => {
-  console.error("🔥 [GLOBAL ERROR CAUGHT BY SAFETY NET]:", err.message);
+  console.error("Global error:", err);
   
-  // Agar response pehle hi bheja ja chuka hai, toh Express ko aage badhne do (crash prevent karne ke liye)
-  if (res.headersSent) {
-    return next(err);
+  // Multer file error
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ success: false, message: "File too large" });
+  }
+  
+  if (err.message === "Invalid file type") {
+    return res.status(400).json({ success: false, message: "Invalid file type" });
   }
 
-  // App ko zinda rakhte hue clean error response bhejo
-  res.status(500).json({
+  res.status(err.status || 500).json({
     success: false,
-    message: "Something went wrong in this module, but the app is still running!"
+    message: err.message || "Internal Server Error",
   });
 });
 
