@@ -9,148 +9,7 @@ import { bucket } from "../../config/firebase.js";
 // ============================================================
 // 1. GET USER PROFILE (With Strict Block Validation Prioritization)
 // ============================================================
-export const getUserProfile = async (req, res) => {
-  try {
-    const profileUserId = req.params.id;
-    const viewerId = req.user?.id;
 
-    // UUID Format Validation Strategy
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(profileUserId)) {
-      return res.status(400).json({ success: false, message: "Invalid ID format" });
-    }
-
-    // 🛡️ Block layers check must execute BEFORE checking cache layers
-    if (viewerId) {
-      const isBlocked = await Block.findOne({
-        where: {
-          [Op.or]: [
-            { blockerId: viewerId, blockedId: profileUserId },
-            { blockerId: profileUserId, blockedId: viewerId }
-          ]
-        },
-        raw: true
-      });
-
-      if (isBlocked) {
-        return res.status(403).json({ success: false, message: "Action not allowed due to block status" });
-      }
-    }
-
-    // 🔥 Get profile cache version to invalidate old caches when privacy changes
-    let cacheVersion = "v1";
-    if (redisClient?.isReady) {
-      try {
-        const versionKey = `profileCacheVersion:${profileUserId}`;
-        const cachedVersion = await redisClient.get(versionKey);
-        if (cachedVersion) cacheVersion = cachedVersion;
-      } catch (e) {
-        console.error("⚠️ Redis Version Read Error:", e.message);
-      }
-    }
-
-    const cacheKey = `userProfile:${profileUserId}:viewer:${viewerId || "guest"}:${cacheVersion}`;
-
-    // Redis Memory Fetch Execution
-    if (redisClient?.isReady) {
-      try {
-        const cached = await redisClient.get(cacheKey);
-        if (cached) return res.json({ success: true, ...JSON.parse(cached) });
-      } catch (e) {
-        console.error("⚠️ Redis Read Error inside Profile context:", e.message);
-      }
-    }
-
-    const user = await User.findOne({
-      where: {
-        id: profileUserId,
-        isDeactivated: false,
-      },
-      attributes: ["id", "username", "name", "bio", "profilePhoto", "doodleImage", "doodleData", "doodleOwnerId", "isPrivate"]
-    });
-
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-    // Concurrent DB Counts optimization execution
-    const [followersCount, followingCount, postsCount] = await Promise.all([
-      Follower.count({ where: { followingId: profileUserId, status: "accepted" } }),
-      Follower.count({ where: { followerId: profileUserId, status: "accepted" } }),
-      Post.count({ where: { userId: profileUserId, status: "active" } })
-    ]);
-
-    let follow = null;
-    if (viewerId) {
-      follow = await Follower.findOne({ where: { followerId: viewerId, followingId: profileUserId } });
-    }
-
-    const isFollowing = follow?.status === "accepted";
-    let canViewFullProfile = true;
-    if (user.isPrivate && viewerId !== profileUserId && !isFollowing) {
-      canViewFullProfile = false;
-    }
-
-    const showDoodle = viewerId === profileUserId || isFollowing;
-
-    let posts = [];
-    if (canViewFullProfile) {
-      posts = await Post.findAll({
-        where: { userId: profileUserId, status: "active" },
-        order: [["createdAt", "DESC"]],
-        limit: 100
-      });
-    }
-
-    // Dynamic Doodle Processing Logic Layer
-    let effectiveDoodleImage = user.doodleImage;
-    let effectiveDoodleData = user.doodleData;
-    let effectiveDoodleOwnerId = user.doodleOwnerId;
-
-    if (viewerId && viewerId !== profileUserId) {
-      const acceptedRequest = await DoodleRequest.findOne({
-        where: { senderId: viewerId, receiverId: profileUserId, status: "accepted" },
-        order: [["updatedAt", "DESC"]],
-        raw: true
-      });
-
-      if (acceptedRequest) {
-        effectiveDoodleImage = acceptedRequest.doodleImage || null;
-        effectiveDoodleData = acceptedRequest.doodleData || null;
-        effectiveDoodleOwnerId = acceptedRequest.senderId;
-      }
-    }
-
-    const profileData = {
-      profile: {
-        user: {
-          id: user.id,
-          username: user.username,
-          name: user.name,
-          bio: user.bio,
-          profilePhoto: user.profilePhoto,
-          doodleImage: showDoodle ? effectiveDoodleImage : null,
-          doodleData: showDoodle ? effectiveDoodleData : null,
-          doodleOwnerId: showDoodle ? effectiveDoodleOwnerId : null,
-          isPrivate: user.isPrivate
-        },
-        stats: { followers: followersCount, following: followingCount, posts: postsCount },
-        isFollowing,
-        canViewFullProfile,
-        showDoodle,
-        posts
-      }
-    };
-
-    if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(profileData)).catch(() => { });
-    }
-
-    return res.json({ success: true, ...profileData });
-
-  } catch (error) {
-    console.error("🔥 GET USER PROFILE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Profile compilation layer failed" });
-  }
-};
 
 // 2. UPDATE MY PROFILE
 export const updateMyProfile = async (req, res) => {
@@ -261,13 +120,13 @@ export const getMyProfile = async (req, res) => {
     }
 
     // 🔥 FIX: 'isPrivate' ko attributes array mein add kar diya gaya hai
-    const user = await User.findByPk(userId, {
-      attributes: [
-        "id", "name", "username", "profilePhoto", "bio", 
-        "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
-        "doodleData", "isDeactivated", "isPrivate" 
-      ]
-    });
+    // const user = await User.findByPk(userId, {
+    //   attributes: [
+    //     "id", "name", "username", "profilePhoto", "bio", 
+    //     "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
+    //     "doodleData", "isDeactivated", "isPrivate" 
+    //   ]
+    // });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
