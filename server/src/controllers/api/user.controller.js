@@ -353,6 +353,72 @@ export const forgotPassword = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
   }
 };
+// ==========================================
+// 10. RESEND OTP (Universal API)
+// ==========================================
+export const resendOtp = async (req, res) => {
+  try {
+    // 🔥 SMART PAYLOAD CATCHER
+    const incomingValue = req.body.identifier || req.body.email || req.body.phone;
+    
+    // Frontend batayega ki OTP kis cheez ke liye resend karna hai ('reset' ya 'verify')
+    // Agar nahi batayega, toh default 'verify' maan lenge
+    const otpType = req.body.type || 'verify'; 
+
+    if (!incomingValue) {
+      return res.status(400).json({ success: false, message: "Email or phone required" });
+    }
+
+    // 🧹 Sanitization
+    const cleanIdentifier = incomingValue.toString().trim().replace(/^\+91/, '');
+
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: cleanIdentifier },
+          { phone: cleanIdentifier }
+        ]
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // 🎲 Generate New OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // 💾 Update DB with new OTP and extended expiry time
+    await user.update({
+      otp,
+      otpExpires: new Date(Date.now() + 5 * 60 * 1000) // Naye 5 minute
+    });
+
+    const isEmail = cleanIdentifier.includes("@");
+
+    // 🔥 SMART DISPATCH: Decide Route & Template
+    if (isEmail && user.email) {
+      const subject = otpType === "reset" ? "Resend: Reset Password OTP" : "Resend: Verification OTP";
+      await sendEmail(user.email, subject, "otp", { otp });
+      
+    } else if (!isEmail && user.phone) {
+      const templateId = otpType === "reset" 
+        ? process.env.MSG91_RESET_TEMPLATE_ID 
+        : process.env.MSG91_VERIFY_TEMPLATE_ID;
+        
+      await sendSmsOtp(user.phone, otp, templateId);
+      
+    } else {
+      return res.status(400).json({ success: false, message: "Valid contact method not found." });
+    }
+
+    return res.json({ success: true, message: "OTP resent successfully" });
+
+  } catch (error) {
+    console.error("🔥 RESEND OTP ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to resend OTP", error: error.message });
+  }
+};
 
 export const verifyResetOtp = async (req, res) => {
   try {

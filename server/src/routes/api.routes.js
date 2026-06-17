@@ -23,6 +23,7 @@ import {
   sendOtp,
   verifyOtp,
   forgotPassword,
+  resendOtp,
   verifyResetOtp,
   resetPassword, 
   logout,
@@ -57,6 +58,7 @@ router.post("/logout", protect, logout);
 router.post("/send-otp", sendOtp);
 
 router.post("/forgot-password", forgotPassword);
+router.post("/resend-otp", resendOtp);
 router.post("/verify-reset-otp", verifyResetOtp);
 router.post("/reset-password", resetPassword);
 
