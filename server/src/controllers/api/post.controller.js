@@ -10,8 +10,7 @@ import os from "os";
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
-import { getVideoDuration } from "../utils/videoDuration.js";
-
+import { getVideoDuration } from "../../utils/getVideoDuration.js";
 
 export const createPost = async (req, res) => {
   try {
