@@ -10,20 +10,16 @@ import os from "os";
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
+import { getVideoDuration } from "../utils/videoDuration.js";
 
 
 export const createPost = async (req, res) => {
   try {
     console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
 
-    // 🔥 FIX: Extract audio-specific durations separately to avoid conflict with main video duration
-    const { type, content, caption, isSaved, duration, location, audioDuration, backgroundMusicDuration } = req.body;
+    const { type, content, caption, isSaved, duration, location } = req.body;
     
-    // Smart duration catcher for audio
-    const finalAudioDuration = audioDuration || backgroundMusicDuration || duration || 0;
-
     console.log("🕵️‍♂️ [DEBUG] Raw Video Duration received:", duration);
-    console.log("🕵️‍♂️ [DEBUG] Raw Audio Duration received:", finalAudioDuration);
     console.log("🕵️‍♂️ [DEBUG] Raw Location received:", location);
 
     const userId = req.user.id;
@@ -35,10 +31,25 @@ export const createPost = async (req, res) => {
     let backgroundAudios = [];
 
     // ==========================================
-    // 1. BACKGROUND MUSIC HANDLING
+    // 1. BACKGROUND MUSIC HANDLING (With Backend Duration)
     // ==========================================
     if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
       const musicFile = req.files.backgroundMusic[0];
+      
+      // 🔥 MAGIC: Backend calculates duration using your new utility
+      let calculatedAudioDuration = 0;
+      const tempAudioPath = path.join(os.tmpdir(), `temp_bgm_${Date.now()}.mp4`);
+      
+      try {
+        fs.writeFileSync(tempAudioPath, musicFile.buffer);
+        calculatedAudioDuration = await getVideoDuration(tempAudioPath);
+        console.log("🎵 Backend Audio Duration (BGM):", calculatedAudioDuration);
+      } catch (e) {
+        console.error("⚠️ Backend Audio Calc Error:", e.message);
+      } finally {
+        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
+      }
+
       const folderName = 'background_music';
       const fileName = `${folderName}/user_${userId}_${Date.now()}_music`;
       const blob = bucket.file(fileName);
@@ -51,46 +62,43 @@ export const createPost = async (req, res) => {
       const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
       backgroundAudios = [{
         url: fileUrl,
-        duration: parseFloat(finalAudioDuration) // 🔥 Fixed Duration
+        duration: parseFloat(parseFloat(calculatedAudioDuration).toFixed(2)) // 🔥 Backend value saved
       }];
       
     } else if (req.body.backgroundMusicUrl || req.body.backgroundAudios) {
+      // Fallback for string payloads
       const rawInput = req.body.backgroundMusicUrl || req.body.backgroundAudios;
-      if (typeof rawInput === "string") {
-        try {
+      const fallbackDuration = req.body.audioDuration || req.body.backgroundMusicDuration || duration || 0;
+      
+      try {
+        if (typeof rawInput === "string") {
           const parsed = JSON.parse(rawInput);
           if (Array.isArray(parsed)) {
             backgroundAudios = parsed.map(item => ({
               url: item.url || "",
-              duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(finalAudioDuration)
+              duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(fallbackDuration)
             }));
           } else if (typeof parsed === "object" && parsed !== null) {
             backgroundAudios = [{
               url: parsed.url || "",
-              duration: parsed.duration !== undefined ? parseFloat(parsed.duration) : parseFloat(finalAudioDuration)
+              duration: parsed.duration !== undefined ? parseFloat(parsed.duration) : parseFloat(fallbackDuration)
             }];
           } else {
-            backgroundAudios = [{
-              url: rawInput,
-              duration: parseFloat(finalAudioDuration)
-            }];
+            backgroundAudios = [{ url: rawInput, duration: parseFloat(fallbackDuration) }];
           }
-        } catch (e) {
+        } else if (Array.isArray(rawInput)) {
+          backgroundAudios = rawInput.map(item => ({
+            url: item.url || "",
+            duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(fallbackDuration)
+          }));
+        } else if (typeof rawInput === "object" && rawInput !== null) {
           backgroundAudios = [{
-            url: rawInput,
-            duration: parseFloat(finalAudioDuration)
+            url: rawInput.url || "",
+            duration: rawInput.duration !== undefined ? parseFloat(rawInput.duration) : parseFloat(fallbackDuration)
           }];
         }
-      } else if (Array.isArray(rawInput)) {
-        backgroundAudios = rawInput.map(item => ({
-          url: item.url || "",
-          duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(finalAudioDuration)
-        }));
-      } else if (typeof rawInput === "object" && rawInput !== null) {
-        backgroundAudios = [{
-          url: rawInput.url || "",
-          duration: rawInput.duration !== undefined ? parseFloat(rawInput.duration) : parseFloat(finalAudioDuration)
-        }];
+      } catch (e) {
+        backgroundAudios = [{ url: rawInput, duration: parseFloat(fallbackDuration) }];
       }
     }
 
@@ -99,19 +107,30 @@ export const createPost = async (req, res) => {
     // ==========================================
     if (req.files && req.files.media && req.files.media.length > 0) {
       const uploadPromises = req.files.media.map(async (file, index) => {
-        let folderName = 'post_images'; // default folder
+        let folderName = 'post_images'; 
 
         // Mimetype based routing
-        if (file.mimetype.startsWith('video')) {
-          folderName = 'post_videos';
-        } else if (file.mimetype.startsWith('audio')) {
-          folderName = 'post_audios';
-        } else if (cleanType === "doodle") {
-          folderName = 'post_doodles';
-        }
+        if (file.mimetype.startsWith('video')) folderName = 'post_videos';
+        else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
+        else if (cleanType === "doodle") folderName = 'post_doodles';
 
         const fileName = `${folderName}/user_${userId}_${Date.now()}_${index}`;
         const blob = bucket.file(fileName);
+
+        // 🔥 MAGIC: Backend Audio Duration Calc (If audio is inside media array)
+        let calculatedMediaAudioDuration = 0;
+        if (file.mimetype.startsWith('audio')) {
+          const tempAudioPath = path.join(os.tmpdir(), `temp_audio_${Date.now()}_${index}.mp4`);
+          try {
+            fs.writeFileSync(tempAudioPath, file.buffer);
+            calculatedMediaAudioDuration = await getVideoDuration(tempAudioPath);
+            console.log(`🎵 Backend Audio Duration (Media Array):`, calculatedMediaAudioDuration);
+          } catch (e) {
+            console.error("⚠️ Backend Audio Calc Error:", e.message);
+          } finally {
+            if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
+          }
+        }
 
         // Thumbnail Extraction for Video
         if (file.mimetype.startsWith('video') && !thumbnail) {
@@ -125,14 +144,10 @@ export const createPost = async (req, res) => {
               ffmpeg(tempVideoPath)
                 .inputOptions('-threads 2')
                 .screenshots({
-                  count: 1,
-                  timemarks: ['00:00:01'],
-                  filename: path.basename(tempThumbPath),
-                  folder: os.tmpdir(),
-                  size: '640x?'
+                  count: 1, timemarks: ['00:00:01'], filename: path.basename(tempThumbPath),
+                  folder: os.tmpdir(), size: '640x?'
                 })
-                .on('end', resolve)
-                .on('error', reject);
+                .on('end', resolve).on('error', reject);
             });
 
             const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
@@ -151,15 +166,28 @@ export const createPost = async (req, res) => {
           }
         }
 
+        // Save File to Bucket
         await blob.save(file.buffer, {
           metadata: { contentType: file.mimetype },
           resumable: file.size > 5 * 1024 * 1024,
         });
 
-        return `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+        const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+        // 🔥 SMART ROUTER: Move audio to backgroundAudios array
+        if (file.mimetype.startsWith('audio')) {
+          backgroundAudios.push({
+            url: fileUrl,
+            duration: parseFloat(parseFloat(calculatedMediaAudioDuration).toFixed(2))
+          });
+          return null; // Do not add to mediaUrls array
+        }
+
+        return fileUrl;
       });
 
-      mediaUrls = await Promise.all(uploadPromises);
+      const results = await Promise.all(uploadPromises);
+      mediaUrls = results.filter(url => url !== null); // Clean up null values from audios
     }
 
     // ==========================================
@@ -183,7 +211,7 @@ export const createPost = async (req, res) => {
       isSaved: isSavedBool,
       expiresAt,
       duration: duration ? parseInt(duration, 10) : 0,  
-      backgroundAudios, // 🔥 Saved dynamically with proper structure
+      backgroundAudios, // 🔥 Ab Duration 100% accurate hogi
     });
 
     // ==========================================
