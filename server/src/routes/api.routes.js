@@ -112,7 +112,7 @@ router.post(
   "/posts", 
   protect, 
   upload.fields([
-    { name: "media", maxCount: 5 },
+    { name: "media", maxCount: 20 },
     { name: "backgroundMusic", maxCount: 1 }
   ]), 
   createPost
