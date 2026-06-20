@@ -73,11 +73,15 @@ const Post = sequelize.define("Post", {
     type: DataTypes.TEXT, 
     allowNull: true
   },
-  duration: {
-  type: DataTypes.INTEGER,
-  defaultValue: 0,
-  allowNull: true
-},
+   duration: {
+   type: DataTypes.INTEGER,
+   defaultValue: 0,
+   allowNull: true
+ },
+ backgroundMusicUrl: {
+   type: DataTypes.TEXT,
+   allowNull: true,
+ },
 }, {
     tableName: "posts",
     timestamps: true

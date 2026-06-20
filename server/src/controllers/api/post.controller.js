@@ -136,9 +136,23 @@ export const createPost = async (req, res) => {
 
     let mediaUrls = [];
     let thumbnail = null; 
+    let backgroundMusicUrl = null; // New field for background music
 
-    if (req.files && req.files.length > 0) {
-      const uploadPromises = req.files.map(async (file, index) => {
+    // Separate handling for backgroundMusic file
+    if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
+      const musicFile = req.files.backgroundMusic[0];
+      const folderName = 'background_music';
+      const fileName = `${folderName}/user_${userId}_${Date.now()}_music`;
+      const blob = bucket.file(fileName);
+      await blob.save(musicFile.buffer, {
+        metadata: { contentType: musicFile.mimetype },
+        resumable: musicFile.size > 5 * 1024 * 1024,
+      });
+      backgroundMusicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    }
+
+    if (req.files && req.files.media && req.files.media.length > 0) {
+      const uploadPromises = req.files.media.map(async (file, index) => {
         let folderName = 'post_images'; // default folder
 
         // 🔥 UPDATE: Mimetype based priority so audio files always go to 'post_audios'
@@ -202,7 +216,7 @@ export const createPost = async (req, res) => {
     }
 
     const mediaRequiredTypes = ["image", "video", "audio"];
-    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0) {
+    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0 && !backgroundMusicUrl) {
       return res.status(400).json({ success: false, message: "Media file missing" });
     }
 
@@ -213,12 +227,13 @@ export const createPost = async (req, res) => {
       type: cleanType,
       content: cleanType === "doodle" ? (content || "Doodle Post") : content,
       caption: caption || "",
-      mediaUrls, // 🔥 The audio URL will automatically be inside this array
+      mediaUrls, 
       thumbnail, 
       location: location || null,
       isSaved: isSavedBool,
       expiresAt,
-      duration: duration ? parseInt(duration, 10) : 0  
+      duration: duration ? parseInt(duration, 10) : 0,  
+      backgroundMusicUrl, // Save background music URL
     });
 
     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);

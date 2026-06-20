@@ -108,7 +108,15 @@ router.post("/save-fcm-token", protect, saveFcmToken);
 
 /* ================= POST APIs ================= */
 
-router.post("/posts", protect, upload.array("media", 5), createPost);
+router.post(
+  "/posts", 
+  protect, 
+  upload.fields([
+    { name: "media", maxCount: 5 },
+    { name: "backgroundMusic", maxCount: 1 }
+  ]), 
+  createPost
+);
 router.delete("/posts/:id", protect, deletePost);
 router.get("/users/:id/posts", getUserPosts);
 

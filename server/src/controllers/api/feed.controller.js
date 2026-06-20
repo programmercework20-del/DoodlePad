@@ -180,6 +180,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       mediaUrls: post.mediaUrls || [],
       thumbnail: post.thumbnail || null, 
       duration: post.duration || 0,
+      backgroundMusicUrl: post.backgroundMusicUrl || null, // Include background music URL
       paths: parsedPaths,
       createdAt: post.createdAt,
       likesCount: post.likesCount || 0,

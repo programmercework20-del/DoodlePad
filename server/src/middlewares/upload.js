@@ -17,6 +17,7 @@ const fileFilter = (req, file, cb) => {
     allowedExtensions.includes(ext) || 
     file.mimetype.startsWith("image/") || 
     file.mimetype.startsWith("video/") ||
+    file.mimetype.startsWith("audio/") || // Allow audio mimetypes
     file.mimetype === "application/octet-stream" // ✅ Doodle data blobs ke liye
   ) {
     cb(null, true);

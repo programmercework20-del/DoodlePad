@@ -2,90 +2,108 @@ import { Op } from "sequelize";
 import User from "../../models/User.js";
 import Hashtag from "../../models/Hashtag.js";
 import SearchHistory from "../../models/SearchHistory.js";
-import Block from "../../models/Block.js";
+import redisClient from "../../config/redis.js";
 
 // ============================================================
-// GLOBAL SEARCH (No Redis Needed - Realtime Query)
+// GLOBAL SEARCH (With Redis Caching & Search History)
 // ============================================================
 export const globalSearch = async (req, res) => {
   try {
     let query = req.query.q;
 
     if (!query) {
-      return res.json({ success: true, users: [], hashtags: [] });
+      return res.json({
+        success: true,
+        users: [],
+        hashtags: []
+      });
     }
 
     query = decodeURIComponent(query).trim();
-    const userId = req.user?.id;
 
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
+    const userId = req.user.id;
+
+    // ===============================
+    // SAVE SEARCH HISTORY
+    // ===============================
+    await SearchHistory.destroy({
+      where: {
+        userId,
+        keyword: query.toLowerCase()
+      }
+    });
+
+    await SearchHistory.create({
+      userId,
+      keyword: query.toLowerCase()
+    });
 
     // =====================================================
-    // 🔥 CASE A: HASHTAG SEARCH ONLY WHEN USER TYPES #
+    // 🔥 HASHTAG SEARCH ONLY WHEN USER TYPES #
     // =====================================================
     if (query.startsWith("#")) {
+
       const cleanQuery = query.replace("#", "").toLowerCase();
 
+      // avoid empty #
       if (!cleanQuery) {
-        return res.json({ success: true, type: "hashtag", hashtags: [] });
+        return res.json({
+          success: true,
+          hashtags: []
+        });
       }
 
       const hashtags = await Hashtag.findAll({
         where: {
-          name: { [Op.iLike]: `%${cleanQuery}%` }
+          name: {
+            [Op.iLike]: `%${cleanQuery}%`
+          }
         },
-        attributes: ["id", "name", "postsCount"],
-        order: [["postsCount", "DESC"]],
+        attributes: [
+          "id",
+          "name",
+          "postsCount"
+        ],
+        order: [
+          ["postsCount", "DESC"]
+        ],
         limit: 10
       });
 
-      res.json({ success: true, type: "hashtag", hashtags });
-
-      // BACKGROUND TASK: History logging
-      SearchHistory.destroy({ where: { userId, keyword: query.toLowerCase() } })
-        .then(() => SearchHistory.create({ userId, keyword: query.toLowerCase() }))
-        .catch(err => console.error("⚡ Background History Log Error:", err.message));
-
-      return;
+      return res.json({
+        success: true,
+        type: "hashtag",
+        hashtags
+      });
     }
 
     // =====================================================
-    // 👤 CASE B: USER SEARCH (WITH BLOCK FILTER)
+    // 👤 USER SEARCH
     // =====================================================
 
-    // 🔥 STEP 1: Find all block relations (Mujhe kisne block kiya, ya maine kisko kiya)
-    const blockRecords = await Block.findAll({
-      where: {
-        [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
-      },
-      attributes: ['blockerId', 'blockedId'],
-      raw: true
-    });
-
-    // 🔥 STEP 2: Extract IDs to hide
-    const hiddenUserIds = blockRecords.map(b => 
-      b.blockerId === userId ? b.blockedId : b.blockerId
-    );
-    hiddenUserIds.push(userId); // Khud ko bhi hide karo
-
-    // 🔥 STEP 3: Modified User Query
     const users = await User.findAll({
       where: {
-        [Op.and]: [
+        isDeactivated: false,
+        [Op.or]: [
           {
-            [Op.or]: [
-              { username: { [Op.iLike]: `%${query}%` } },
-              { name: { [Op.iLike]: `%${query}%` } }
-            ]
+            username: {
+              [Op.iLike]: `%${query}%`
+            }
           },
           {
-            id: { [Op.notIn]: hiddenUserIds } 
+            name: {
+              [Op.iLike]: `%${query}%`
+            }
           }
         ]
       },
-      attributes: ["id", "username", "name", "profilePhoto", "isVerified"],
+      attributes: [
+        "id",
+        "username",
+        "name",
+        "profilePhoto",
+        "isVerified"
+      ],
       order: [
         ["isVerified", "DESC"],
         ["username", "ASC"]
@@ -93,22 +111,20 @@ export const globalSearch = async (req, res) => {
       limit: 10
     });
 
-    res.json({
+    return res.json({
       success: true,
       type: "user",
       users
     });
 
-    // BACKGROUND TASK: History logging
-    SearchHistory.destroy({ where: { userId, keyword: query.toLowerCase() } })
-      .then(() => SearchHistory.create({ userId, keyword: query.toLowerCase() }))
-      .catch(err => console.error("⚡ Background History Log Error:", err.message));
-
   } catch (error) {
-    console.error("🚨 Global Search Error:", error);
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, message: "Search execution failed" });
-    }
+
+    console.error("Search error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Search failed"
+    });
   }
 };
 
