@@ -45,7 +45,7 @@ export const getExploreFeed = async (req, res) => {
         {
           model: User,
           as: "author",
-          attributes: ["id", "username", "profilePhoto", "isVerified"],
+          attributes: ["id", "name", "profilePhoto", "isVerified"],
           where: { isPrivate: false, isDeactivated: false }
         }
       ],
@@ -98,7 +98,7 @@ export const getExploreFeed = async (req, res) => {
               {
                 model: User,
                 as: "author",
-                attributes: ["id", "username", "profilePhoto", "isVerified"],
+                attributes: ["id", "name", "profilePhoto", "isVerified"],
                 where: { isPrivate: false, isDeactivated: false }
               }
             ]
@@ -126,7 +126,7 @@ export const getExploreFeed = async (req, res) => {
         {
           model: User,
           as: "author",
-          attributes: ["id", "username", "profilePhoto", "isVerified"],
+          attributes: ["id", "name", "profilePhoto", "isVerified"],
           where: { isPrivate: false, isDeactivated: false }
         }
       ],
@@ -143,7 +143,7 @@ export const getExploreFeed = async (req, res) => {
         id: { [Op.notIn]: [...blockedIds, userId] },
         isPrivate: false,
       },
-      attributes: ["id", "username", "name", "profilePhoto", "isVerified"],
+      attributes: ["id", "name", "profilePhoto", "isVerified"],
       order: [
         ["isVerified", "DESC"],
         ["createdAt", "DESC"]
