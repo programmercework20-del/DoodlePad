@@ -68,7 +68,8 @@ export const getFeedPosts = async (req, res) => {
 
           isLiked: !!isLiked,
 
-          previewComments: post.comments
+          previewComments: post.comments,
+          backgroundMusicUrl: post.backgroundMusicUrl || []
         };
       })
     );

@@ -78,10 +78,20 @@ const Post = sequelize.define("Post", {
    defaultValue: 0,
    allowNull: true
  },
- backgroundMusicUrl: {
-   type: DataTypes.TEXT,
-   allowNull: true,
- },
+  backgroundAudios: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
+  backgroundMusicUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      const audios = this.getDataValue('backgroundAudios');
+      return audios || [];
+    },
+    set(val) {
+      this.setDataValue('backgroundAudios', val);
+    }
+  },
 }, {
     tableName: "posts",
     timestamps: true

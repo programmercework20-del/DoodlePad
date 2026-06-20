@@ -27,7 +27,7 @@ export const createPost = async (req, res) => {
 
     let mediaUrls = [];
     let thumbnail = null; 
-    let backgroundMusicUrl = null; // New field for background music
+    let backgroundAudios = [];
 
     // Separate handling for backgroundMusic file
     if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
@@ -39,7 +39,49 @@ export const createPost = async (req, res) => {
         metadata: { contentType: musicFile.mimetype },
         resumable: musicFile.size > 5 * 1024 * 1024,
       });
-      backgroundMusicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+      const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+      backgroundAudios = [{
+        url: fileUrl,
+        duration: duration ? parseFloat(duration) : 0.0
+      }];
+    } else if (req.body.backgroundMusicUrl || req.body.backgroundAudios) {
+      const rawInput = req.body.backgroundMusicUrl || req.body.backgroundAudios;
+      if (typeof rawInput === "string") {
+        try {
+          const parsed = JSON.parse(rawInput);
+          if (Array.isArray(parsed)) {
+            backgroundAudios = parsed.map(item => ({
+              url: item.url || "",
+              duration: item.duration !== undefined ? parseFloat(item.duration) : 0.0
+            }));
+          } else if (typeof parsed === "object" && parsed !== null) {
+            backgroundAudios = [{
+              url: parsed.url || "",
+              duration: parsed.duration !== undefined ? parseFloat(parsed.duration) : 0.0
+            }];
+          } else {
+            backgroundAudios = [{
+              url: rawInput,
+              duration: duration ? parseFloat(duration) : 0.0
+            }];
+          }
+        } catch (e) {
+          backgroundAudios = [{
+            url: rawInput,
+            duration: duration ? parseFloat(duration) : 0.0
+          }];
+        }
+      } else if (Array.isArray(rawInput)) {
+        backgroundAudios = rawInput.map(item => ({
+          url: item.url || "",
+          duration: item.duration !== undefined ? parseFloat(item.duration) : 0.0
+        }));
+      } else if (typeof rawInput === "object" && rawInput !== null) {
+        backgroundAudios = [{
+          url: rawInput.url || "",
+          duration: rawInput.duration !== undefined ? parseFloat(rawInput.duration) : 0.0
+        }];
+      }
     }
 
     if (req.files && req.files.media && req.files.media.length > 0) {
@@ -107,7 +149,7 @@ export const createPost = async (req, res) => {
     }
 
     const mediaRequiredTypes = ["image", "video", "audio"];
-    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0 && !backgroundMusicUrl) {
+    if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0 && (!backgroundAudios || backgroundAudios.length === 0)) {
       return res.status(400).json({ success: false, message: "Media file missing" });
     }
 
@@ -124,7 +166,7 @@ export const createPost = async (req, res) => {
       isSaved: isSavedBool,
       expiresAt,
       duration: duration ? parseInt(duration, 10) : 0,  
-      backgroundMusicUrl, // Save background music URL
+      backgroundAudios,
     });
 
     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
