@@ -16,9 +16,14 @@ export const createPost = async (req, res) => {
   try {
     console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
 
-    const { type, content, caption, isSaved, duration, location } = req.body;
+    // 🔥 FIX: Extract audio-specific durations separately to avoid conflict with main video duration
+    const { type, content, caption, isSaved, duration, location, audioDuration, backgroundMusicDuration } = req.body;
     
-    console.log("🕵️‍♂️ [DEBUG] Raw Duration received:", duration);
+    // Smart duration catcher for audio
+    const finalAudioDuration = audioDuration || backgroundMusicDuration || duration || 0;
+
+    console.log("🕵️‍♂️ [DEBUG] Raw Video Duration received:", duration);
+    console.log("🕵️‍♂️ [DEBUG] Raw Audio Duration received:", finalAudioDuration);
     console.log("🕵️‍♂️ [DEBUG] Raw Location received:", location);
 
     const userId = req.user.id;
@@ -29,21 +34,26 @@ export const createPost = async (req, res) => {
     let thumbnail = null; 
     let backgroundAudios = [];
 
-    // Separate handling for backgroundMusic file
+    // ==========================================
+    // 1. BACKGROUND MUSIC HANDLING
+    // ==========================================
     if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
       const musicFile = req.files.backgroundMusic[0];
       const folderName = 'background_music';
       const fileName = `${folderName}/user_${userId}_${Date.now()}_music`;
       const blob = bucket.file(fileName);
+      
       await blob.save(musicFile.buffer, {
         metadata: { contentType: musicFile.mimetype },
         resumable: musicFile.size > 5 * 1024 * 1024,
       });
+      
       const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
       backgroundAudios = [{
         url: fileUrl,
-        duration: duration ? parseFloat(duration) : 0.0
+        duration: parseFloat(finalAudioDuration) // 🔥 Fixed Duration
       }];
+      
     } else if (req.body.backgroundMusicUrl || req.body.backgroundAudios) {
       const rawInput = req.body.backgroundMusicUrl || req.body.backgroundAudios;
       if (typeof rawInput === "string") {
@@ -52,43 +62,46 @@ export const createPost = async (req, res) => {
           if (Array.isArray(parsed)) {
             backgroundAudios = parsed.map(item => ({
               url: item.url || "",
-              duration: item.duration !== undefined ? parseFloat(item.duration) : 0.0
+              duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(finalAudioDuration)
             }));
           } else if (typeof parsed === "object" && parsed !== null) {
             backgroundAudios = [{
               url: parsed.url || "",
-              duration: parsed.duration !== undefined ? parseFloat(parsed.duration) : 0.0
+              duration: parsed.duration !== undefined ? parseFloat(parsed.duration) : parseFloat(finalAudioDuration)
             }];
           } else {
             backgroundAudios = [{
               url: rawInput,
-              duration: duration ? parseFloat(duration) : 0.0
+              duration: parseFloat(finalAudioDuration)
             }];
           }
         } catch (e) {
           backgroundAudios = [{
             url: rawInput,
-            duration: duration ? parseFloat(duration) : 0.0
+            duration: parseFloat(finalAudioDuration)
           }];
         }
       } else if (Array.isArray(rawInput)) {
         backgroundAudios = rawInput.map(item => ({
           url: item.url || "",
-          duration: item.duration !== undefined ? parseFloat(item.duration) : 0.0
+          duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(finalAudioDuration)
         }));
       } else if (typeof rawInput === "object" && rawInput !== null) {
         backgroundAudios = [{
           url: rawInput.url || "",
-          duration: rawInput.duration !== undefined ? parseFloat(rawInput.duration) : 0.0
+          duration: rawInput.duration !== undefined ? parseFloat(rawInput.duration) : parseFloat(finalAudioDuration)
         }];
       }
     }
 
+    // ==========================================
+    // 2. MAIN MEDIA UPLOAD HANDLING
+    // ==========================================
     if (req.files && req.files.media && req.files.media.length > 0) {
       const uploadPromises = req.files.media.map(async (file, index) => {
         let folderName = 'post_images'; // default folder
 
-        // 🔥 UPDATE: Mimetype based priority so audio files always go to 'post_audios'
+        // Mimetype based routing
         if (file.mimetype.startsWith('video')) {
           folderName = 'post_videos';
         } else if (file.mimetype.startsWith('audio')) {
@@ -100,6 +113,7 @@ export const createPost = async (req, res) => {
         const fileName = `${folderName}/user_${userId}_${Date.now()}_${index}`;
         const blob = bucket.file(fileName);
 
+        // Thumbnail Extraction for Video
         if (file.mimetype.startsWith('video') && !thumbnail) {
           const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}.mp4`);
           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
@@ -148,6 +162,9 @@ export const createPost = async (req, res) => {
       mediaUrls = await Promise.all(uploadPromises);
     }
 
+    // ==========================================
+    // 3. VALIDATION & DATABASE SAVE
+    // ==========================================
     const mediaRequiredTypes = ["image", "video", "audio"];
     if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0 && (!backgroundAudios || backgroundAudios.length === 0)) {
       return res.status(400).json({ success: false, message: "Media file missing" });
@@ -166,9 +183,12 @@ export const createPost = async (req, res) => {
       isSaved: isSavedBool,
       expiresAt,
       duration: duration ? parseInt(duration, 10) : 0,  
-      backgroundAudios,
+      backgroundAudios, // 🔥 Saved dynamically with proper structure
     });
 
+    // ==========================================
+    // 4. CACHE INVALIDATION & HASHTAGS
+    // ==========================================
     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
     
     await processHashtags({
