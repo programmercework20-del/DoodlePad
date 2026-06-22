@@ -9,17 +9,65 @@ import { bucket } from "../../config/firebase.js";
 // ============================================================
 // 1. GET USER PROFILE (With Strict Block Validation Prioritization)
 // ============================================================
+// export const getUserProfile = async (req, res) => {
+//   try {
+//     const currentUserId = req.user.id;
+//     const targetUserId = req.params.id; // URL se target user ki ID aayegi
+
+//     // Agar khud ki profile mang raha hai, toh roko (uske liye getMyProfile hai)
+//     if (currentUserId === targetUserId) {
+//       return res.status(400).json({ success: false, message: "Use /my-profile endpoint for your own profile" });
+//     }
+
+//     // 🛡️ STRICT BLOCK VALIDATION (Jaisa aapne comment mein manga tha)
+//     const blockRecord = await Block.findOne({
+//       where: {
+//         [Op.or]: [
+//           { blockerId: currentUserId, blockedId: targetUserId },
+//           { blockerId: targetUserId, blockedId: currentUserId }
+//         ]
+//       }
+//     });
+
+//     // Agar block hai (kisi ne bhi kisi ko kiya ho), toh profile mat dikhao
+//     if (blockRecord) {
+//       return res.status(403).json({ success: false, message: "This profile is not available." });
+//     }
+
+//     // 👤 FETCH USER DATA (Sensitive data jaise password hide karke)
+//     const user = await User.findByPk(targetUserId, {
+//       attributes: { exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires'] }
+//     });
+
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       data: {
+//         profile: {
+//           user: user
+//         }
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error("🔥 GET USER PROFILE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch user profile" });
+//   }
+// };
 export const getUserProfile = async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const targetUserId = req.params.id; // URL se target user ki ID aayegi
+    const targetUserId = req.params.id; 
 
     // Agar khud ki profile mang raha hai, toh roko (uske liye getMyProfile hai)
     if (currentUserId === targetUserId) {
       return res.status(400).json({ success: false, message: "Use /my-profile endpoint for your own profile" });
     }
 
-    // 🛡️ STRICT BLOCK VALIDATION (Jaisa aapne comment mein manga tha)
+    // 🛡️ 1. STRICT BLOCK VALIDATION 
     const blockRecord = await Block.findOne({
       where: {
         [Op.or]: [
@@ -29,12 +77,11 @@ export const getUserProfile = async (req, res) => {
       }
     });
 
-    // Agar block hai (kisi ne bhi kisi ko kiya ho), toh profile mat dikhao
     if (blockRecord) {
       return res.status(403).json({ success: false, message: "This profile is not available." });
     }
 
-    // 👤 FETCH USER DATA (Sensitive data jaise password hide karke)
+    // 👤 2. FETCH USER DATA 
     const user = await User.findByPk(targetUserId, {
       attributes: { exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires'] }
     });
@@ -43,11 +90,42 @@ export const getUserProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    // 📊 3. CALCULATE STATS (Only counting 'accepted' follows)
+    const followersCount = await Follower.count({ where: { followingId: targetUserId, status: "accepted" } });
+    const followingCount = await Follower.count({ where: { followerId: targetUserId, status: "accepted" } });
+    const postsCount = await Post.count({ where: { userId: targetUserId } });
+
+    // 🤝 4. CHECK 'isFollowing' STATUS (Bonus Feature)
+    const followRecord = await Follower.findOne({
+      where: { followerId: currentUserId, followingId: targetUserId, status: "accepted" }
+    });
+    const isFollowing = !!followRecord; // True if record exists, False otherwise
+
+    // 🖼️ 5. FETCH POSTS (With Privacy Wall Logic)
+    let userPosts = [];
+    
+    // Agar profile Public hai, YA FIR aap already follow karte ho -> Tabhi posts bhejenge
+    if (!user.isPrivate || isFollowing) {
+      userPosts = await Post.findAll({
+        where: { userId: targetUserId },
+        order: [['createdAt', 'DESC']],
+        // Include mediaUrls, thumbnail, duration, etc., based on your Post model
+      });
+    }
+
+    // 🚀 6. SEND EXACT STRUCTURE REQUESTED BY FRONTEND
     return res.status(200).json({
       success: true,
       data: {
         profile: {
-          user: user
+          user: user,
+          stats: {
+            followers: followersCount,
+            following: followingCount,
+            posts: postsCount
+          },
+          posts: userPosts, // Ye automatic array jayega frontend ko
+          isFollowing: isFollowing // Bonus flag is here!
         }
       }
     });
@@ -146,9 +224,6 @@ try {
     return res.status(500).json({ success: false, message: "Profile update execution failed" });
   }
 };
-
-
-
 
 // get my profile (with caching)
 export const getMyProfile = async (req, res) => {

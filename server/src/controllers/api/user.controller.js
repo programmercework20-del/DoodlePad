@@ -631,13 +631,49 @@ export const rejectFollowRequest = async (req, res) => {
 // export const getFollowRequests = async (req, res) => {
 //   try {
 //     const userId = req.user.id;
-//     const requests = await Follower.findAll({
+
+//     // 1. Fetch Active Pending Follow Requests (Jinpar action lena baki hai)
+//     const pendingRequests = await Follower.findAll({
 //       where: { followingId: userId, status: "pending" },
-//       include: [{ model: User, as: "follower", where: { isDeactivated: false }, attributes: ["id", "username", "profilePhoto"] }]
+//       include: [
+//         { 
+//           model: User, 
+//           as: "follower", 
+//           where: { isDeactivated: false }, 
+//           attributes: ["id", "username", "profilePhoto"] 
+//         }
+//       ],
+//       order: [["createdAt", "DESC"]]
 //     });
-//     res.json(requests);
+
+//     // 2. 🔥 NEW: Fetch Recent History (Accepted / Rejected requests)
+//     const historyRequests = await Follower.findAll({
+//       where: { 
+//         followingId: userId, 
+//         status: { [Op.in]: ["accepted", "rejected"] } 
+//       },
+//       include: [
+//         { 
+//           model: User, 
+//           as: "follower", 
+//           where: { isDeactivated: false }, 
+//           attributes: ["id", "username", "profilePhoto"] 
+//         }
+//       ],
+//       order: [["updatedAt", "DESC"]], // Jo haal hi me accept/reject hui wo sabse upar
+//       limit: 20 // Database performance optimize rakhne ke liye limit lagayi hai
+//     });
+
+//     // Clean structural object structure for frontend
+//     return res.json({
+//       success: true,
+//       pending: pendingRequests,
+//       history: historyRequests
+//     });
+
 //   } catch (error) {
-//     res.status(500).json({ error: error.message });
+//     console.error("🔥 GET FOLLOW REQUESTS ERROR:", error);
+//     return res.status(500).json({ success: false, error: error.message });
 //   }
 // };
 
@@ -645,48 +681,83 @@ export const getFollowRequests = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1. Fetch Active Pending Follow Requests (Jinpar action lena baki hai)
+    // 1. Fetch Active Pending Follow Requests
     const pendingRequests = await Follower.findAll({
       where: { followingId: userId, status: "pending" },
       include: [
-        { 
-          model: User, 
-          as: "follower", 
-          where: { isDeactivated: false }, 
-          attributes: ["id", "username", "profilePhoto"] 
-        }
+        {
+          model: User,
+          as: "follower",
+          attributes: ["id", "name", "username", "profilePhoto"],
+        },
       ],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
 
-    // 2. 🔥 NEW: Fetch Recent History (Accepted / Rejected requests)
+    // 2. Fetch Recent Follow History (Accepted / Rejected)
     const historyRequests = await Follower.findAll({
-      where: { 
-        followingId: userId, 
-        status: { [Op.in]: ["accepted", "rejected"] } 
+      where: {
+        followingId: userId,
+        status: { [Op.in]: ["accepted", "rejected"] },
       },
       include: [
-        { 
-          model: User, 
-          as: "follower", 
-          where: { isDeactivated: false }, 
-          attributes: ["id", "username", "profilePhoto"] 
-        }
+        {
+          model: User,
+          as: "follower",
+          attributes: ["id", "name", "username", "profilePhoto"],
+        },
       ],
-      order: [["updatedAt", "DESC"]], // Jo haal hi me accept/reject hui wo sabse upar
-      limit: 20 // Database performance optimize rakhne ke liye limit lagayi hai
+      order: [["updatedAt", "DESC"]],
+      limit: 20,
     });
 
-    // Clean structural object structure for frontend
+    // ==========================================
+    // 🔥 PRO-LEVEL OPTIMIZATION: Extracting 'isFollowing' without N+1 Query loop
+    // ==========================================
+    
+    // Step A: Get all unique user IDs who sent the requests
+    const allSenderIds = [
+      ...pendingRequests.map(req => req.followerId),
+      ...historyRequests.map(req => req.followerId)
+    ];
+    const uniqueSenderIds = [...new Set(allSenderIds)];
+
+    // Step B: Check which of these users the current logged-in user is already following
+    let followingSet = new Set();
+    
+    if (uniqueSenderIds.length > 0) {
+      const myFollowings = await Follower.findAll({
+        where: {
+          followerId: userId, // Current user is the follower
+          followingId: { [Op.in]: uniqueSenderIds }, // Checking against request senders
+          status: "accepted" // Assuming mutual follow means accepted
+        },
+        attributes: ["followingId"],
+      });
+      
+      // Add them to a JS Set for O(1) lightning fast lookup
+      followingSet = new Set(myFollowings.map(f => f.followingId));
+    }
+
+    // Step C: Format the response to exactly match FE Dev's requirement
+    const formatRequest = (request) => {
+      const reqJSON = request.toJSON();
+      if (reqJSON.follower) {
+        // Agar us sender ka ID hamare followingSet mein hai, yani 'isFollowing' true hai
+        reqJSON.follower.isFollowing = followingSet.has(reqJSON.followerId);
+      }
+      return reqJSON;
+    };
+
     return res.json({
       success: true,
-      pending: pendingRequests,
-      history: historyRequests
+      pending: pendingRequests.map(formatRequest),
+      history: historyRequests.map(formatRequest),
     });
 
   } catch (error) {
     console.error("🔥 GET FOLLOW REQUESTS ERROR:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, message: "Failed to fetch follow requests" });
   }
 };
 
