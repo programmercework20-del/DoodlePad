@@ -5,7 +5,6 @@ import Hashtag from "../../models/Hashtag.js";
 import HashtagUsage from "../../models/HashtagUsage.js";
 import Block from "../../models/Block.js";
 
-// 🔥 HELPER IMPORT (Ye add karna zaroori hai)
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 export const getExploreFeed = async (req, res) => {
