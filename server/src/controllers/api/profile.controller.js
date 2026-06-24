@@ -421,35 +421,135 @@ export const getDoodleRequests = async (req, res) => {
 // ============================================================
 // 6. ACCEPT DOODLE REQUEST (PRO-LEVEL CACHE FIX)
 // ============================================================
+// export const acceptDoodleRequest = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+//     const userId = req.user.id; // Jisne accept kiya (Receiver)
+
+//     const request = await DoodleRequest.findByPk(requestId);
+
+//     if (!request || request.receiverId !== userId) {
+//       return res.status(403).json({ success: false, message: "Not allowed" });
+//     }
+
+//     if (request.status !== "pending") {
+//       return res.status(400).json({ success: false, message: "Already processed" });
+//     }
+
+//     // 1. Status Update
+//     await request.update({ status: "accepted" });
+
+//     // 2. User Table Update
+//     await User.update(
+//       {
+//         doodleImage: request.doodleImage || null,
+//         doodleData: request.doodleData || null,
+//         doodleOwnerId: request.senderId
+//       },
+//       { where: { id: userId } }
+//     );
+
+//     // 3. 🚀 CARPET BOMBING CACHE (Invisible Bug Killer)
+//     if (redisClient?.isReady) {
+//       try {
+//         const keysToDelete = [
+//           `myProfile:${userId}`,
+//           `profile:${userId}`,
+//           `userProfile:${userId}:viewer:guest`,
+//           `userProfile:${userId}:viewer:${userId}`,
+//           `userProfile:${userId}:viewer:${request.senderId}`,
+//           // Sender ka apna cache bhi clear karo in case frontend wahan se data uthata ho
+//           `myProfile:${request.senderId}`,
+//           `profile:${request.senderId}`
+//         ];
+        
+//         await Promise.all(keysToDelete.map(key => redisClient.del(key)));
+//         console.log(`🧹 [DOODLE CACHE CLEARED] Wiped profile caches for Receiver: ${userId} & Sender: ${request.senderId}`);
+//       } catch (ce) { 
+//         console.error("⚠️ Redis Cache clearance exception:", ce.message); 
+//       }
+//     }
+
+//     // 4. Send Notification
+//     await createNotification({
+//       senderId: userId,
+//       receiverId: request.senderId,
+//       type: "DOODLE_ACCEPTED",
+//       doodleRequestId: request.id
+//     }).catch(() => { });
+
+//     return res.json({
+//       success: true,
+//       message: "Doodle applied to profile",
+//       doodleImage: request.doodleImage || null,
+//       doodleData: request.doodleData || null,
+//       doodleOwnerId: request.senderId // Frontend ko state update karne me kaam aayega
+//     });
+//   } catch (error) {
+//     console.error("🔥 DOODLE ACCEPT ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to accept request" });
+//   }
+// };
+
 export const acceptDoodleRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
-    const userId = req.user.id; // Jisne accept kiya (Receiver)
+    const userId = req.user.id; // Receiver (Jiski profile par cover lagega)
 
-    const request = await DoodleRequest.findByPk(requestId);
+    // 1. Fetch Request with Sender's details
+    const request = await DoodleRequest.findByPk(requestId, {
+      include: [{ model: User, as: "sender", attributes: ["id", "name", "username", "profilePhoto"] }]
+    });
 
     if (!request || request.receiverId !== userId) {
       return res.status(403).json({ success: false, message: "Not allowed" });
     }
 
     if (request.status !== "pending") {
-      return res.status(400).json({ success: false, message: "Already processed" });
+      return res.status(400).json({ success: false, message: "Request already processed" });
     }
 
-    // 1. Status Update
+    // 2. Fetch current User's active doodles
+    const user = await User.findByPk(userId);
+    let activeDoodles = user.activeDoodles || [];
+
+    // 3. Naya Doodle Object banayein (FE ko show karne mein aasaani hogi)
+    const newDoodle = {
+      senderId: request.senderId,
+      senderName: request.sender.name,
+      senderUsername: request.sender.username,
+      senderProfilePhoto: request.sender.profilePhoto,
+      doodleImage: request.doodleImage,
+      doodleData: request.doodleData,
+      acceptedAt: new Date().toISOString()
+    };
+
+    // 4. 🔥 SMART LOGIC: Check Rules (Replace & Limit 10)
+    const existingIndex = activeDoodles.findIndex(d => d.senderId === request.senderId);
+
+    if (existingIndex !== -1) {
+      // RULE 1: Same Friend ka old doodle Replace kardo
+      activeDoodles[existingIndex] = newDoodle;
+      
+      // Optional: Agar aap chahte hain ki updated doodle array mein aage/piche jaye, toh yahan logic lagta, 
+      // par index par replace karna sabse smooth rehta hai.
+    } else {
+      // RULE 2: Naya friend hai, Max 10 limits check karo
+      if (activeDoodles.length >= 10) {
+        // First-In-First-Out: Sabse purane (index 0) wale doodle ko nikal do taaki naye ki jagah bane
+        activeDoodles.shift(); 
+      }
+      // Naya doodle array ke end mein add kardo
+      activeDoodles.push(newDoodle);
+    }
+
+    // 5. Update Status & User Table
     await request.update({ status: "accepted" });
+    
+    // Naya array set karke save karo (Spelling JSONB k liye strict array referrence lagaya hai)
+    await user.update({ activeDoodles: [...activeDoodles] });
 
-    // 2. User Table Update
-    await User.update(
-      {
-        doodleImage: request.doodleImage || null,
-        doodleData: request.doodleData || null,
-        doodleOwnerId: request.senderId
-      },
-      { where: { id: userId } }
-    );
-
-    // 3. 🚀 CARPET BOMBING CACHE (Invisible Bug Killer)
+    // 6. 🚀 CARPET BOMBING CACHE (Invisible Bug Killer)
     if (redisClient?.isReady) {
       try {
         const keysToDelete = [
@@ -458,19 +558,18 @@ export const acceptDoodleRequest = async (req, res) => {
           `userProfile:${userId}:viewer:guest`,
           `userProfile:${userId}:viewer:${userId}`,
           `userProfile:${userId}:viewer:${request.senderId}`,
-          // Sender ka apna cache bhi clear karo in case frontend wahan se data uthata ho
           `myProfile:${request.senderId}`,
           `profile:${request.senderId}`
         ];
         
         await Promise.all(keysToDelete.map(key => redisClient.del(key)));
-        console.log(`🧹 [DOODLE CACHE CLEARED] Wiped profile caches for Receiver: ${userId} & Sender: ${request.senderId}`);
+        console.log(`🧹 [DOODLE CACHE CLEARED] Wipe successful`);
       } catch (ce) { 
         console.error("⚠️ Redis Cache clearance exception:", ce.message); 
       }
     }
 
-    // 4. Send Notification
+    // 7. Send Notification back to sender
     await createNotification({
       senderId: userId,
       receiverId: request.senderId,
@@ -480,11 +579,10 @@ export const acceptDoodleRequest = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Doodle applied to profile",
-      doodleImage: request.doodleImage || null,
-      doodleData: request.doodleData || null,
-      doodleOwnerId: request.senderId // Frontend ko state update karne me kaam aayega
+      message: "Doodle accepted and added to cover slider",
+      activeDoodles: activeDoodles // FE dev isko map karke seedha UI update kar sakta hai
     });
+
   } catch (error) {
     console.error("🔥 DOODLE ACCEPT ERROR:", error);
     return res.status(500).json({ success: false, message: "Failed to accept request" });

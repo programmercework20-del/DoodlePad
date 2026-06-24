@@ -171,6 +171,11 @@ doodleData: {
   type: DataTypes.TEXT,
   allowNull: true
 
+},
+activeDoodles: {
+  type: DataTypes.JSONB,
+  allowNull: true,
+  defaultValue: [] // Array of doodle objects
 }
 },
 {
