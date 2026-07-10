@@ -137,14 +137,22 @@ export const getUserProfile = async (req, res) => {
     ]);
 
     // 🤝 4. FOLLOW STATUS — currentUser ne targetUser ko follow kiya hai?
-    const followRecord = await Follower.findOne({
+    const currentUserFollowsTarget = await Follower.findOne({
       where: { 
         followerId: currentUserId, 
         followingId: targetUserId, 
         status: "accepted"  // 🔥 Sirf accepted follow count hoga
       }
     });
-    const isFollowing = !!followRecord;
+    const targetFollowsCurrentUser = await Follower.findOne({
+      where: {
+        followerId: targetUserId,
+        followingId: currentUserId,
+        status: "accepted"
+      }
+    });
+    const isFollowing = !!currentUserFollowsTarget;
+    const isMutualFollow = !!currentUserFollowsTarget && !!targetFollowsCurrentUser;
 
     // 🔥 PENDING REQUEST CHECK
     const pendingRequest = await Follower.findOne({
@@ -158,7 +166,7 @@ export const getUserProfile = async (req, res) => {
 
     // 🖼️ 5. POSTS — Privacy wall
     let userPosts = [];
-    const canViewProfile = !user.isPrivate || isFollowing;
+    const canViewProfile = !user.isPrivate || isFollowing || isMutualFollow;
 
     if (canViewProfile) {
       userPosts = await Post.findAll({
@@ -172,7 +180,7 @@ export const getUserProfile = async (req, res) => {
     }
 
     // 🎨 6. DOODLE VISIBILITY
-    const showDoodle = isFollowing;
+    const showDoodle = canViewProfile;
     
     // 🚀 7. RESPONSE
     return res.status(200).json({
@@ -191,6 +199,11 @@ export const getUserProfile = async (req, res) => {
             doodleImage: showDoodle ? user.doodleImage : null,
             doodleData: showDoodle ? user.doodleData : null,
             doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+            isFollowing,
+            isRequestPending,
+            canViewProfile,
+            isMutualFollow,
+            followsYou: !!targetFollowsCurrentUser
           },
           stats: {
             followers: followersCount,
@@ -200,8 +213,15 @@ export const getUserProfile = async (req, res) => {
           posts: userPosts,
           isFollowing,
           isRequestPending,   // 🔥 Frontend ko pata chalega request pending hai
-          canViewProfile      // 🔥 Frontend privacy wall dikhane ke liye
-        }
+          canViewProfile,     // 🔥 Frontend privacy wall dikhane ke liye
+          isMutualFollow,
+          followsYou: !!targetFollowsCurrentUser
+        },
+        isFollowing,
+        isRequestPending,
+        canViewProfile,
+        isMutualFollow,
+        followsYou: !!targetFollowsCurrentUser
       }
     });
 

@@ -291,8 +291,19 @@ const userSlice = createSlice({
             })
             .addCase(fetchUserById.fulfilled, (state, action) => {
     state.loading = false;
-    state.currentUser = action.payload?.profile?.user || null;
-    state.stats = action.payload?.profile?.stats || null;
+    const profileData = action.payload?.data?.profile || action.payload?.profile || {};
+    const user = profileData.user || null;
+    state.currentUser = user
+        ? {
+            ...user,
+            isFollowing: profileData.isFollowing,
+            isRequestPending: profileData.isRequestPending,
+            canViewProfile: profileData.canViewProfile,
+            isMutualFollow: profileData.isMutualFollow,
+            followsYou: profileData.followsYou,
+        }
+        : null;
+    state.stats = profileData.stats || null;
 })
             .addCase(fetchUserById.rejected, (state, action) => {
                 state.loading = false;
