@@ -11,6 +11,7 @@ import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 import { getVideoDuration } from "../../utils/getVideoDuration.js";
+import Follower from "../../models/Follower.js";
 
 export const createPost = async (req, res) => {
   try {
@@ -427,6 +428,35 @@ export const getUserPosts = async (req, res) => {
     const currentUserId = req.user?.id; 
     const cacheKey = `userPosts:${id}`;
 
+    const profileOwner = await User.findByPk(id, {
+      attributes: ["id", "isPrivate"]
+    });
+
+    const isTargetPrivate = profileOwner ? (profileOwner.isPrivate === true || profileOwner.isPrivate === "true" || profileOwner.isPrivate === 1 || profileOwner.isPrivate === "1") : false;
+
+    let canViewProfile = !isTargetPrivate;
+
+    if (!canViewProfile && currentUserId) {
+      const [isFollowing, followsYou] = await Promise.all([
+        Follower.findOne({
+          where: {
+            followerId: currentUserId,
+            followingId: id,
+            status: "accepted"
+          }
+        }),
+        Follower.findOne({
+          where: {
+            followerId: id,
+            followingId: currentUserId,
+            status: "accepted"
+          }
+        })
+      ]);
+
+      canViewProfile = !!isFollowing || !!followsYou;
+    }
+
     const posts = await Post.findAll({
       where: {
         userId: id,
@@ -471,7 +501,8 @@ export const getUserPosts = async (req, res) => {
     return res.json({
       success: true,
       count: finalizedPosts.length,
-      posts: finalizedPosts
+      posts: canViewProfile ? finalizedPosts : [],
+      canViewProfile
     });
 
   } catch (error) {

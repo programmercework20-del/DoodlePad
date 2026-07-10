@@ -88,6 +88,15 @@ import { bucket } from "../../config/firebase.js";
 //   }
 // };
 
+const isPrivacyEnabled = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+  return Boolean(value);
+};
+
 export const getUserProfile = async (req, res) => {
   try {
     const currentUserId = req.user.id;
@@ -165,8 +174,9 @@ export const getUserProfile = async (req, res) => {
     const isRequestPending = !!pendingRequest;
 
     // 🖼️ 5. POSTS — Privacy wall
+    const isTargetPrivate = isPrivacyEnabled(user.isPrivate);
     let userPosts = [];
-    const canViewProfile = !user.isPrivate || isFollowing || isMutualFollow;
+    const canViewProfile = !isTargetPrivate || isFollowing || isMutualFollow || !!targetFollowsCurrentUser;
 
     if (canViewProfile) {
       userPosts = await Post.findAll({
