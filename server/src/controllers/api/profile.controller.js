@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
 import { User, Follower, Post, DoodleRequest } from "../../models/index.js";
-import Block from "../../models/Block.js"; // 🔥 FIXED: Imported directly because it's missing in models/index.js
+import Block from "../../models/Block.js";
 import { createNotification } from "../../services/notification.service.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
@@ -12,14 +12,14 @@ import { bucket } from "../../config/firebase.js";
 // export const getUserProfile = async (req, res) => {
 //   try {
 //     const currentUserId = req.user.id;
-//     const targetUserId = req.params.id; // URL se target user ki ID aayegi
+//     const targetUserId = req.params.id; 
 
 //     // Agar khud ki profile mang raha hai, toh roko (uske liye getMyProfile hai)
 //     if (currentUserId === targetUserId) {
 //       return res.status(400).json({ success: false, message: "Use /my-profile endpoint for your own profile" });
 //     }
 
-//     // 🛡️ STRICT BLOCK VALIDATION (Jaisa aapne comment mein manga tha)
+//     // 🛡️ 1. STRICT BLOCK VALIDATION 
 //     const blockRecord = await Block.findOne({
 //       where: {
 //         [Op.or]: [
@@ -29,12 +29,11 @@ import { bucket } from "../../config/firebase.js";
 //       }
 //     });
 
-//     // Agar block hai (kisi ne bhi kisi ko kiya ho), toh profile mat dikhao
 //     if (blockRecord) {
 //       return res.status(403).json({ success: false, message: "This profile is not available." });
 //     }
 
-//     // 👤 FETCH USER DATA (Sensitive data jaise password hide karke)
+//     // 👤 2. FETCH USER DATA 
 //     const user = await User.findByPk(targetUserId, {
 //       attributes: { exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires'] }
 //     });
@@ -43,11 +42,42 @@ import { bucket } from "../../config/firebase.js";
 //       return res.status(404).json({ success: false, message: "User not found" });
 //     }
 
+//     // 📊 3. CALCULATE STATS (Only counting 'accepted' follows)
+//     const followersCount = await Follower.count({ where: { followingId: targetUserId, status: "accepted" } });
+//     const followingCount = await Follower.count({ where: { followerId: targetUserId, status: "accepted" } });
+//     const postsCount = await Post.count({ where: { userId: targetUserId } });
+
+//     // 🤝 4. CHECK 'isFollowing' STATUS (Bonus Feature)
+//     const followRecord = await Follower.findOne({
+//       where: { followerId: currentUserId, followingId: targetUserId, status: "accepted" }
+//     });
+//     const isFollowing = !!followRecord; // True if record exists, False otherwise
+
+//     // 🖼️ 5. FETCH POSTS (With Privacy Wall Logic)
+//     let userPosts = [];
+    
+//     // Agar profile Public hai, YA FIR aap already follow karte ho -> Tabhi posts bhejenge
+//     if (!user.isPrivate || isFollowing) {
+//       userPosts = await Post.findAll({
+//         where: { userId: targetUserId },
+//         order: [['createdAt', 'DESC']],
+//         // Include mediaUrls, thumbnail, duration, etc., based on your Post model
+//       });
+//     }
+
+//     // 🚀 6. SEND EXACT STRUCTURE REQUESTED BY FRONTEND
 //     return res.status(200).json({
 //       success: true,
 //       data: {
 //         profile: {
-//           user: user
+//           user: user,
+//           stats: {
+//             followers: followersCount,
+//             following: followingCount,
+//             posts: postsCount
+//           },
+//           posts: userPosts, // Ye automatic array jayega frontend ko
+//           isFollowing: isFollowing // Bonus flag is here!
 //         }
 //       }
 //     });
@@ -57,17 +87,20 @@ import { bucket } from "../../config/firebase.js";
 //     return res.status(500).json({ success: false, message: "Failed to fetch user profile" });
 //   }
 // };
+
 export const getUserProfile = async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const targetUserId = req.params.id; 
+    const targetUserId = req.params.id;
 
-    // Agar khud ki profile mang raha hai, toh roko (uske liye getMyProfile hai)
     if (currentUserId === targetUserId) {
-      return res.status(400).json({ success: false, message: "Use /my-profile endpoint for your own profile" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Use /my-profile endpoint for your own profile" 
+      });
     }
 
-    // 🛡️ 1. STRICT BLOCK VALIDATION 
+    // 🛡️ 1. BLOCK CHECK
     const blockRecord = await Block.findOne({
       where: {
         [Op.or]: [
@@ -78,61 +111,106 @@ export const getUserProfile = async (req, res) => {
     });
 
     if (blockRecord) {
-      return res.status(403).json({ success: false, message: "This profile is not available." });
+      return res.status(403).json({ 
+        success: false, 
+        message: "This profile is not available." 
+      });
     }
 
-    // 👤 2. FETCH USER DATA 
+    // 👤 2. FETCH USER
     const user = await User.findByPk(targetUserId, {
-      attributes: { exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires'] }
+      attributes: { 
+        exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 
+                  'phoneOtpExpires', 'fcmToken', 'resetPasswordToken'] 
+      }
     });
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // 📊 3. CALCULATE STATS (Only counting 'accepted' follows)
-    const followersCount = await Follower.count({ where: { followingId: targetUserId, status: "accepted" } });
-    const followingCount = await Follower.count({ where: { followerId: targetUserId, status: "accepted" } });
-    const postsCount = await Post.count({ where: { userId: targetUserId } });
+    // 📊 3. STATS
+    const [followersCount, followingCount, postsCount] = await Promise.all([
+      Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
+      Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
+      Post.count({ where: { userId: targetUserId, status: "active" } })
+    ]);
 
-    // 🤝 4. CHECK 'isFollowing' STATUS (Bonus Feature)
+    // 🤝 4. FOLLOW STATUS — currentUser ne targetUser ko follow kiya hai?
     const followRecord = await Follower.findOne({
-      where: { followerId: currentUserId, followingId: targetUserId, status: "accepted" }
+      where: { 
+        followerId: currentUserId, 
+        followingId: targetUserId, 
+        status: "accepted"  // 🔥 Sirf accepted follow count hoga
+      }
     });
-    const isFollowing = !!followRecord; // True if record exists, False otherwise
+    const isFollowing = !!followRecord;
 
-    // 🖼️ 5. FETCH POSTS (With Privacy Wall Logic)
+    // 🔥 PENDING REQUEST CHECK
+    const pendingRequest = await Follower.findOne({
+      where: {
+        followerId: currentUserId,
+        followingId: targetUserId,
+        status: "pending"
+      }
+    });
+    const isRequestPending = !!pendingRequest;
+
+    // 🖼️ 5. POSTS — Privacy wall
     let userPosts = [];
-    
-    // Agar profile Public hai, YA FIR aap already follow karte ho -> Tabhi posts bhejenge
-    if (!user.isPrivate || isFollowing) {
+    const canViewProfile = !user.isPrivate || isFollowing;
+
+    if (canViewProfile) {
       userPosts = await Post.findAll({
-        where: { userId: targetUserId },
+        where: { 
+          userId: targetUserId,
+          status: "active"
+        },
         order: [['createdAt', 'DESC']],
-        // Include mediaUrls, thumbnail, duration, etc., based on your Post model
+        limit: 50
       });
     }
 
-    // 🚀 6. SEND EXACT STRUCTURE REQUESTED BY FRONTEND
+    // 🎨 6. DOODLE VISIBILITY
+    const showDoodle = isFollowing;
+    
+    // 🚀 7. RESPONSE
     return res.status(200).json({
       success: true,
       data: {
         profile: {
-          user: user,
+          user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            bio: user.bio,
+            profilePhoto: user.profilePhoto,
+            isPrivate: user.isPrivate,
+            isVerified: user.isVerified,
+            activeDoodles: showDoodle ? (user.activeDoodles || []) : [],
+            doodleImage: showDoodle ? user.doodleImage : null,
+            doodleData: showDoodle ? user.doodleData : null,
+            doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+          },
           stats: {
             followers: followersCount,
             following: followingCount,
             posts: postsCount
           },
-          posts: userPosts, // Ye automatic array jayega frontend ko
-          isFollowing: isFollowing // Bonus flag is here!
+          posts: userPosts,
+          isFollowing,
+          isRequestPending,   // 🔥 Frontend ko pata chalega request pending hai
+          canViewProfile      // 🔥 Frontend privacy wall dikhane ke liye
         }
       }
     });
 
   } catch (error) {
     console.error("🔥 GET USER PROFILE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch user profile" });
+    return res.status(500).json({ 
+      success: false, 
+      message: "Failed to fetch user profile" 
+    });
   }
 };
 
