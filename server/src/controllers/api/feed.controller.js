@@ -84,7 +84,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       where: {
         isDeactivated: false
       },
-      attributes: ["id", "name", "profilePhoto", "isVerified"]
+      attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [["createdAt", "DESC"]],
     limit: limit * 2,
@@ -109,7 +109,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       model: User,
       as: "author",
       where: { isPrivate: false, isDeactivated: false },
-      attributes: ["id", "name", "profilePhoto", "isVerified"]
+      attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [["createdAt", "DESC"]], 
     limit: limit * 2,
@@ -131,7 +131,7 @@ export const getFeed = asyncHandler(async (req, res) => {
     include: [{
       model: User,
       as: "author",
-      attributes: ["id", "name", "profilePhoto", "isVerified"]
+      attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [
       ["likesCount", "DESC"],
