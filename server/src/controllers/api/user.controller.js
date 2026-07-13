@@ -252,57 +252,6 @@ export const login = async (req, res) => {
   }
 };
 
-// export const forgotPassword = async (req, res) => {
-//   try {
-//     const { identifier } = req.body;
-
-//     if (!identifier) {
-//       return res.status(400).json({ success: false, message: "Email or phone required" });
-//     }
-
-//     // 🧹 Sanitization: Agar phone hai toh +91 hata do taaki DB mein accurately match ho
-//     const cleanIdentifier = identifier.trim().replace(/^\+91/, '');
-
-//     const user = await User.findOne({
-//       where: {
-//         [Op.or]: [
-//           { email: identifier.trim() },
-//           { phone: cleanIdentifier }
-//         ]
-//       }
-//     });
-
-//     if (!user) {
-//       return res.status(404).json({ success: false, message: "User not found" });
-//     }
-
-//     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-
-//     await user.update({
-//       otp,
-//       otpExpires: new Date(Date.now() + 5 * 60 * 1000) // 5 min
-//     });
-
-//     // 🔥 SMART DISPATCH: User ne jo request kiya hai wahi bhejo
-//     const isEmail = identifier.includes("@");
-
-//     if (isEmail && user.email) {
-//       await sendEmail(user.email, "Reset Password OTP", "otp", { otp });
-//     } else if (!isEmail && user.phone) {
-//       // Dhyan dein: .env mein MSG91_RESET_TEMPLATE_ID zaroor hona chahiye
-//       await sendSmsOtp(user.phone, otp, process.env.MSG91_RESET_TEMPLATE_ID);
-//     } else {
-//       return res.status(400).json({ success: false, message: "Valid contact method not found for this user." });
-//     }
-
-//     return res.json({ success: true, message: "OTP sent successfully" });
-
-//   } catch (error) {
-//     console.error("🔥 FORGOT PASSWORD ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
-//   }
-// };
-
 export const forgotPassword = async (req, res) => {
   try {
     // 🔥 SMART PAYLOAD CATCHER: Frontend chahe 'identifier', 'email' ya 'phone' bheje, yeh catch kar lega!
@@ -353,9 +302,7 @@ export const forgotPassword = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
   }
 };
-// ==========================================
-// 10. RESEND OTP (Universal API)
-// ==========================================
+
 export const resendOtp = async (req, res) => {
   try {
     // 🔥 SMART PAYLOAD CATCHER
@@ -627,55 +574,6 @@ export const rejectFollowRequest = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-// export const getFollowRequests = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-
-//     // 1. Fetch Active Pending Follow Requests (Jinpar action lena baki hai)
-//     const pendingRequests = await Follower.findAll({
-//       where: { followingId: userId, status: "pending" },
-//       include: [
-//         { 
-//           model: User, 
-//           as: "follower", 
-//           where: { isDeactivated: false }, 
-//           attributes: ["id", "username", "profilePhoto"] 
-//         }
-//       ],
-//       order: [["createdAt", "DESC"]]
-//     });
-
-//     // 2. 🔥 NEW: Fetch Recent History (Accepted / Rejected requests)
-//     const historyRequests = await Follower.findAll({
-//       where: { 
-//         followingId: userId, 
-//         status: { [Op.in]: ["accepted", "rejected"] } 
-//       },
-//       include: [
-//         { 
-//           model: User, 
-//           as: "follower", 
-//           where: { isDeactivated: false }, 
-//           attributes: ["id", "username", "profilePhoto"] 
-//         }
-//       ],
-//       order: [["updatedAt", "DESC"]], // Jo haal hi me accept/reject hui wo sabse upar
-//       limit: 20 // Database performance optimize rakhne ke liye limit lagayi hai
-//     });
-
-//     // Clean structural object structure for frontend
-//     return res.json({
-//       success: true,
-//       pending: pendingRequests,
-//       history: historyRequests
-//     });
-
-//   } catch (error) {
-//     console.error("🔥 GET FOLLOW REQUESTS ERROR:", error);
-//     return res.status(500).json({ success: false, error: error.message });
-//   }
-// };
 
 export const getFollowRequests = async (req, res) => {
   try {
@@ -1033,5 +931,42 @@ export const uploadProfilePhoto = async (req, res) => {
   } catch (error) {
     console.error("Profile photo update error:", error);
     res.status(500).json({ message: "Failed to update profile photo" });
+  }
+};
+
+export const getUniqueConnectionsCount = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const cacheKey = `uniqueConnections:${userId}`;
+
+    if (redisClient?.isReady) {
+      const cachedData = await redisClient.get(cacheKey);
+      if (cachedData) return res.json({ uniqueConnections: parseInt(cachedData) });
+    }
+
+    // Combine both sets and get distinct users
+    // People who follow me OR people I follow, where status is accepted
+    const [results] = await sequelize.query(`
+      SELECT COUNT(DISTINCT connected_user_id) as count
+      FROM (
+        SELECT "followerId" as connected_user_id FROM "followers" WHERE "followingId" = :userId AND "status" = 'accepted'
+        UNION
+        SELECT "followingId" as connected_user_id FROM "followers" WHERE "followerId" = :userId AND "status" = 'accepted'
+      ) as unique_connections
+    `, {
+      replacements: { userId },
+      type: sequelize.QueryTypes.SELECT
+    });
+
+    const uniqueCount = parseInt(results.count || 0);
+
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 3600, uniqueCount.toString());
+    }
+
+    res.json({ uniqueConnections: uniqueCount });
+  } catch (error) {
+    console.error("🔥 UNIQUE CONNECTIONS COUNT ERROR:", error);
+    res.status(500).json({ error: error.message });
   }
 };

@@ -30,6 +30,7 @@ import {
   getFollowRequests,
   acceptFollowRequest,
   rejectFollowRequest,
+  getUniqueConnectionsCount,
   togglePrivacy,
   saveFcmToken
 } from "../controllers/api/user.controller.js";
@@ -65,6 +66,7 @@ router.post("/reset-password", resetPassword);
 router.get("/requests", protect, getFollowRequests);
 router.post("/requests/:id/accept", protect, acceptFollowRequest);
 router.post("/requests/:id/reject", protect, rejectFollowRequest);
+router.get('/connections/:id/count', getUniqueConnectionsCount);
 
 
 
@@ -73,36 +75,6 @@ router.post("/requests/:id/reject", protect, rejectFollowRequest);
 router.patch("/users/privacy", userAuth, togglePrivacy);
 
 router.post("/save-fcm-token", protect, saveFcmToken);
-
-
-// /* ================= PROFILE APIs ================= */
-// router.get("/users/my-profile", protect, getMyProfile);
-
-// router.put(
-//   "/users/update-profile",
-//   protect,
-//   upload.single("profilePhoto"),
-//   updateMyProfile
-// );
-// // router.put(
-// //   "/users/update-profile",
-// //   userAuth,
-// //   upload.single("profilePhoto"),
-// //   updateMyProfile
-// // );
-
-// // router.get("/users/my-profile", userAuth, getMyProfile);
-
-// router.get("/users/:id", protect, getUserProfile);
-// // router.get("/users/:id", userAuth, getUserProfile);
-
-// router.post("/doodle/request", userAuth, upload.single("doodle"), sendDoodleRequest);
-
-// router.post("/doodle/accept/:requestId", userAuth, acceptDoodleRequest);
-
-// router.post("/doodle/reject/:requestId", userAuth, rejectDoodleRequest);
-
-// router.get("/doodle/request", userAuth, getDoodleRequests);
 
 
 
