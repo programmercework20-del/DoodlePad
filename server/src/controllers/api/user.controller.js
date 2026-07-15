@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import TokenBlacklist from "../../models/TokenBlacklist.js";
 import jwt from "jsonwebtoken";
-import { User, Follower } from "../../models/index.js";
+import { User, Follower, sequelize} from "../../models/index.js";
 import { Op } from "sequelize";
 import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
