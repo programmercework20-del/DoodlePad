@@ -843,6 +843,21 @@ export const togglePrivacy = async (req, res) => {
     const isPrivateBool = isPrivate === true || isPrivate === "true";
     await user.update({ isPrivate: isPrivateBool });
 
+    // Invalidate relevant caches so that profile visibility and posts reflect the new privacy immediately
+    try {
+      if (redisClient?.isReady) {
+        const userId = user.id;
+        await Promise.all([
+          redisClient.del(`userPosts:${userId}`),
+          redisClient.del(`myProfile:${userId}`),
+          redisClient.del(`feed:${userId}`)
+        ]);
+        console.log(`🧹 [PRIVACY TOGGLE] Cleared caches for user ${userId}`);
+      }
+    } catch (cacheErr) {
+      console.error("⚠️ Cache clear failed after privacy toggle:", cacheErr.message);
+    }
+
     return res.json({
       success: true,
       message: isPrivate ? "Account switched to private" : "Account switched to public",

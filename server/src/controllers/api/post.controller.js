@@ -436,6 +436,14 @@ export const getUserPosts = async (req, res) => {
 
     let canViewProfile = !isTargetPrivate;
 
+    // Allow profile owner and admins to always view the profile posts
+    if (currentUserId && String(currentUserId) === String(id)) {
+      canViewProfile = true;
+    }
+    if (req.user && req.user.role === "admin") {
+      canViewProfile = true;
+    }
+
     if (!canViewProfile && currentUserId) {
       const [isFollowing, followsYou] = await Promise.all([
         Follower.findOne({
@@ -455,6 +463,39 @@ export const getUserPosts = async (req, res) => {
       ]);
 
       canViewProfile = !!isFollowing || !!followsYou;
+    }
+
+    // If the viewer is not allowed to see posts, return early without querying posts
+    if (!canViewProfile) {
+      return res.json({
+        success: true,
+        count: 0,
+        posts: [],
+        canViewProfile: false
+      });
+    }
+
+    // Debug: check Redis cache for user posts before hitting DB
+    if (redisClient?.isReady) {
+      try {
+        const cachedData = await redisClient.get(cacheKey);
+        if (cachedData) {
+          console.log(`🧠 [CACHE HIT] ${cacheKey} viewer=${currentUserId || 'anon'} owner=${id}`);
+          const parsed = JSON.parse(cachedData);
+          const finalizedCached = await injectIsLikedFlag(parsed, currentUserId);
+          return res.json({
+            success: true,
+            count: finalizedCached.length,
+            posts: finalizedCached,
+            canViewProfile: true,
+            cached: true
+          });
+        } else {
+          console.log(`🧠 [CACHE MISS] ${cacheKey} viewer=${currentUserId || 'anon'} owner=${id}`);
+        }
+      } catch (cacheErr) {
+        console.error('⚠️ Redis read error in getUserPosts:', cacheErr.message);
+      }
     }
 
     const posts = await Post.findAll({
