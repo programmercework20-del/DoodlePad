@@ -103,18 +103,18 @@ export const getUserProfile = async (req, res) => {
     const targetUserId = req.params.id;
     const isOwnProfile = String(currentUserId) === String(targetUserId);
 
-    if (isOwnProfile) {
-      const user = await User.findByPk(targetUserId, {
-        attributes: {
-          exclude: ['password', 'otp', 'otpExpires', 'phoneOtp',
-                    'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
-        }
-      });
-
-      if (!user) {
-        return res.status(404).json({ success: false, message: "User not found" });
+    const user = await User.findByPk(targetUserId, {
+      attributes: {
+        exclude: ['password', 'otp', 'otpExpires', 'phoneOtp',
+                  'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
       }
+    });
 
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (isOwnProfile) {
       const [followersCount, followingCount, postsCount] = await Promise.all([
         Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
         Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
@@ -130,48 +130,46 @@ export const getUserProfile = async (req, res) => {
         limit: 50
       });
 
-      const profilePayload = {
-        user: {
-          id: user.id,
-          name: user.name,
-          username: user.username,
-          bio: user.bio,
-          profilePhoto: user.profilePhoto,
-          isPrivate: user.isPrivate,
-          isVerified: user.isVerified,
-          activeDoodles: user.activeDoodles || [],
-          doodleImage: user.doodleImage,
-          doodleData: user.doodleData,
-          doodleOwnerId: user.doodleOwnerId,
+      return res.status(200).json({
+        success: true,
+        data: {
+          profile: {
+            user: {
+              id: user.id,
+              name: user.name,
+              username: user.username,
+              bio: user.bio,
+              profilePhoto: user.profilePhoto,
+              isPrivate: user.isPrivate,
+              isVerified: user.isVerified,
+              activeDoodles: user.activeDoodles || [],
+              doodleImage: user.doodleImage,
+              doodleData: user.doodleData,
+              doodleOwnerId: user.doodleOwnerId,
+              isFollowing: false,
+              isRequestPending: false,
+              canViewProfile: true,
+              isMutualFollow: false,
+              followsYou: false
+            },
+            stats: {
+              followers: followersCount,
+              following: followingCount,
+              posts: postsCount
+            },
+            posts: userPosts,
+            isFollowing: false,
+            isRequestPending: false,
+            canViewProfile: true,
+            isMutualFollow: false,
+            followsYou: false
+          },
           isFollowing: false,
           isRequestPending: false,
           canViewProfile: true,
           isMutualFollow: false,
           followsYou: false
-        },
-        stats: {
-          followers: followersCount,
-          following: followingCount,
-          posts: postsCount
-        },
-        posts: userPosts,
-        isFollowing: false,
-        isRequestPending: false,
-        canViewProfile: true,
-        isMutualFollow: false,
-        followsYou: false
-      };
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          profile: profilePayload
-        },
-        isFollowing: false,
-        isRequestPending: false,
-        canViewProfile: true,
-        isMutualFollow: false,
-        followsYou: false
+        }
       });
     }
 
@@ -186,37 +184,25 @@ export const getUserProfile = async (req, res) => {
     });
 
     if (blockRecord) {
-      return res.status(403).json({ 
-        success: false, 
-        message: "This profile is not available." 
+      return res.status(403).json({
+        success: false,
+        message: "This profile is not available."
       });
     }
 
-    // 👤 2. FETCH USER
-    const user = await User.findByPk(targetUserId, {
-      attributes: { 
-        exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 
-                  'phoneOtpExpires', 'fcmToken', 'resetPasswordToken'] 
-      }
-    });
-
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    // 📊 3. STATS
+    // 📊 2. STATS
     const [followersCount, followingCount, postsCount] = await Promise.all([
       Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
       Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
       Post.count({ where: { userId: targetUserId, status: "active" } })
     ]);
 
-    // 🤝 4. FOLLOW STATUS — currentUser ne targetUser ko follow kiya hai?
+    // 🤝 3. FOLLOW STATUS
     const currentUserFollowsTarget = await Follower.findOne({
-      where: { 
-        followerId: currentUserId, 
-        followingId: targetUserId, 
-        status: "accepted"  // 🔥 Sirf accepted follow count hoga
+      where: {
+        followerId: currentUserId,
+        followingId: targetUserId,
+        status: "accepted"
       }
     });
     const targetFollowsCurrentUser = await Follower.findOne({
@@ -229,7 +215,7 @@ export const getUserProfile = async (req, res) => {
     const isFollowing = !!currentUserFollowsTarget;
     const isMutualFollow = !!currentUserFollowsTarget && !!targetFollowsCurrentUser;
 
-    // 🔥 PENDING REQUEST CHECK
+    // 🔥 4. PENDING REQUEST CHECK
     const pendingRequest = await Follower.findOne({
       where: {
         followerId: currentUserId,
@@ -246,7 +232,7 @@ export const getUserProfile = async (req, res) => {
 
     if (canViewProfile) {
       userPosts = await Post.findAll({
-        where: { 
+        where: {
           userId: targetUserId,
           status: "active"
         },
@@ -255,10 +241,8 @@ export const getUserProfile = async (req, res) => {
       });
     }
 
-    // 🎨 6. DOODLE VISIBILITY
     const showDoodle = canViewProfile;
-    
-    // 🚀 7. RESPONSE
+
     return res.status(200).json({
       success: true,
       data: {
@@ -288,8 +272,8 @@ export const getUserProfile = async (req, res) => {
           },
           posts: userPosts,
           isFollowing,
-          isRequestPending,   // 🔥 Frontend ko pata chalega request pending hai
-          canViewProfile,     // 🔥 Frontend privacy wall dikhane ke liye
+          isRequestPending,
+          canViewProfile,
           isMutualFollow,
           followsYou: !!targetFollowsCurrentUser
         },
@@ -300,12 +284,11 @@ export const getUserProfile = async (req, res) => {
         followsYou: !!targetFollowsCurrentUser
       }
     });
-
   } catch (error) {
     console.error("🔥 GET USER PROFILE ERROR:", error);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Failed to fetch user profile" 
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch user profile"
     });
   }
 };
