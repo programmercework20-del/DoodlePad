@@ -101,11 +101,77 @@ export const getUserProfile = async (req, res) => {
   try {
     const currentUserId = req.user.id;
     const targetUserId = req.params.id;
+    const isOwnProfile = String(currentUserId) === String(targetUserId);
 
-    if (currentUserId === targetUserId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Use /my-profile endpoint for your own profile" 
+    if (isOwnProfile) {
+      const user = await User.findByPk(targetUserId, {
+        attributes: {
+          exclude: ['password', 'otp', 'otpExpires', 'phoneOtp',
+                    'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
+        }
+      });
+
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      const [followersCount, followingCount, postsCount] = await Promise.all([
+        Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
+        Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
+        Post.count({ where: { userId: targetUserId, status: "active" } })
+      ]);
+
+      const userPosts = await Post.findAll({
+        where: {
+          userId: targetUserId,
+          status: "active"
+        },
+        order: [['createdAt', 'DESC']],
+        limit: 50
+      });
+
+      const profilePayload = {
+        user: {
+          id: user.id,
+          name: user.name,
+          username: user.username,
+          bio: user.bio,
+          profilePhoto: user.profilePhoto,
+          isPrivate: user.isPrivate,
+          isVerified: user.isVerified,
+          activeDoodles: user.activeDoodles || [],
+          doodleImage: user.doodleImage,
+          doodleData: user.doodleData,
+          doodleOwnerId: user.doodleOwnerId,
+          isFollowing: false,
+          isRequestPending: false,
+          canViewProfile: true,
+          isMutualFollow: false,
+          followsYou: false
+        },
+        stats: {
+          followers: followersCount,
+          following: followingCount,
+          posts: postsCount
+        },
+        posts: userPosts,
+        isFollowing: false,
+        isRequestPending: false,
+        canViewProfile: true,
+        isMutualFollow: false,
+        followsYou: false
+      };
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          profile: profilePayload
+        },
+        isFollowing: false,
+        isRequestPending: false,
+        canViewProfile: true,
+        isMutualFollow: false,
+        followsYou: false
       });
     }
 
