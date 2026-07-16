@@ -789,7 +789,7 @@ export const acceptDoodleRequest = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to accept request" });
   }
 };
-
+//
 // ============================================================
 // 7. REJECT DOODLE REQUEST
 // ============================================================
