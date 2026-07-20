@@ -6,87 +6,6 @@ import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 
 
-// ============================================================
-// 1. GET USER PROFILE (With Strict Block Validation Prioritization)
-// ============================================================
-// export const getUserProfile = async (req, res) => {
-//   try {
-//     const currentUserId = req.user.id;
-//     const targetUserId = req.params.id; 
-
-//     // Agar khud ki profile mang raha hai, toh roko (uske liye getMyProfile hai)
-//     if (currentUserId === targetUserId) {
-//       return res.status(400).json({ success: false, message: "Use /my-profile endpoint for your own profile" });
-//     }
-
-//     // 🛡️ 1. STRICT BLOCK VALIDATION 
-//     const blockRecord = await Block.findOne({
-//       where: {
-//         [Op.or]: [
-//           { blockerId: currentUserId, blockedId: targetUserId },
-//           { blockerId: targetUserId, blockedId: currentUserId }
-//         ]
-//       }
-//     });
-
-//     if (blockRecord) {
-//       return res.status(403).json({ success: false, message: "This profile is not available." });
-//     }
-
-//     // 👤 2. FETCH USER DATA 
-//     const user = await User.findByPk(targetUserId, {
-//       attributes: { exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires'] }
-//     });
-
-//     if (!user) {
-//       return res.status(404).json({ success: false, message: "User not found" });
-//     }
-
-//     // 📊 3. CALCULATE STATS (Only counting 'accepted' follows)
-//     const followersCount = await Follower.count({ where: { followingId: targetUserId, status: "accepted" } });
-//     const followingCount = await Follower.count({ where: { followerId: targetUserId, status: "accepted" } });
-//     const postsCount = await Post.count({ where: { userId: targetUserId } });
-
-//     // 🤝 4. CHECK 'isFollowing' STATUS (Bonus Feature)
-//     const followRecord = await Follower.findOne({
-//       where: { followerId: currentUserId, followingId: targetUserId, status: "accepted" }
-//     });
-//     const isFollowing = !!followRecord; // True if record exists, False otherwise
-
-//     // 🖼️ 5. FETCH POSTS (With Privacy Wall Logic)
-//     let userPosts = [];
-    
-//     // Agar profile Public hai, YA FIR aap already follow karte ho -> Tabhi posts bhejenge
-//     if (!user.isPrivate || isFollowing) {
-//       userPosts = await Post.findAll({
-//         where: { userId: targetUserId },
-//         order: [['createdAt', 'DESC']],
-//         // Include mediaUrls, thumbnail, duration, etc., based on your Post model
-//       });
-//     }
-
-//     // 🚀 6. SEND EXACT STRUCTURE REQUESTED BY FRONTEND
-//     return res.status(200).json({
-//       success: true,
-//       data: {
-//         profile: {
-//           user: user,
-//           stats: {
-//             followers: followersCount,
-//             following: followingCount,
-//             posts: postsCount
-//           },
-//           posts: userPosts, // Ye automatic array jayega frontend ko
-//           isFollowing: isFollowing // Bonus flag is here!
-//         }
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error("🔥 GET USER PROFILE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to fetch user profile" });
-//   }
-// };
 
 const isPrivacyEnabled = (value) => {
   if (typeof value === "boolean") return value;
@@ -383,48 +302,6 @@ try {
 };
 
 // get my profile (with caching)
-// export const getMyProfile = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const cacheKey = `myProfile:${userId}`;
-
-//     if (redisClient?.isReady) {
-//       const cached = await redisClient.get(cacheKey);
-//       if (cached) {
-//         return res.json({
-//           success: true,
-//           data: { profile: { user: JSON.parse(cached) } }
-//         });
-//       }
-//     }
-
-//     // 🔥 FIX: 'isPrivate' ko attributes array mein add kar diya gaya hai
-//     const user = await User.findByPk(userId, {
-//       attributes: [
-//         "id", "name", "username", "profilePhoto", "bio", 
-//         "dateOfBirth", "gender", "doodleImage", "doodleOwnerId", 
-//         "doodleData", "isDeactivated", "isPrivate" 
-//       ]
-//     });
-
-//     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-//     if (redisClient?.isReady) await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => { });
-
-//     return res.json({
-//       success: true,
-//       data: {
-//         profile: {
-//           user: user
-//         }
-//       }
-//     });
-//   } catch (error) {
-//     console.error("🔥 GET PROFILE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
-//   }
-// };
-
 export const getMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -451,15 +328,21 @@ export const getMyProfile = async (req, res) => {
 
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
+    const userData = user.toJSON ? user.toJSON() : user;
+    const profileUser = {
+      ...userData,
+      activeDoodles: Array.isArray(userData.activeDoodles) ? userData.activeDoodles : []
+    };
+
     if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 600, JSON.stringify(user)).catch(() => {});
+      await redisClient.setEx(cacheKey, 600, JSON.stringify(profileUser)).catch(() => {});
     }
 
     return res.json({
       success: true,
       data: {
         profile: {
-          user: user
+          user: profileUser
         }
       }
     });
@@ -549,29 +432,6 @@ export const sendDoodleRequest = async (req, res) => {
 // ============================================================
 // 5. GET DOODLE REQUESTS
 // ============================================================
-// export const getDoodleRequests = async (req, res) => {
-//   try {
-//     const requests = await DoodleRequest.findAll({
-//       where: { receiverId: req.user.id, status: "pending" },
-//       include: [
-//         {
-//           model: User,
-//           as: "sender",
-//           attributes: ["id", "name", "username", "profilePhoto"],
-//         },
-//       ],
-//       order: [["createdAt", "DESC"]],
-//     });
-
-//     return res.json({
-//       success: true,
-//       requests
-//     });
-//   } catch (error) {
-//     console.error("🔥 FETCH DOODLE REQUESTS ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to fetch requests" });
-//   }
-// };
 
 export const getDoodleRequests = async (req, res) => {
   try {
@@ -619,78 +479,6 @@ export const getDoodleRequests = async (req, res) => {
   }
 };
 
-// ============================================================
-// 6. ACCEPT DOODLE REQUEST (PRO-LEVEL CACHE FIX)
-// ============================================================
-// export const acceptDoodleRequest = async (req, res) => {
-//   try {
-//     const { requestId } = req.params;
-//     const userId = req.user.id; // Jisne accept kiya (Receiver)
-
-//     const request = await DoodleRequest.findByPk(requestId);
-
-//     if (!request || request.receiverId !== userId) {
-//       return res.status(403).json({ success: false, message: "Not allowed" });
-//     }
-
-//     if (request.status !== "pending") {
-//       return res.status(400).json({ success: false, message: "Already processed" });
-//     }
-
-//     // 1. Status Update
-//     await request.update({ status: "accepted" });
-
-//     // 2. User Table Update
-//     await User.update(
-//       {
-//         doodleImage: request.doodleImage || null,
-//         doodleData: request.doodleData || null,
-//         doodleOwnerId: request.senderId
-//       },
-//       { where: { id: userId } }
-//     );
-
-//     // 3. 🚀 CARPET BOMBING CACHE (Invisible Bug Killer)
-//     if (redisClient?.isReady) {
-//       try {
-//         const keysToDelete = [
-//           `myProfile:${userId}`,
-//           `profile:${userId}`,
-//           `userProfile:${userId}:viewer:guest`,
-//           `userProfile:${userId}:viewer:${userId}`,
-//           `userProfile:${userId}:viewer:${request.senderId}`,
-//           // Sender ka apna cache bhi clear karo in case frontend wahan se data uthata ho
-//           `myProfile:${request.senderId}`,
-//           `profile:${request.senderId}`
-//         ];
-        
-//         await Promise.all(keysToDelete.map(key => redisClient.del(key)));
-//         console.log(`🧹 [DOODLE CACHE CLEARED] Wiped profile caches for Receiver: ${userId} & Sender: ${request.senderId}`);
-//       } catch (ce) { 
-//         console.error("⚠️ Redis Cache clearance exception:", ce.message); 
-//       }
-//     }
-
-//     // 4. Send Notification
-//     await createNotification({
-//       senderId: userId,
-//       receiverId: request.senderId,
-//       type: "DOODLE_ACCEPTED",
-//       doodleRequestId: request.id
-//     }).catch(() => { });
-
-//     return res.json({
-//       success: true,
-//       message: "Doodle applied to profile",
-//       doodleImage: request.doodleImage || null,
-//       doodleData: request.doodleData || null,
-//       doodleOwnerId: request.senderId // Frontend ko state update karne me kaam aayega
-//     });
-//   } catch (error) {
-//     console.error("🔥 DOODLE ACCEPT ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to accept request" });
-//   }
-// };
 
 export const acceptDoodleRequest = async (req, res) => {
   try {
