@@ -49,6 +49,15 @@ export const getUserProfile = async (req, res) => {
         limit: 50
       });
 
+      // Ensure activeDoodles always include explicit owner fields so FE maps correctly
+      const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
+        ...d,
+        name: d.senderName || d.name || null,
+        username: d.senderUsername || d.username || null,
+        profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
+        ownerId: d.senderId || d.ownerId || null
+      })) : []);
+
       return res.status(200).json({
         success: true,
         data: {
@@ -61,7 +70,7 @@ export const getUserProfile = async (req, res) => {
               profilePhoto: user.profilePhoto,
               isPrivate: user.isPrivate,
               isVerified: user.isVerified,
-              activeDoodles: user.activeDoodles || [],
+              activeDoodles: normalizeDoodles(user.activeDoodles),
               doodleImage: user.doodleImage,
               doodleData: user.doodleData,
               doodleOwnerId: user.doodleOwnerId,
@@ -160,7 +169,16 @@ export const getUserProfile = async (req, res) => {
       });
     }
 
-    const showDoodle = canViewProfile;
+    // activeDoodles (cover slider) should be visible to everyone regardless of privacy
+    const showDoodle = true;
+
+    const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
+      ...d,
+      name: d.senderName || d.name || null,
+      username: d.senderUsername || d.username || null,
+      profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
+      ownerId: d.senderId || d.ownerId || null
+    })) : []);
 
     return res.status(200).json({
       success: true,
@@ -172,12 +190,12 @@ export const getUserProfile = async (req, res) => {
             username: user.username,
             bio: user.bio,
             profilePhoto: user.profilePhoto,
-            isPrivate: user.isPrivate,
-            isVerified: user.isVerified,
-            activeDoodles: showDoodle ? (user.activeDoodles || []) : [],
-            doodleImage: showDoodle ? user.doodleImage : null,
-            doodleData: showDoodle ? user.doodleData : null,
-            doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+              isPrivate: user.isPrivate,
+              isVerified: user.isVerified,
+              activeDoodles: normalizeDoodles(user.activeDoodles),
+              doodleImage: showDoodle ? user.doodleImage : null,
+              doodleData: showDoodle ? user.doodleData : null,
+              doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
             isFollowing,
             isRequestPending,
             canViewProfile,
@@ -329,9 +347,17 @@ export const getMyProfile = async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     const userData = user.toJSON ? user.toJSON() : user;
+    const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
+      ...d,
+      name: d.senderName || d.name || null,
+      username: d.senderUsername || d.username || null,
+      profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
+      ownerId: d.senderId || d.ownerId || null
+    })) : []);
+
     const profileUser = {
       ...userData,
-      activeDoodles: Array.isArray(userData.activeDoodles) ? userData.activeDoodles : []
+      activeDoodles: normalizeDoodles(userData.activeDoodles)
     };
 
     if (redisClient?.isReady) {
