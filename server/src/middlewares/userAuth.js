@@ -3,8 +3,6 @@ import { verifyToken } from "../utils/jwt.js";
 const userAuth = async (req, res, next) => {
   try {
     let token = req.cookies?.token;
-
-    // Authorization: Bearer <token>
     if (
       !token &&
       req.headers.authorization &&
@@ -29,18 +27,6 @@ const userAuth = async (req, res, next) => {
       });
     }
 
-    /**
-     * decoded payload example:
-     * {
-     *   id: "uuid",
-     *   email: "...",
-     *   role: "user",
-     *   iat,
-     *   exp
-     * }
-     */
-
-    // Attach logged-in user info
     req.user = {
       id: decoded.id,
       email: decoded.email,
