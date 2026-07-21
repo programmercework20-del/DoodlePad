@@ -377,9 +377,8 @@ export const getMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
   }
 };
-
 // ============================================================
-// 4. SEND DOODLE REQUEST
+// 4. SEND DOODLE REQUEST (Updated GCS Path to doodle_covers)
 // ============================================================
 export const sendDoodleRequest = async (req, res) => {
   try {
@@ -399,8 +398,9 @@ export const sendDoodleRequest = async (req, res) => {
       finalDoodleData = doodleData;
     }
 
+    // 🔥 FIX: Upload path updated to 'doodles/doodle_covers/'
     if (req.file) {
-      const fileName = `doodles/doodle_${senderId}_${Date.now()}`;
+      const fileName = `doodles/doodle_covers/doodle_${senderId}_${Date.now()}`;
       const blob = bucket.file(fileName);
       await blob.save(req.file.buffer, {
         metadata: { contentType: req.file.mimetype },
@@ -411,7 +411,7 @@ export const sendDoodleRequest = async (req, res) => {
     else if (base64Image) {
       const base64Clean = base64Image.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Clean, "base64");
-      const fileName = `doodles/doodle_${senderId}_${Date.now()}.png`;
+      const fileName = `doodles/doodle_covers/doodle_${senderId}_${Date.now()}.png`;
       const blob = bucket.file(fileName);
       await blob.save(buffer, {
         metadata: { contentType: "image/png" },
@@ -454,7 +454,6 @@ export const sendDoodleRequest = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to send doodle request" });
   }
 };
-
 // ============================================================
 // 5. GET DOODLE REQUESTS
 // ============================================================
@@ -505,18 +504,19 @@ export const getDoodleRequests = async (req, res) => {
   }
 };
 
-
+// ============================================================
+// 6. ACCEPT DOODLE REQUEST (Fixed Replacement & JSONB DB Update)
+// ============================================================
 export const acceptDoodleRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
-    const userId = req.user.id; // Receiver (Jiski profile par cover lagega)
+    const userId = req.user.id; // Receiver
 
-    // 1. Fetch Request with Sender's details
     const request = await DoodleRequest.findByPk(requestId, {
       include: [{ model: User, as: "sender", attributes: ["id", "name", "username", "profilePhoto"] }]
     });
 
-    if (!request || request.receiverId !== userId) {
+    if (!request || String(request.receiverId) !== String(userId)) {
       return res.status(403).json({ success: false, message: "Not allowed" });
     }
 
@@ -524,47 +524,44 @@ export const acceptDoodleRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: "Request already processed" });
     }
 
-    // 2. Fetch current User's active doodles
     const user = await User.findByPk(userId);
-    let activeDoodles = user.activeDoodles || [];
+    let activeDoodles = Array.isArray(user.activeDoodles) ? [...user.activeDoodles] : [];
 
-    // 3. Naya Doodle Object banayein (FE ko show karne mein aasaani hogi)
     const newDoodle = {
       senderId: request.senderId,
-      senderName: request.sender.name,
-      senderUsername: request.sender.username,
-      senderProfilePhoto: request.sender.profilePhoto,
+      senderName: request.sender?.name || null,
+      senderUsername: request.sender?.username || null,
+      senderProfilePhoto: request.sender?.profilePhoto || null,
       doodleImage: request.doodleImage,
       doodleData: request.doodleData,
       acceptedAt: new Date().toISOString()
     };
 
-    // 4. 🔥 SMART LOGIC: Check Rules (Replace & Limit 10)
-    const existingIndex = activeDoodles.findIndex(d => d.senderId === request.senderId);
+    // 🔥 FIX 1: Strict String Comparison for Replacement Check
+    const existingIndex = activeDoodles.findIndex(
+      d => String(d.senderId) === String(request.senderId)
+    );
 
     if (existingIndex !== -1) {
-      // RULE 1: Same Friend ka old doodle Replace kardo
+      // Same friend ka doodle replace ho jayega
       activeDoodles[existingIndex] = newDoodle;
-      
-      // Optional: Agar aap chahte hain ki updated doodle array mein aage/piche jaye, toh yahan logic lagta, 
-      // par index par replace karna sabse smooth rehta hai.
     } else {
-      // RULE 2: Naya friend hai, Max 10 limits check karo
+      // Naya friend hai, max 10 limit check karo
       if (activeDoodles.length >= 10) {
-        // First-In-First-Out: Sabse purane (index 0) wale doodle ko nikal do taaki naye ki jagah bane
-        activeDoodles.shift(); 
+        activeDoodles.shift(); // Purana sabse pehla doodle remove hoga
       }
-      // Naya doodle array ke end mein add kardo
       activeDoodles.push(newDoodle);
     }
 
-    // 5. Update Status & User Table
+    // Status update
     await request.update({ status: "accepted" });
-    
-    // Naya array set karke save karo (Spelling JSONB k liye strict array referrence lagaya hai)
-    await user.update({ activeDoodles: [...activeDoodles] });
 
-    // 6. 🚀 CARPET BOMBING CACHE (Invisible Bug Killer)
+    // 🔥 FIX 2: Force Sequelize to recognize JSONB mutation and update DB
+    user.activeDoodles = activeDoodles;
+    user.changed('activeDoodles', true);
+    await user.save();
+
+    // Redis Cache Clearance
     if (redisClient?.isReady) {
       try {
         const keysToDelete = [
@@ -584,7 +581,7 @@ export const acceptDoodleRequest = async (req, res) => {
       }
     }
 
-    // 7. Send Notification back to sender
+    // Send Notification back to sender
     await createNotification({
       senderId: userId,
       receiverId: request.senderId,
@@ -595,7 +592,7 @@ export const acceptDoodleRequest = async (req, res) => {
     return res.json({
       success: true,
       message: "Doodle accepted and added to cover slider",
-      activeDoodles: activeDoodles // FE dev isko map karke seedha UI update kar sakta hai
+      activeDoodles: activeDoodles
     });
 
   } catch (error) {
@@ -603,6 +600,7 @@ export const acceptDoodleRequest = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to accept request" });
   }
 };
+
 //
 // ============================================================
 // 7. REJECT DOODLE REQUEST
