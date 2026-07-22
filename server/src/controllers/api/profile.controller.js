@@ -32,7 +32,7 @@ export const getUserProfile = async (req, res) => {
     const user = await User.findByPk(targetUserId, {
       attributes: {
         exclude: ['password', 'otp', 'otpExpires', 'phoneOtp',
-                  'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
+          'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
       }
     });
 
@@ -197,12 +197,12 @@ export const getUserProfile = async (req, res) => {
             username: user.username,
             bio: user.bio,
             profilePhoto: user.profilePhoto,
-              isPrivate: user.isPrivate,
-              isVerified: user.isVerified,
-              activeDoodles: normalizeDoodles(user.activeDoodles),
-              doodleImage: showDoodle ? user.doodleImage : null,
-              doodleData: showDoodle ? user.doodleData : null,
-              doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+            isPrivate: user.isPrivate,
+            isVerified: user.isVerified,
+            activeDoodles: normalizeDoodles(user.activeDoodles),
+            doodleImage: showDoodle ? user.doodleImage : null,
+            doodleData: showDoodle ? user.doodleData : null,
+            doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
             isFollowing,
             isRequestPending,
             canViewProfile,
@@ -266,9 +266,9 @@ export const updateMyProfile = async (req, res) => {
     if (req.file) {
       const fileName = `profile_images/user_${userId}_${Date.now()}`;
       const blob = bucket.file(fileName);
-      await blob.save(req.file.buffer, { 
+      await blob.save(req.file.buffer, {
         metadata: { contentType: req.file.mimetype },
-        resumable: false 
+        resumable: false
       });
       profilePhoto = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
       console.log("📸 [SUCCESS] New profile photo uploaded to GCS:", profilePhoto);
@@ -290,34 +290,34 @@ export const updateMyProfile = async (req, res) => {
       dateOfBirth: dateOfBirth ?? user.dateOfBirth,
       gender: gender || null,
       profilePhoto,
-      isPrivate: parsedIsPrivate 
+      isPrivate: parsedIsPrivate
     });
 
-   // 🔥 COMPLETE CACHE INVALIDATION (Updated with Feed & Posts clearing)
-try {
-  if (redisClient?.isReady) {
-    // 1. Profile cache version badhao
-    const versionKey = `profileCacheVersion:${userId}`;
-    const currentVersion = await redisClient.get(versionKey);
-    const newVersion = currentVersion ? `v${parseInt(currentVersion.replace('v', '')) + 1}` : 'v2';
-    await redisClient.setEx(versionKey, 86400, newVersion);
+    // 🔥 COMPLETE CACHE INVALIDATION (Updated with Feed & Posts clearing)
+    try {
+      if (redisClient?.isReady) {
+        // 1. Profile cache version badhao
+        const versionKey = `profileCacheVersion:${userId}`;
+        const currentVersion = await redisClient.get(versionKey);
+        const newVersion = currentVersion ? `v${parseInt(currentVersion.replace('v', '')) + 1}` : 'v2';
+        await redisClient.setEx(versionKey, 86400, newVersion);
 
-    // 2. Personal profile cache delete karo
-    await redisClient.del(`myProfile:${userId}`);
+        // 2. Personal profile cache delete karo
+        await redisClient.del(`myProfile:${userId}`);
 
-    // 3. 🔥 NEW FIX: User ke apne posts ka cache clear karo (Taaki uski purani pic posts se hate)
-    await redisClient.del(`userPosts:${userId}`);
+        // 3. 🔥 NEW FIX: User ke apne posts ka cache clear karo (Taaki uski purani pic posts se hate)
+        await redisClient.del(`userPosts:${userId}`);
 
-    // 4. 🔥 NEW FIX: Feed ka cache clear karo (Apni feed aur common feed key jo bhi aap use kar rahe ho)
-    await redisClient.del(`feed:${userId}`); 
-    // Agar aapke paas koi global ya main feed ki key hai jaise 'mainFeed' ya 'globalFeed', toh use bhi yahan del karein:
-    // await redisClient.del(`mainFeed`);
+        // 4. 🔥 NEW FIX: Feed ka cache clear karo (Apni feed aur common feed key jo bhi aap use kar rahe ho)
+        await redisClient.del(`feed:${userId}`);
+        // Agar aapke paas koi global ya main feed ki key hai jaise 'mainFeed' ya 'globalFeed', toh use bhi yahan del karein:
+        // await redisClient.del(`mainFeed`);
 
-    console.log(`🧹 [PROFILE UPDATE] All related caches (Profile, Posts, Feed) cleared for user: ${userId}`);
-  }
-} catch (cacheErr) {
-  console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
-}
+        console.log(`🧹 [PROFILE UPDATE] All related caches (Profile, Posts, Feed) cleared for user: ${userId}`);
+      }
+    } catch (cacheErr) {
+      console.error("⚠️ Redis Cache clearance exception:", cacheErr.message);
+    }
 
     return res.json({ success: true, message: "Profile updated successfully", user });
   } catch (error) {
@@ -368,7 +368,7 @@ export const getMyProfile = async (req, res) => {
     };
 
     if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 600, JSON.stringify(profileUser)).catch(() => {});
+      await redisClient.setEx(cacheKey, 600, JSON.stringify(profileUser)).catch(() => { });
     }
 
     return res.json({
@@ -484,9 +484,9 @@ export const getDoodleRequests = async (req, res) => {
 
     // 2. 🔥 NEW: Fetch Recent Doodle History (Accepted / Rejected)
     const historyRequests = await DoodleRequest.findAll({
-      where: { 
-        receiverId: userId, 
-        status: { [Op.in]: ["accepted", "rejected"] } 
+      where: {
+        receiverId: userId,
+        status: { [Op.in]: ["accepted", "rejected"] }
       },
       include: [
         {
@@ -532,7 +532,24 @@ export const acceptDoodleRequest = async (req, res) => {
     }
 
     const user = await User.findByPk(userId);
-    let activeDoodles = Array.isArray(user.activeDoodles) ? [...user.activeDoodles] : [];
+
+console.log(
+  "Saved activeDoodles:",
+  user.activeDoodles
+);
+    
+
+    let activeDoodles = [];
+
+    if (Array.isArray(user.activeDoodles)) {
+      activeDoodles = [...user.activeDoodles];
+    } else if (typeof user.activeDoodles === "string") {
+      try {
+        activeDoodles = JSON.parse(user.activeDoodles);
+      } catch {
+        activeDoodles = [];
+      }
+    }
 
     const newDoodle = {
       senderId: request.senderId,
@@ -564,9 +581,23 @@ export const acceptDoodleRequest = async (req, res) => {
     await request.update({ status: "accepted" });
 
     // 🔥 FIX 2: Force Sequelize to recognize JSONB mutation and update DB
-    user.activeDoodles = activeDoodles;
-    user.changed('activeDoodles', true);
-    await user.save();
+    // 🔥 FIX: Save JSONB explicitly
+    await User.update(
+      {
+        activeDoodles
+      },
+      {
+        where: { id: userId }
+      }
+    );
+
+    // 🔥 Verify DB update
+    const updatedUser = await User.findByPk(userId);
+
+    console.log(
+      "✅ Updated activeDoodles:",
+      updatedUser.activeDoodles
+    );
 
     // Redis Cache Clearance
     if (redisClient?.isReady) {
@@ -580,11 +611,11 @@ export const acceptDoodleRequest = async (req, res) => {
           `myProfile:${request.senderId}`,
           `profile:${request.senderId}`
         ];
-        
+
         await Promise.all(keysToDelete.map(key => redisClient.del(key)));
         console.log(`🧹 [DOODLE CACHE CLEARED] Wipe successful`);
-      } catch (ce) { 
-        console.error("⚠️ Redis Cache clearance exception:", ce.message); 
+      } catch (ce) {
+        console.error("⚠️ Redis Cache clearance exception:", ce.message);
       }
     }
 
