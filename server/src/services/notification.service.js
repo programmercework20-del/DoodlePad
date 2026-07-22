@@ -1,3 +1,4 @@
+
 // import Notification from "../models/Notification.js";
 // import { getIO, getOnlineUsers } from "../socket/socket.js";
 // import User from "../models/User.js";
@@ -17,7 +18,6 @@
 //   try {
 //     if (senderId === receiverId) return null;
 
-//     // Generate message preview based on content and type
 //     let messagePreview = null;
 //     if (type === "MESSAGE" && messageContent) {
 //       if (messageType === "image") {
@@ -29,7 +29,6 @@
 //       } else if (messageType === "shared_post") {
 //         messagePreview = "🔗 Shared a post";
 //       } else {
-//         // Limit text preview to 100 characters
 //         messagePreview = messageContent.length > 100
 //           ? messageContent.substring(0, 100) + "..."
 //           : messageContent;
@@ -95,10 +94,20 @@
 //         message = `${sender.username} accepted your follow request`;
 //         pushBody = message;
 //         break;
-
 //       case "MESSAGE":
 //         message = `${sender.username} sent you a message`;
-//         pushBody = messagePreview ? `${sender.username}: ${messagePreview}` : message;
+//         pushBody = messagePreview
+//           ? `${sender.username}: ${messagePreview}`
+//           : message;
+//         break;
+//       // 🔥 FIX: Doodle notification cases add kiye
+//       case "DOODLE_REQUEST":
+//         message = `${sender.username} sent you a doodle cover suggestion`;
+//         pushBody = message;
+//         break;
+//       case "DOODLE_ACCEPTED":
+//         message = `${sender.username} accepted your doodle cover`;
+//         pushBody = message;
 //         break;
 //       default:
 //         message = "You have a new notification";
@@ -114,7 +123,7 @@
 //         postId: postId || "",
 //         commentId: commentId || "",
 //         conversationId: conversationId || "",
-//         // 🔥 FLATTENED FCM PAYLOAD (No nested objects)
+//         doodleRequestId: doodleRequestId || "", // 🔥 FIX: Add kiya
 //         ...(type === "MESSAGE" && {
 //           senderId: sender.id || "",
 //           senderUsername: sender.username || "",
@@ -131,6 +140,7 @@
 //     return null;
 //   }
 // };
+
 
 import Notification from "../models/Notification.js";
 import { getIO, getOnlineUsers } from "../socket/socket.js";
@@ -168,6 +178,7 @@ export const createNotification = async ({
       }
     }
 
+    // 1. Create DB Notification Record
     const notification = await Notification.create({
       senderId,
       receiverId,
@@ -180,66 +191,72 @@ export const createNotification = async ({
       isRead: false
     });
 
+    // 2. Fetch Sender Details
     const sender = await User.findByPk(senderId, {
       attributes: ["id", "username", "profilePhoto"]
     });
+
+    const senderUsername = sender?.username || "Someone";
 
     const payload = {
       ...notification.toJSON(),
       sender
     };
 
-    // 🔥 SOCKET (APP OPEN)
-    const io = getIO();
-    const onlineUsers = getOnlineUsers();
-    const socketId = onlineUsers.get(receiverId);
+    // 3. Socket Emit (App Open Case)
+    try {
+      const io = getIO();
+      const onlineUsers = getOnlineUsers();
+      const socketId = onlineUsers?.get(receiverId);
 
-    if (socketId && io) {
-      io.to(socketId).emit("new_notification", payload);
+      if (socketId && io) {
+        io.to(socketId).emit("new_notification", payload);
+      }
+    } catch (socketErr) {
+      console.error("⚠️ Socket Emit Warning:", socketErr.message);
     }
 
-    // 🔥 PUSH NOTIFICATION (APP CLOSED)
+    // 4. Prepare Push Notification Text
     let message = "";
     let pushBody = "";
 
     switch (type) {
       case "LIKE_POST":
-        message = `${sender.username} liked your post`;
+        message = `${senderUsername} liked your post`;
         pushBody = message;
         break;
       case "COMMENT_POST":
-        message = `${sender.username} commented on your post`;
+        message = `${senderUsername} commented on your post`;
         pushBody = message;
         break;
       case "LIKE_COMMENT":
-        message = `${sender.username} liked your comment`;
+        message = `${senderUsername} liked your comment`;
         pushBody = message;
         break;
       case "REPLY_COMMENT":
-        message = `${sender.username} replied to your comment`;
+        message = `${senderUsername} replied to your comment`;
         pushBody = message;
         break;
       case "FOLLOW_REQUEST":
-        message = `${sender.username} sent you a follow request`;
+        message = `${senderUsername} sent you a follow request`;
         pushBody = message;
         break;
       case "FOLLOW_ACCEPTED":
-        message = `${sender.username} accepted your follow request`;
+        message = `${senderUsername} accepted your follow request`;
         pushBody = message;
         break;
       case "MESSAGE":
-        message = `${sender.username} sent you a message`;
+        message = `${senderUsername} sent you a message`;
         pushBody = messagePreview
-          ? `${sender.username}: ${messagePreview}`
+          ? `${senderUsername}: ${messagePreview}`
           : message;
         break;
-      // 🔥 FIX: Doodle notification cases add kiye
       case "DOODLE_REQUEST":
-        message = `${sender.username} sent you a doodle cover suggestion`;
+        message = `${senderUsername} sent you a doodle cover suggestion`;
         pushBody = message;
         break;
       case "DOODLE_ACCEPTED":
-        message = `${sender.username} accepted your doodle cover`;
+        message = `${senderUsername} accepted your doodle cover`;
         pushBody = message;
         break;
       default:
@@ -247,29 +264,47 @@ export const createNotification = async ({
         pushBody = message;
     }
 
-    await sendPushNotification({
+    // 5. 🔥 Push Notification (Non-blocking & Auto Expired Token Cleanup)
+    sendPushNotification({
       receiverId,
-      title: type === "MESSAGE" ? sender.username : "DoodlePad",
+      title: type === "MESSAGE" ? senderUsername : "DoodlePad",
       body: pushBody,
       data: {
         type: type,
         postId: postId || "",
         commentId: commentId || "",
         conversationId: conversationId || "",
-        doodleRequestId: doodleRequestId || "", // 🔥 FIX: Add kiya
+        doodleRequestId: doodleRequestId || "",
         ...(type === "MESSAGE" && {
-          senderId: sender.id || "",
-          senderUsername: sender.username || "",
-          senderAvatar: sender.profilePhoto || "",
+          senderId: sender?.id || "",
+          senderUsername: senderUsername,
+          senderAvatar: sender?.profilePhoto || "",
           messagePreview: messagePreview || ""
         })
+      }
+    }).catch(async (pushErr) => {
+      const errString = String(pushErr?.message || pushErr || "");
+      console.error("⚠️ Push Notification Warning:", errString);
+
+      // 🔥 FIX: Clean invalid/expired FCM Token from DB
+      if (
+        errString.includes("NotRegistered") || 
+        errString.includes("registration-token-not-registered") ||
+        errString.includes("invalid-registration-token")
+      ) {
+        try {
+          await User.update({ fcmToken: null }, { where: { id: receiverId } });
+          console.log(`🧹 [FCM CLEANUP] Cleared expired FCM token for user ID: ${receiverId}`);
+        } catch (cleanupErr) {
+          console.error("⚠️ FCM Token cleanup failed:", cleanupErr.message);
+        }
       }
     });
 
     return payload;
 
   } catch (error) {
-    console.error("Notification Error:", error);
+    console.error("🔥 Notification Service Execution Error:", error);
     return null;
   }
 };

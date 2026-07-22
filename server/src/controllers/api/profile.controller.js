@@ -20,6 +20,13 @@ export const getUserProfile = async (req, res) => {
   try {
     const currentUserId = req.user.id;
     const targetUserId = req.params.id;
+
+
+    // 🛡️ GUARD CHECK: DB hit hone se pehle hi invalid ID ko rok do
+    if (!targetUserId || targetUserId === "undefined" || targetUserId === "null") {
+      return res.status(400).json({ success: false, message: "Invalid target user ID" });
+    }
+
     const isOwnProfile = String(currentUserId) === String(targetUserId);
 
     const user = await User.findByPk(targetUserId, {
