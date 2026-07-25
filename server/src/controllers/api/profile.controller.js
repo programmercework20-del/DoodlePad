@@ -531,11 +531,27 @@ export const acceptDoodleRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: "Request already processed" });
     }
 
+    console.log("========== ACCEPT ==========");
+console.log("Logged In User :", req.user.id);
+console.log("Receiver ID    :", request.receiverId);
+console.log("Sender ID      :", request.senderId);
+console.log("============================");
+
     const user = await User.findByPk(userId);
+
+    console.log("Updating user:", user.id);
+console.log("Updating username:", user.username);
 
 console.log(
   "Saved activeDoodles:",
   user.activeDoodles
+);
+
+console.log("Receiver:", user.username);
+
+console.log(
+    "DB activeDoodles before accept:",
+    JSON.stringify(user.activeDoodles, null, 2)
 );
     
 
@@ -638,6 +654,10 @@ console.log(
     return res.status(500).json({ success: false, message: "Failed to accept request" });
   }
 };
+
+console.log("========== REQUEST ==========");
+console.log(request.toJSON());
+console.log("=============================");
 
 //
 // ============================================================
