@@ -350,65 +350,66 @@ try {
 };
 
 // get my profile (with caching)
+// ============================================================
+// GET MY PROFILE (Fixed ReferenceError & 60s Redis TTL)
+// ============================================================
 export const getMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const cacheKey = `myProfile:${userId}`;
 
+    // 1. Check Redis Cache
     if (redisClient?.isReady) {
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
-        return res.json({
-          success: true,
-          data: { profile: { user: JSON.parse(cached) } }
-        });
+      try {
+        const cached = await redisClient.get(`myProfile:${userId}`);
+        if (cached) {
+          return res.json(JSON.parse(cached));
+        }
+      } catch (e) {
+        console.error("⚠️ Redis GET error:", e.message);
       }
     }
 
+    // 2. Fetch User from DB
     const user = await User.findByPk(userId, {
-      attributes: [
-        "id", "name", "username", "profilePhoto", "bio",
-        "dateOfBirth", "gender", "doodleImage", "doodleOwnerId",
-        "doodleData", "isDeactivated", "isPrivate",
-        "activeDoodles" // 🔥 FIX: Add kiya
-      ]
+      attributes: {
+        exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
+      }
     });
 
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-    const userData = user.toJSON ? user.toJSON() : user;
-    const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
-      ...d,
-      name: d.senderName || d.name || null,
-      username: d.senderUsername || d.username || null,
-      profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
-      ownerId: d.senderId || d.ownerId || null
-    })) : []);
-
-    const profileUser = {
-      ...userData,
-      activeDoodles: normalizeDoodles(userData.activeDoodles)
-    };
-
-    if (redisClient?.isReady) {
-      // await redisClient.setEx(cacheKey, 600, JSON.stringify(profileUser)).catch(() => {});
-      // Change expiration from 600 (10 mins) to 60 seconds:
-
-      await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
-      
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    return res.json({
+    // 3. Normalize Active Doodles
+    const activeDoodles = normalizeDoodles(user.activeDoodles);
+
+    // 🔥 FIX: profileData variable explicitly defined here
+    const profileData = {
       success: true,
       data: {
         profile: {
-          user: profileUser
+          user: {
+            ...user.toJSON(),
+            activeDoodles: activeDoodles
+          }
         }
       }
-    });
+    };
+
+    // 4. Set Redis Cache with 60 seconds TTL
+    if (redisClient?.isReady) {
+      try {
+        await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
+      } catch (e) {
+        console.error("⚠️ Redis SET error:", e.message);
+      }
+    }
+
+    return res.json(profileData);
+
   } catch (error) {
     console.error("🔥 GET PROFILE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch profile layout" });
+    return res.status(500).json({ success: false, message: "Failed to fetch profile" });
   }
 };
 // ============================================================
