@@ -24,6 +24,8 @@ const Notification = sequelize.define("Notification", {
       "COMMENT_POST",
       "REPLY_COMMENT",
       "LIKE_COMMENT",
+      "FOLLOW_REQUEST",
+      "FOLLOW_ACCEPTED",
       "DOODLE_REQUEST",
       "DOODLE_ACCEPTED",
       "MESSAGE"

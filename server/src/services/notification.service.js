@@ -146,6 +146,7 @@ import Notification from "../models/Notification.js";
 import { getIO, getOnlineUsers } from "../socket/socket.js";
 import User from "../models/User.js";
 import { sendPushNotification } from "./push.services.js";
+import { buildRealtimeNotificationPayload } from "./notificationPayload.js";
 
 export const createNotification = async ({
   senderId,
@@ -198,10 +199,7 @@ export const createNotification = async ({
 
     const senderUsername = sender?.username || "Someone";
 
-    const payload = {
-      ...notification.toJSON(),
-      sender
-    };
+    const payload = buildRealtimeNotificationPayload(notification, sender);
 
     // 3. Socket Emit (App Open Case)
     try {
@@ -211,6 +209,10 @@ export const createNotification = async ({
 
       if (socketId && io) {
         io.to(socketId).emit("new_notification", payload);
+
+        if (["FOLLOW_REQUEST", "DOODLE_REQUEST"].includes(type)) {
+          io.to(socketId).emit("new_request", payload);
+        }
       }
     } catch (socketErr) {
       console.error("⚠️ Socket Emit Warning:", socketErr.message);
