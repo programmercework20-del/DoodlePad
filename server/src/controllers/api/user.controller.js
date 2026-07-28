@@ -744,6 +744,11 @@ export const getFollowRequests = async (req, res) => {
         // Agar us sender ka ID hamare followingSet mein hai, yani 'isFollowing' true hai
         reqJSON.follower.isFollowing = followingSet.has(reqJSON.followerId);
       }
+      
+      // 🔥 NEW PRO-LEVEL FIX: Injecting exact type and message for frontend UI
+      reqJSON.type = "FOLLOW_REQUEST";
+      reqJSON.message = "sent you a friend request";
+      
       return reqJSON;
     };
 
@@ -758,6 +763,7 @@ export const getFollowRequests = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch follow requests" });
   }
 };
+
 
 export const unfollowUser = async (req, res) => {
   try {

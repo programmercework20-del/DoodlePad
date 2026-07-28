@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import { User, Follower, Post, DoodleRequest } from "../../models/index.js";
 import Block from "../../models/Block.js";
 import { createNotification } from "../../services/notification.service.js";
+import { formatDoodleRequestResponseItem } from "../../services/requestPayload.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 
@@ -527,10 +528,21 @@ export const getDoodleRequests = async (req, res) => {
       limit: 20
     });
 
+    // 🔥 PRO-LEVEL FIX: Wrapper to inject type and message safely
+    const formatWithUIText = (req) => {
+      // Keep existing formatter intact
+      const formatted = formatDoodleRequestResponseItem(req);
+      return {
+        ...formatted,
+        type: "DOODLE_REQUEST",
+        message: "sent you a doodle request"
+      };
+    };
+
     return res.json({
       success: true,
-      pending: pendingRequests,
-      history: historyRequests
+      pending: pendingRequests.map(formatWithUIText),
+      history: historyRequests.map(formatWithUIText)
     });
 
   } catch (error) {
@@ -539,102 +551,6 @@ export const getDoodleRequests = async (req, res) => {
   }
 };
 
-// ============================================================
-// 6. ACCEPT DOODLE REQUEST (Fixed Replacement & JSONB DB Update)
-// ============================================================
-// export const acceptDoodleRequest = async (req, res) => {
-//   try {
-//     const { requestId } = req.params;
-//     const userId = req.user.id; // Receiver
-
-//     const request = await DoodleRequest.findByPk(requestId, {
-//       include: [{ model: User, as: "sender", attributes: ["id", "name", "username", "profilePhoto"] }]
-//     });
-
-//     if (!request || String(request.receiverId) !== String(userId)) {
-//       return res.status(403).json({ success: false, message: "Not allowed" });
-//     }
-
-//     if (request.status !== "pending") {
-//       return res.status(400).json({ success: false, message: "Request already processed" });
-//     }
-
-//     const user = await User.findByPk(userId);
-//     let activeDoodles = Array.isArray(user.activeDoodles) ? [...user.activeDoodles] : [];
-
-//     const newDoodle = {
-//       senderId: request.senderId,
-//       senderName: request.sender?.name || null,
-//       senderUsername: request.sender?.username || null,
-//       senderProfilePhoto: request.sender?.profilePhoto || null,
-//       doodleImage: request.doodleImage,
-//       doodleData: request.doodleData,
-//       acceptedAt: new Date().toISOString()
-//     };
-
-//     // 🔥 FIX 1: Strict String Comparison for Replacement Check
-//     const existingIndex = activeDoodles.findIndex(
-//       d => String(d.senderId) === String(request.senderId)
-//     );
-
-//     if (existingIndex !== -1) {
-//       // Same friend ka doodle replace ho jayega
-//       activeDoodles[existingIndex] = newDoodle;
-//     } else {
-//       // Naya friend hai, max 10 limit check karo
-//       if (activeDoodles.length >= 10) {
-//         activeDoodles.shift(); // Purana sabse pehla doodle remove hoga
-//       }
-//       activeDoodles.push(newDoodle);
-//     }
-
-//     // Status update
-//     await request.update({ status: "accepted" });
-
-//     // 🔥 FIX 2: Force Sequelize to recognize JSONB mutation and update DB
-//     user.activeDoodles = activeDoodles;
-//     user.changed('activeDoodles', true);
-//     await user.save();
-
-//     // Redis Cache Clearance
-//     if (redisClient?.isReady) {
-//       try {
-//         const keysToDelete = [
-//           `myProfile:${userId}`,
-//           `profile:${userId}`,
-//           `userProfile:${userId}:viewer:guest`,
-//           `userProfile:${userId}:viewer:${userId}`,
-//           `userProfile:${userId}:viewer:${request.senderId}`,
-//           `myProfile:${request.senderId}`,
-//           `profile:${request.senderId}`
-//         ];
-        
-//         await Promise.all(keysToDelete.map(key => redisClient.del(key)));
-//         console.log(`🧹 [DOODLE CACHE CLEARED] Wipe successful`);
-//       } catch (ce) { 
-//         console.error("⚠️ Redis Cache clearance exception:", ce.message); 
-//       }
-//     }
-
-//     // Send Notification back to sender
-//     await createNotification({
-//       senderId: userId,
-//       receiverId: request.senderId,
-//       type: "DOODLE_ACCEPTED",
-//       doodleRequestId: request.id
-//     }).catch(() => { });
-
-//     return res.json({
-//       success: true,
-//       message: "Doodle accepted and added to cover slider",
-//       activeDoodles: activeDoodles
-//     });
-
-//   } catch (error) {
-//     console.error("🔥 DOODLE ACCEPT ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to accept request" });
-//   }
-// };
 
 export const acceptDoodleRequest = async (req, res) => {
   try {
