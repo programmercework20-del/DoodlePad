@@ -194,7 +194,7 @@ export const createNotification = async ({
 
     // 2. Fetch Sender Details
     const sender = await User.findByPk(senderId, {
-      attributes: ["id", "username", "profilePhoto"]
+      attributes: ["id", "username", "name", "profilePhoto"]
     });
 
     const senderUsername = sender?.username || "Someone";
