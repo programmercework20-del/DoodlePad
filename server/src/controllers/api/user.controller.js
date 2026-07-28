@@ -208,21 +208,88 @@ export const verifyOtp = async (req, res) => {
   }
 };
 
+// export const login = async (req, res) => {
+//   try {
+//     const { identifier, password } = req.body;
+
+//     const user = await User.findOne({
+//       where: {
+//         [Op.or]: [ { username: identifier }, { email: identifier }, { phone: identifier } ]
+//       }
+//     });
+
+//     if (!user) return res.status(404).json({ message: "User not found" });
+
+//     // ACCOUNT DEACTIVATED
+//     if (user.isDeactivated) {
+
+//       return res.status(403).json({
+//         success: false,
+//         isDeactivated: true,
+//         message: "Account is deactivated",
+//         restoreAvailableUntil: user.scheduledDeletionAt
+//       });
+//     }
+//     if (!user.isVerified) return res.status(403).json({ message: "Please verify your account first" });
+
+//     const isMatch = await bcrypt.compare(password, user.password);
+//     if (!isMatch) return res.status(401).json({ message: "Invalid password" });
+
+//     const token = jwt.sign(
+//       { id: user.id },
+//       process.env.JWT_SECRET,
+//       { expiresIn: process.env.JWT_EXPIRES_IN }
+//     );
+
+//     res.json({
+//       message: "Login successful",
+//       token,
+//       user: { id: user.id, username: user.username, name: user.name, email: user.email, phone: user.phone, profilePhoto: user.profilePhoto }
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Login failed" });
+//   }
+// };
+
 export const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
 
+    // 1. Strict Payload Input Guards
+    if (!identifier || typeof identifier !== "string" || !identifier.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Username, email, or phone number is required"
+      });
+    }
+
+    if (!password || typeof password !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be a valid text string"
+      });
+    }
+
+    const cleanIdentifier = identifier.trim();
+
+    // 2. Fetch User from DB
     const user = await User.findOne({
       where: {
-        [Op.or]: [ { username: identifier }, { email: identifier }, { phone: identifier } ]
+        [Op.or]: [
+          { username: cleanIdentifier },
+          { email: cleanIdentifier },
+          { phone: cleanIdentifier }
+        ]
       }
     });
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
 
-    // ACCOUNT DEACTIVATED
+    // 3. Deactivation & Verification Checks
     if (user.isDeactivated) {
-
       return res.status(403).json({
         success: false,
         isDeactivated: true,
@@ -230,25 +297,58 @@ export const login = async (req, res) => {
         restoreAvailableUntil: user.scheduledDeletionAt
       });
     }
-    if (!user.isVerified) return res.status(403).json({ message: "Please verify your account first" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid password" });
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Please verify your account first"
+      });
+    }
 
+    // 4. Handle Social Login Users (e.g. Google accounts without hashed password)
+    if (!user.password || typeof user.password !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "This account was created via Google login. Please log in using Google."
+      });
+    }
+
+    // 5. Safe Password Comparison
+    const isMatch = await bcrypt.compare(String(password), String(user.password));
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password"
+      });
+    }
+
+    // 6. JWT Token Generation
     const token = jwt.sign(
       { id: user.id },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: process.env.JWT_EXPIRES_IN || "30d" }
     );
 
-    res.json({
+    return res.json({
+      success: true,
       message: "Login successful",
       token,
-      user: { id: user.id, username: user.username, name: user.name, email: user.email, phone: user.phone, profilePhoto: user.profilePhoto }
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        profilePhoto: user.profilePhoto
+      }
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Login failed" });
+    console.error("🔥 LOGIN CONTROLLER ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Login failed due to a server error"
+    });
   }
 };
 
