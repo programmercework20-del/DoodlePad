@@ -29,7 +29,8 @@ export const getMessageNotifications = async (req, res) => {
         {
           model: User,
           as: "sender",
-          attributes: ["id", "username", "profilePhoto"]
+          // 🔥 Updated: Added name to attributes as requested by Frontend
+          attributes: ["id", "name", "username", "profilePhoto"]
         }
       ],
       order: [["createdAt", "DESC"]],
@@ -111,7 +112,8 @@ export const getNotifications = async (req, res) => {
         {
           model: User,
           as: "sender",
-          attributes: ["id", "username", "profilePhoto"]
+          // 🔥 Updated: Added name to attributes as requested by Frontend
+          attributes: ["id", "name", "username", "profilePhoto"]
         }
       ],
       order: [["createdAt", "DESC"]],
@@ -171,7 +173,6 @@ export const getUnreadCount = async (req, res) => {
 // ============================================================
 // REDIRECT LOGIC (Resolve post/comment existence)
 // ============================================================
-// notification.controller.js mein update karein
 export const getNotificationRedirect = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -250,6 +251,7 @@ export const markAsRead = async (req, res) => {
     if (redisClient?.isReady) {
       await redisClient.del(`notifications:${userId}`);
       await redisClient.del(`unread_count:${userId}`);
+      await redisClient.del(`message_notifications:${userId}`);
     }
 
     return res.json({ success: true, message: "Status updated" });
