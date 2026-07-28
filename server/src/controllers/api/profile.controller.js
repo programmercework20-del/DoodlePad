@@ -2,7 +2,7 @@ import { Op } from "sequelize";
 import { User, Follower, Post, DoodleRequest } from "../../models/index.js";
 import Block from "../../models/Block.js";
 import { createNotification } from "../../services/notification.service.js";
-import { formatDoodleRequestResponseItem } from "../../services/requestPayload.js";
+// import { formatDoodleRequestResponseItem } from "../../services/requestPayload.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
 
@@ -511,7 +511,7 @@ export const getDoodleRequests = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    // 2. 🔥 NEW: Fetch Recent Doodle History (Accepted / Rejected)
+    // 2. Fetch Recent Doodle History (Accepted / Rejected)
     const historyRequests = await DoodleRequest.findAll({
       where: { 
         receiverId: userId, 
@@ -528,12 +528,11 @@ export const getDoodleRequests = async (req, res) => {
       limit: 20
     });
 
-    // 🔥 PRO-LEVEL FIX: Wrapper to inject type and message safely
-    const formatWithUIText = (req) => {
-      // Keep existing formatter intact
-      const formatted = formatDoodleRequestResponseItem(req);
+    // 🔥 PRO-LEVEL FIX: Self-contained formatter (No external file needed)
+    const formatRequest = (request) => {
+      const reqJSON = typeof request.toJSON === 'function' ? request.toJSON() : request;
       return {
-        ...formatted,
+        ...reqJSON,
         type: "DOODLE_REQUEST",
         message: "sent you a doodle request"
       };
@@ -541,8 +540,8 @@ export const getDoodleRequests = async (req, res) => {
 
     return res.json({
       success: true,
-      pending: pendingRequests.map(formatWithUIText),
-      history: historyRequests.map(formatWithUIText)
+      pending: pendingRequests.map(formatRequest),
+      history: historyRequests.map(formatRequest)
     });
 
   } catch (error) {
