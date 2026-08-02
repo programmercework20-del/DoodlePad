@@ -136,9 +136,11 @@ app.use("/api/search", searchRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/conversations", conversationRoutes);
 
-app.use("/api/explore", exploreRoutes);
 
 app.use("/api/posts", postRoutes);
+
+app.use("/api/explore", exploreRoutes);
+
 app.use("/api/reports", reportRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/live", liveRoutes);
