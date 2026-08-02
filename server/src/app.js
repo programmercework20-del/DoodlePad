@@ -135,6 +135,9 @@ app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/conversations", conversationRoutes);
+
+app.use("/api/explore", exploreRoutes);
+
 app.use("/api/posts", postRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/feed", feedRoutes);
@@ -143,7 +146,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/block", blockUnblockRoutes);
 app.use("/api/hashtags", hashtagRoutes);
-app.use("/api/explore", exploreRoutes);
+// app.use("/api/explore", exploreRoutes);
 app.use("/api", apiRoutes);
 // app.use(express.static("public"));
 
