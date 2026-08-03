@@ -570,10 +570,10 @@ export const acceptDoodleRequest = async (req, res) => {
 
     const user = await User.findByPk(userId);
 
-    // 🔥 FIX 1: Safe Parsing via normalizeDoodles
+    // 🔥 Safe Parsing via normalizeDoodles
     let activeDoodles = normalizeDoodles(user.activeDoodles);
 
-    // 🔥 FIX 2: Store both senderUsername and username to prevent @Unknown in FE
+    // 🔥 Store both senderUsername and username to prevent @Unknown in FE
     const newDoodle = {
       senderId: request.senderId,
       ownerId: request.senderId,
@@ -588,16 +588,23 @@ export const acceptDoodleRequest = async (req, res) => {
       acceptedAt: new Date().toISOString()
     };
 
-    // Replacement logic (Same friend = update doodle)
+    // ==========================================
+    // 🚀 PRO-LEVEL LOGIC: REPLACE & MAX 10 LIMIT
+    // ==========================================
     const existingIndex = activeDoodles.findIndex(
       d => String(d.senderId || d.ownerId) === String(request.senderId)
     );
 
     if (existingIndex !== -1) {
-      activeDoodles[existingIndex] = newDoodle;
+      // Agar purana doodle hai, toh usko uski jagah se hata do (Delete from old position)
+      activeDoodles.splice(existingIndex, 1);
+      // Aur naye wale ko array ke end mein daal do (Taaki wo latest/newest dikhe)
+      activeDoodles.push(newDoodle);
     } else {
-      if (activeDoodles.length >= 10) {
-        activeDoodles.shift();
+      // Agar naya sender hai, toh limit check karo
+      // "while" loop ensures ki agar pehle se 11, 12 count ho gaya ho bug se, toh sab clean ho jaye
+      while (activeDoodles.length >= 10) {
+        activeDoodles.shift(); // Remove the oldest doodle (FIFO)
       }
       activeDoodles.push(newDoodle);
     }
@@ -609,7 +616,7 @@ export const acceptDoodleRequest = async (req, res) => {
     user.changed('activeDoodles', true);
     await user.save();
 
-    // 🔥 FIX 3: Redis Cache Hard Wipe
+    // 🔥 Redis Cache Hard Wipe
     if (redisClient?.isReady) {
       try {
         await Promise.all([
