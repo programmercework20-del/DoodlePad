@@ -11,7 +11,6 @@ import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 export const getFeed = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 15;
   const page = parseInt(req.query.page) || 1;
-  // 🔥 NAYA FEATURE: Frontend se check karenge ki user ne "Pull-to-refresh" kiya hai ya nahi
   const isRefresh = req.query.refresh === 'true'; 
   const offset = (page - 1) * limit;
   const userId = req.user.id;
@@ -21,7 +20,6 @@ export const getFeed = asyncHandler(async (req, res) => {
   // =====================================
   const cacheKey = `user_feed:${userId}:p:${page}:l:${limit}`;
   
-  // Agar isRefresh true hai, toh hum Redis ko check hi nahi karenge, seedha fresh data layenge
   if (redisClient?.isReady && !isRefresh) {
     try {
       const cachedFeed = await redisClient.get(cacheKey);
@@ -64,7 +62,6 @@ export const getFeed = asyncHandler(async (req, res) => {
   followingIds.push(userId); // Include self posts
 
   const safeFollowingIds = followingIds.filter(id => !blockedIds.includes(id));
-  const blockCondition = blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : {};
 
   // =====================================
   // 🔥 4. FOLLOWING POSTS
@@ -87,7 +84,8 @@ export const getFeed = asyncHandler(async (req, res) => {
       attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [["createdAt", "DESC"]],
-    limit: limit * 2,
+    limit: limit, // 🔥 FIX: Isko 'limit * 2' se hata kar sirf 'limit' kiya taaki duplicates na aayein
+    offset: offset, // 🔥 FIX: Database se aage ke posts laane ke liye offset add kiya
     raw: false
   });
 
@@ -108,11 +106,12 @@ export const getFeed = asyncHandler(async (req, res) => {
     include: [{
       model: User,
       as: "author",
-      where: { isPrivate: false, isDeactivated: false },
+      where: { isPrivate: false, isDeactivated: false }, 
       attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [["createdAt", "DESC"]], 
-    limit: limit * 2,
+    limit: limit, // 🔥 FIX: Updated
+    offset: offset, // 🔥 FIX: Added offset
     raw: false
   });
 
@@ -131,6 +130,8 @@ export const getFeed = asyncHandler(async (req, res) => {
     include: [{
       model: User,
       as: "author",
+      // 🔥 FIX: Yahan 'isPrivate: false' missing tha jiski wajah se private posts leak ho rahi thi
+      where: { isPrivate: false, isDeactivated: false }, 
       attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [
@@ -138,7 +139,8 @@ export const getFeed = asyncHandler(async (req, res) => {
       ["commentsCount", "DESC"],
       ["sharesCount", "DESC"]
     ],
-    limit: 15,
+    limit: limit, // 🔥 FIX: Updated
+    offset: offset, // 🔥 FIX: Added offset
     raw: false
   });
 
@@ -180,7 +182,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       mediaUrls: post.mediaUrls || [],
       thumbnail: post.thumbnail || null, 
       duration: post.duration || 0,
-      backgroundMusicUrl: post.backgroundMusicUrl || [], // Include background music URL
+      backgroundMusicUrl: post.backgroundMusicUrl || [], 
       paths: parsedPaths,
       createdAt: post.createdAt,
       likesCount: post.likesCount || 0,
@@ -207,8 +209,6 @@ export const getFeed = asyncHandler(async (req, res) => {
 
     score += (item.likesCount * 2) + (item.commentsCount * 3) + (item.sharesCount * 4);
     
-    // 🔥 INSTAGRAM FEEL: Har refresh par score mein thoda random element jod diya hai 
-    // Jisse purane posts bhi thode shuffe hokar upar-neeche ho jayenge
     score += Math.floor(Math.random() * 50);
 
     return { ...item, score };
@@ -218,7 +218,10 @@ export const getFeed = asyncHandler(async (req, res) => {
   // 🔥 10. SORT & PAGINATE SLICE 
   // =====================================
   feed.sort((a, b) => b.score - a.score);
-  const paginatedFeed = feed.slice(offset, offset + limit).map(({ score, ...rest }) => rest);
+  
+  // 🔥 FIX: Kyuki humne upar database se paginated data (offset) manga liya hai,
+  // isliye ab humein yaha dubara 'offset' se slice nahi karna. Bas Top 'limit' posts leni hain.
+  const paginatedFeed = feed.slice(0, limit).map(({ score, ...rest }) => rest);
 
   // =====================================
   // 💰 11. ADS INJECTION ENGINE
@@ -256,7 +259,6 @@ export const getFeed = asyncHandler(async (req, res) => {
   // =====================================
   // 🔥 12. FINALIZE & SEND (Cache Raw -> Inject -> Send)
   // =====================================
-  
   if (redisClient?.isReady && finalFeed.length > 0) {
     await redisClient.setEx(cacheKey, 180, JSON.stringify(finalFeed)).catch(() => {});
   }
