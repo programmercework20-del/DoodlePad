@@ -271,31 +271,84 @@ export const getArchivedPosts = async (req, res) => {
   }
 };
 
-export const markExpiredPosts = async () => {
+// export const markExpiredPosts = async () => {
+//   try {
+//     const now = new Date();
+//     const [updatedRows] = await Post.update(
+//       { status: "archived", expiresAt: null },
+//       { where: { isSaved: false, status: "active", expiresAt: { [Op.lte]: now } } }
+//     );
+//     console.log(`Archived ${updatedRows} posts`);
+//   } catch (error) {
+//     console.error(error);
+//   }
+// };
+export const markExpiredPosts = async (specificUserId = null) => {
   try {
     const now = new Date();
-    const [updatedRows] = await Post.update(
-      { status: "archived", expiresAt: null },
-      { where: { isSaved: false, status: "active", expiresAt: { [Op.lte]: now } } }
-    );
-    console.log(`Archived ${updatedRows} posts`);
+    const whereCondition = { 
+      isSaved: false, 
+      status: "active", 
+      expiresAt: { [Op.lte]: now } 
+    };
+
+    // Agar koi specific user bheja gaya hai (jaise Archive API se)
+    if (specificUserId) {
+      whereCondition.userId = specificUserId;
+    }
+
+    // Update karne se pehle check karo konsi posts archive hone wali hain
+    const postsToArchive = await Post.findAll({
+      where: whereCondition,
+      attributes: ["id", "userId"]
+    });
+
+    if (postsToArchive.length > 0) {
+      const [updatedRows] = await Post.update(
+        { status: "archived", expiresAt: null },
+        { where: whereCondition }
+      );
+
+      // 🔥 CACHE FIX: Jin users ki post archive hui, unka cache uda do
+      if (redisClient?.isReady) {
+        const uniqueUserIds = [...new Set(postsToArchive.map(p => p.userId))];
+        for (const uid of uniqueUserIds) {
+          await redisClient.del(`archivedPosts:${uid}`);
+          await redisClient.del(`userPosts:${uid}`);
+        }
+      }
+      console.log(`✅ Archived ${updatedRows} posts dynamically`);
+    }
   } catch (error) {
-    console.error(error);
+    console.error("MARK EXPIRED POSTS ERROR:", error);
   }
 };
-
-export const getExpiredPosts = async (req, res) => {
+export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
+    const cacheKey = `archivedPosts:${userId}`;
+
+    // 🔥 FIX: Sirf is user ki expired posts mark karo. Agar koi post archive hogi, 
+    // toh upar wala function is user ka cache udakar fresh data allow karega.
+    await markExpiredPosts(userId);
+
+    if (redisClient?.isReady) {
+      const cachedData = await redisClient.get(cacheKey);
+      if (cachedData) {
+        const parsedData = JSON.parse(cachedData);
+        const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
+        return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
+      }
+    }
 
     const posts = await Post.findAll({
-      where: {
-        userId,
-        isSaved: false,
-        expiresAt: { [Op.lt]: new Date() }
-      },
+      where: { userId, status: "archived" },
       order: [["createdAt", "DESC"]]
     });
+
+    if (redisClient?.isReady) {
+      await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+    }
 
     const finalizedPosts = await injectIsLikedFlag(posts, userId);
 
@@ -306,8 +359,8 @@ export const getExpiredPosts = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("EXPIRED FETCH ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch expired posts" });
+    console.error("ARCHIVE FETCH ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
   }
 };
 
@@ -553,4 +606,4 @@ export const getUserPosts = async (req, res) => {
       message: "Failed to fetch user posts"
     });
   }
-};
+}; 
