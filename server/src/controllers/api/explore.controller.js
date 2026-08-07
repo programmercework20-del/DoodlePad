@@ -204,9 +204,7 @@
 //       message: "Failed to load explore"
 //     });
 //   }
-// };
-
-import { Op, literal } from "sequelize";
+// };import { Op, literal } from "sequelize";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import Hashtag from "../../models/Hashtag.js";
@@ -218,29 +216,37 @@ export const getExploreFeed = async (req, res) => {
   try {
     const userId = req.user?.id;
     
-    // 🚀 PRO-LEVEL: Pagination Logic setup
+    // 🚀 Pagination Logic
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 15;
     const offset = (page - 1) * limit;
 
     // ========================================
-    // BLOCKED USERS
+    // 🛡️ SAFE BLOCKED USERS & SELF EXCLUSION
     // ========================================
-    const blocked = userId ? await Block.findAll({
-      where: {
-        [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
-      }
-    }) : [];
+    let blockedIds = [];
+    if (userId) {
+      const blocked = await Block.findAll({
+        where: {
+          [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
+        }
+      });
+      blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+      
+      // Pro-Tip: Users khud ki posts explore feed me nahi dekhna chahte
+      blockedIds.push(userId); 
+    }
 
-    const blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+    // 🚀 FIX: Prevent Op.notIn crash if blockedIds is empty
+    const userExclusionCondition = blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : undefined;
 
     // ========================================
-    // TRENDING POSTS (With Pagination)
+    // 🔥 TRENDING POSTS (The Main Infinite Grid)
     // ========================================
     const trendingPosts = await Post.findAll({
       where: {
         status: "active",
-        ...(userId && { userId: { [Op.notIn]: blockedIds } }), // Safe check
+        ...(userExclusionCondition && { userId: userExclusionCondition }),
         [Op.or]: [
           { isSaved: true },
           { expiresAt: { [Op.gt]: new Date() } }
@@ -260,36 +266,55 @@ export const getExploreFeed = async (req, res) => {
           ]
         ]
       },
+      // Secondary sort added so equal scores fallback to newest
       order: [[literal(`score`), "DESC"], ["createdAt", "DESC"]],
       limit: limit,
-      offset: offset // 🚀 Fetch next batch of posts based on page number
+      offset: offset 
     });
 
-    // ========================================
-    // RECENT POSTS (With Pagination)
-    // ========================================
-    const recentPosts = await Post.findAll({
-      where: {
-        status: "active",
-        ...(userId && { userId: { [Op.notIn]: blockedIds } })
-      },
-      include: [{
-        model: User,
-        as: "author",
-        attributes: ["id", "name", "profilePhoto", "isVerified"],
-        where: { isPrivate: false, isDeactivated: false }
-      }],
-      order: [["createdAt", "DESC"]],
-      limit: 10, // Keep this small just to mix fresh content
-      offset: (page - 1) * 10
-    });
+    // 🎲 THE SHUFFLE MAGIC (For Pull-To-Refresh Alive Feel)
+    // Agar Page 1 hai, toh jin posts ka score 0 hai unko thoda shuffle kar do 
+    // taaki user ko same boring grid bar-bar na dikhe
+    if (page === 1 && trendingPosts.length > 0) {
+      const engagedPosts = trendingPosts.filter(p => p.dataValues.score > 0);
+      const zeroScorePosts = trendingPosts.filter(p => p.dataValues.score == 0);
 
-    // 🚀 PRO-LEVEL OPTIMIZATION: Only load Hashtags & Creators on Page 1
-    // If user is scrolling to page 2,3,4... save Database power!
+      // Fisher-Yates Shuffle for zero-score posts
+      for (let i = zeroScorePosts.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [zeroScorePosts[i], zeroScorePosts[j]] = [zeroScorePosts[j], zeroScorePosts[i]];
+      }
+      
+      trendingPosts.length = 0; // Clear array
+      trendingPosts.push(...engagedPosts, ...zeroScorePosts); // Re-combine
+    }
+
+    // ========================================
+    // ⚡ PAGE 1 EXCLUSIVE DATA (Database Saver)
+    // ========================================
+    // Ye data sirf 1st page par load hoga, aage scroll karne par array empty jayega
+    // Isse duplicate data nahi aayega aur server ki jaan bach jayegi.
+    
+    let recentPosts = [];
     let trendingHashtagPosts = [];
     let suggestedCreators = [];
 
     if (page === 1) {
+      recentPosts = await Post.findAll({
+        where: {
+          status: "active",
+          ...(userExclusionCondition && { userId: userExclusionCondition })
+        },
+        include: [{
+          model: User,
+          as: "author",
+          attributes: ["id", "name", "profilePhoto", "isVerified"],
+          where: { isPrivate: false, isDeactivated: false }
+        }],
+        order: [["createdAt", "DESC"]],
+        limit: 10
+      });
+
       const hashtags = await Hashtag.findAll({ order: [["postsCount", "DESC"]], limit: 5 });
 
       for (const hashtag of hashtags) {
@@ -298,7 +323,7 @@ export const getExploreFeed = async (req, res) => {
           include: [{
             model: Post,
             as: "post",
-            where: { status: "active", ...(userId && { userId: { [Op.notIn]: blockedIds } }) },
+            where: { status: "active", ...(userExclusionCondition && { userId: userExclusionCondition }) },
             include: [{
               model: User,
               as: "author",
@@ -319,7 +344,7 @@ export const getExploreFeed = async (req, res) => {
       suggestedCreators = await User.findAll({
         where: {
           isDeactivated: false,
-          ...(userId && { id: { [Op.notIn]: [...blockedIds, userId] } }),
+          ...(userExclusionCondition && { id: userExclusionCondition }),
           isPrivate: false,
         },
         attributes: ["id", "name", "profilePhoto", "isVerified"],
