@@ -232,12 +232,66 @@ export const createPost = async (req, res) => {
   }
 };
 
+// export const getArchivedPosts = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const cacheKey = `archivedPosts:${userId}`;
+
+//     await markExpiredPosts();
+
+//     if (redisClient?.isReady) {
+//       const cachedData = await redisClient.get(cacheKey);
+//       if (cachedData) {
+//         const parsedData = JSON.parse(cachedData);
+//         const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
+//         return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
+//       }
+//     }
+
+//     const posts = await Post.findAll({
+//       where: { userId, status: "archived" },
+//       order: [["createdAt", "DESC"]]
+//     });
+
+//     if (redisClient?.isReady) {
+//       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+//     }
+
+//     const finalizedPosts = await injectIsLikedFlag(posts, userId);
+
+//     return res.json({
+//       success: true,
+//       count: finalizedPosts.length,
+//       posts: finalizedPosts
+//     });
+
+//   } catch (error) {
+//     console.error("ARCHIVE FETCH ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
+//   }
+// };
+
+// export const markExpiredPosts = async () => {
+//   try {
+//     const now = new Date();
+//     const [updatedRows] = await Post.update(
+//       { status: "archived", expiresAt: null },
+//       { where: { isSaved: false, status: "active", expiresAt: { [Op.lte]: now } } }
+//     );
+//     console.log(`Archived ${updatedRows} posts`);
+//   } catch (error) {
+//     console.error(error);
+//   }
+// };
+
 export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
     const cacheKey = `archivedPosts:${userId}`;
 
-    await markExpiredPosts();
+    // 🔥 FIX: Sirf is user ki expired posts mark karo. Agar koi post archive hogi, 
+    // toh upar wala function is user ka cache udakar fresh data allow karega.
+    await markExpiredPosts(userId);
 
     if (redisClient?.isReady) {
       const cachedData = await redisClient.get(cacheKey);
@@ -271,18 +325,6 @@ export const getArchivedPosts = async (req, res) => {
   }
 };
 
-// export const markExpiredPosts = async () => {
-//   try {
-//     const now = new Date();
-//     const [updatedRows] = await Post.update(
-//       { status: "archived", expiresAt: null },
-//       { where: { isSaved: false, status: "active", expiresAt: { [Op.lte]: now } } }
-//     );
-//     console.log(`Archived ${updatedRows} posts`);
-//   } catch (error) {
-//     console.error(error);
-//   }
-// };
 export const markExpiredPosts = async (specificUserId = null) => {
   try {
     const now = new Date();
@@ -323,32 +365,18 @@ export const markExpiredPosts = async (specificUserId = null) => {
     console.error("MARK EXPIRED POSTS ERROR:", error);
   }
 };
-export const getArchivedPosts = async (req, res) => {
+export const getExpiredPosts = async (req, res) => {
   try {
     const userId = req.user.id;
-    const cacheKey = `archivedPosts:${userId}`;
-
-    // 🔥 FIX: Sirf is user ki expired posts mark karo. Agar koi post archive hogi, 
-    // toh upar wala function is user ka cache udakar fresh data allow karega.
-    await markExpiredPosts(userId);
-
-    if (redisClient?.isReady) {
-      const cachedData = await redisClient.get(cacheKey);
-      if (cachedData) {
-        const parsedData = JSON.parse(cachedData);
-        const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
-        return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
-      }
-    }
 
     const posts = await Post.findAll({
-      where: { userId, status: "archived" },
+      where: {
+        userId,
+        isSaved: false,
+        expiresAt: { [Op.lt]: new Date() }
+      },
       order: [["createdAt", "DESC"]]
     });
-
-    if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
-    }
 
     const finalizedPosts = await injectIsLikedFlag(posts, userId);
 
@@ -359,8 +387,8 @@ export const getArchivedPosts = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ARCHIVE FETCH ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
+    console.error("EXPIRED FETCH ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch expired posts" });
   }
 };
 
