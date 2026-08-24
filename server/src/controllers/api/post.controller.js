@@ -583,7 +583,6 @@
 //     });
 //   }
 // }; 
-
 import { Op, Sequelize } from "sequelize";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
@@ -599,6 +598,10 @@ import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 import { getVideoDuration } from "../../utils/getVideoDuration.js";
 import Follower from "../../models/Follower.js";
 import sharp from "sharp"; // 🔥 PRO-LEVEL: For generating WebP from Doodle SVGs
+
+// 🚨 YAHAN HLS CONVERTER IMPORT KIYA HAI
+import { startHlsConversion } from "../../services/transcoder.service.js";
+
 
 // 🔥 PRO-LEVEL CDN BASE URL (From GCP Load Balancer)
 const CDN_BASE_URL = "http://34.160.65.14";
@@ -644,6 +647,9 @@ export const createPost = async (req, res) => {
     let thumbnail = null; 
     let backgroundAudios = [];
     let parsedDoodlePaths = [];
+    
+    // Naya variable uploaded file name store karne ke liye
+    let uploadedVideoFileName = null;
 
     // ==========================================
     // 🎨 0. DOODLE RASTERIZATION (Convert to WebP)
@@ -754,7 +760,14 @@ export const createPost = async (req, res) => {
         if (file.mimetype.startsWith('video')) folderName = 'post_videos';
         else if (file.mimetype.startsWith('audio')) folderName = 'post_audios';
 
-        const fileName = `${folderName}/user_${userId}_${Date.now()}_${index}`;
+        const rawFileNameWithoutPath = `user_${userId}_${Date.now()}_${index}`;
+        const fileName = `${folderName}/${rawFileNameWithoutPath}`;
+        
+        // 🚨 Video ke case me humein fileName save karna hai Transcoder ke liye
+        if (file.mimetype.startsWith('video')) {
+            uploadedVideoFileName = fileName; 
+        }
+        
         const blob = bucket.file(fileName);
 
         let calculatedMediaAudioDuration = 0;
@@ -849,6 +862,25 @@ export const createPost = async (req, res) => {
       duration: duration ? parseInt(duration, 10) : 0,  
       backgroundAudios, 
     });
+    
+    // ==========================================
+    // 🚨 3.5. HLS CONVERSION LOGIC (NEW)
+    // ==========================================
+    if (cleanType === 'video' && uploadedVideoFileName) {
+        // HLS conversion background me chalega bina app ko roke
+        startHlsConversion(uploadedVideoFileName, post.id)
+            .then(async (hlsUrl) => {
+                if (hlsUrl) {
+                    await post.update({ mediaUrls: [hlsUrl] }); // Replace MP4 link with M3U8 link
+                    console.log(`✅ Post ${post.id} updated with HLS URL:`, hlsUrl);
+                    
+                    // Clear cache again since URL updated
+                    if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+                }
+            })
+            .catch(err => console.error("⚠️ HLS Background Error:", err));
+    }
+
 
     // ==========================================
     // 4. CACHE INVALIDATION & HASHTAGS
