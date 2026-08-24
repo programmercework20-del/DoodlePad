@@ -1,17 +1,21 @@
-const { TranscoderServiceClient } = require('@google-cloud/video-transcoder');
+import { TranscoderServiceClient } from '@google-cloud/video-transcoder';
+
 const transcoderClient = new TranscoderServiceClient();
 
-// Tumhara existing MP4 bucket name yahan dalo (jisme abhi video upload ho rahi hai)
+// Tumhara exact purana raw bucket
 const RAW_BUCKET_NAME = 'doodlepad-media-staging'; 
+
 // Humara naya HLS bucket
 const HLS_BUCKET_NAME = 'doodlepad-hls-output'; 
 
-async function startHlsConversion(rawFileName, postUniqueId) {
-  try {
-    // Apne GCP project ka ID yahan dalo ya .env se call karo
-    const projectId = process.env.GCP_PROJECT_ID || 'project-7531567b-e7c3-4c4e-8fe'; 
-    const location = 'asia-south1'; 
+// URL se nikala hua exact Project ID
+const projectId = 'project-7531567b-e7c3-4c4e-8fe'; 
 
+// Tumhara Mumbai Region
+const location = 'asia-south1'; 
+
+export async function startHlsConversion(rawFileName, postUniqueId) {
+  try {
     const parent = transcoderClient.locationPath(projectId, location);
     
     // Yahan file MP4 me aayegi aur HLS (m3u8/ts) me bahar niklegi
@@ -47,5 +51,3 @@ async function startHlsConversion(rawFileName, postUniqueId) {
     return null;
   }
 }
-
-module.exports = { startHlsConversion };
