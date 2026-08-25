@@ -6,7 +6,8 @@ const transcoderClient = new TranscoderServiceClient();
 const RAW_BUCKET_NAME = 'doodlepad-media-staging'; 
 
 // Humara naya HLS bucket
-const HLS_BUCKET_NAME = 'doodlepad-hls-output'; 
+// const HLS_BUCKET_NAME = 'doodlepad-hls-output'; 
+const HLS_BUCKET_NAME = 'doodlepad-cdn-bucket';
 
 // URL se nikala hua exact Project ID
 const projectId = 'project-7531567b-e7c3-4c4e-8fe'; 
