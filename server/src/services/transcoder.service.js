@@ -119,8 +119,9 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
             key: 'hls-video',
             container: 'ts',
             elementaryStreams: ['video-stream0', 'audio-stream0'],
-            segmentSettings: { segmentDuration: '6s' }
+            segmentSettings: { segmentDuration: '2s' } // <-- Isko 2s kar diya
           }
+        
         ],
         manifests: [
           {
