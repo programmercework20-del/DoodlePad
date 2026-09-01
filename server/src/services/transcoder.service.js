@@ -78,10 +78,14 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
     const job = {
       inputUri,
       outputUri,
-      config: {
-        inputs: [{ key: 'input0', uri: inputUri }],
-        editList: [{ key: 'atom0', inputs: ['input0'], startTimeOffset: '0s' }],
-        elementaryStreams: [
+      // config: {
+      //   inputs: [{ key: 'input0', uri: inputUri }],
+      //   editList: [{ key: 'atom0', inputs: ['input0'], startTimeOffset: '0s' }],
+ config: {
+  inputs: [{ key: 'input0', uri: inputUri }],
+  editList: [{ key: 'atom0', inputs: ['input0'], startTimeOffset: { seconds: 0 } }], 
+      
+      elementaryStreams: [
           {
             key: 'video-stream0',
             videoStream: {
