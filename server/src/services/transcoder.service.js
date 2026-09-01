@@ -52,55 +52,75 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
               key: 'video-stream0',
               videoStream: {
                 h264: {
-                  heightPixels: videoHeight, widthPixels: videoWidth,
-                  bitrateBps: 2500000, frameRate: 30, allowOpenGop: false,
+                  heightPixels: videoHeight,
+                  widthPixels: videoWidth,
+                  bitrateBps: 2500000,
+                  frameRate: 30,
+                  allowOpenGop: false,
+                  // 🔥 gopDuration MUST match segmentDuration for proper chunking
                   gopDuration: { seconds: 2, nanos: 0 },
-                  vbvSizeBits: 2500000, vbvFullnessBits: 2250000,
-                  entropyCoder: 'cabac', bPyramid: false, bFrameCount: 3,
-                  aqStrength: 1, profile: 'high',
+                  vbvSizeBits: 2500000,
+                  vbvFullnessBits: 2250000,
+                  entropyCoder: 'cabac',
+                  bPyramid: false,
+                  bFrameCount: 3,
+                  aqStrength: 1,
+                  profile: 'high',
                 }
               }
             },
             {
               key: 'audio-stream0',
-              audioStream: { codec: 'aac', bitrateBps: 128000, channelCount: 2, sampleRateHertz: 44100 }
+              audioStream: {
+                codec: 'aac',
+                bitrateBps: 128000,
+                channelCount: 2,
+                sampleRateHertz: 44100
+              }
             }
           ],
           muxStreams: [
             {
               key: 'hls-video',
-              fileName: 'segment_%05d.ts',
-              container: 'ts',
+              // 🔥 FIX: Switch from 'ts' to 'fmp4' (Fragmented MP4)
+              // fMP4 has native HLS segmentation support in GCP without %05d naming issues
+              container: 'fmp4',
               elementaryStreams: ['video-stream0', 'audio-stream0'],
+              // 🔥 CRITICAL: Proper segmentation for fMP4
+              // GCP will auto-generate init.mp4 + segment-*.m4s files
               segmentSettings: {
                 segmentDuration: { seconds: 2, nanos: 0 }
               }
             }
           ],
           manifests: [
-            { fileName: 'master.m3u8', type: 'HLS', muxStreams: ['hls-video'] }
+            {
+              fileName: 'master.m3u8',
+              type: 'HLS',
+              muxStreams: ['hls-video']
+            }
           ]
         }
       };
 
-      console.log(`🚀 [Attempt ${attempt}/${retries}] Transcoding ${rawFileName} (${orientation}) → HLS segments...`);
+      console.log(`🚀 [Attempt ${attempt}/${retries}] Transcoding ${rawFileName} (${orientation}) → 2-sec fMP4 HLS segments...`);
       
       const [response] = await transcoderClient.createJob({ parent, job });
-      const jobId = response.name; 
       
-      console.log(`✅ GCP Job Created: ${jobId}`);
+      console.log(`✅ GCP Transcoder Job Queued`);
+      console.log(`📊 Output Format: fMP4-based HLS (2-second fragments)`);
       
       const finalHlsUrl = `${HLS_BASE_URL}/post_videos_hls/${postUniqueId}/master.m3u8`;
-      console.log(`📹 Output: ${finalHlsUrl}`);
+      console.log(`📹 Stream URL: ${finalHlsUrl}`);
       
-      // 🔥 YAHAN SIRF STRING RETURN KAR RAHE HAIN TAARI DB CRASH NA HO
-      return finalHlsUrl; 
+      // ✅ PURE STRING RETURN - No DB interaction, no job object
+      return finalHlsUrl;
 
     } catch (error) {
       console.error(`❌ Attempt ${attempt}/${retries} Failed: ${error.message}`);
       
       if (attempt < retries) {
-        const delay = attempt * 2000; 
+        const delay = attempt * 2000;
         console.log(`⏳ Retrying in ${delay / 1000}s...`);
         await sleep(delay);
       } else {
