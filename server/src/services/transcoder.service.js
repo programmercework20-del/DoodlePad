@@ -57,7 +57,6 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
                   bitrateBps: 2500000,
                   frameRate: 30,
                   allowOpenGop: false,
-                  // 🔥 gopDuration MUST match segmentDuration for proper chunking
                   gopDuration: { seconds: 2, nanos: 0 },
                   vbvSizeBits: 2500000,
                   vbvFullnessBits: 2250000,
@@ -80,14 +79,20 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
             }
           ],
           muxStreams: [
+            // 🔥 FIX 1: Sirf Video Mux Stream
             {
               key: 'hls-video',
-              // 🔥 FIX: Switch from 'ts' to 'fmp4' (Fragmented MP4)
-              // fMP4 has native HLS segmentation support in GCP without %05d naming issues
               container: 'fmp4',
-              elementaryStreams: ['video-stream0', 'audio-stream0'],
-              // 🔥 CRITICAL: Proper segmentation for fMP4
-              // GCP will auto-generate init.mp4 + segment-*.m4s files
+              elementaryStreams: ['video-stream0'], // ONLY VIDEO
+              segmentSettings: {
+                segmentDuration: { seconds: 2, nanos: 0 }
+              }
+            },
+            // 🔥 FIX 2: Sirf Audio Mux Stream (fMP4 me alag rakhna zaruri hai)
+            {
+              key: 'hls-audio',
+              container: 'fmp4',
+              elementaryStreams: ['audio-stream0'], // ONLY AUDIO
               segmentSettings: {
                 segmentDuration: { seconds: 2, nanos: 0 }
               }
@@ -97,7 +102,8 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
             {
               fileName: 'master.m3u8',
               type: 'HLS',
-              muxStreams: ['hls-video']
+              // 🔥 FIX 3: Manifest ko dono stream (audio aur video) link karni hongi
+              muxStreams: ['hls-video', 'hls-audio']
             }
           ]
         }
@@ -108,12 +114,11 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
       const [response] = await transcoderClient.createJob({ parent, job });
       
       console.log(`✅ GCP Transcoder Job Queued`);
-      console.log(`📊 Output Format: fMP4-based HLS (2-second fragments)`);
+      console.log(`📊 Output Format: fMP4-based HLS (Video & Audio Chunked Separately)`);
       
       const finalHlsUrl = `${HLS_BASE_URL}/post_videos_hls/${postUniqueId}/master.m3u8`;
       console.log(`📹 Stream URL: ${finalHlsUrl}`);
       
-      // ✅ PURE STRING RETURN - No DB interaction, no job object
       return finalHlsUrl;
 
     } catch (error) {
