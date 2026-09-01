@@ -35,7 +35,9 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
                 bitrateBps: 2500000,
                 frameRate: 30,
                 allowOpenGop: false,
-                gopDuration: { seconds: 2 }, // ✅ FIX 1: Changed to object
+                // 🔥 FIX 1: gopDuration hata kar Frames set karo (30fps * 2 sec = 60 frames)
+                // Ye strictly har 2 second me video ko cut karne ke liye force karega.
+                gopFrameCount: 60, 
                 vbvSizeBits: 2500000,
                 vbvFullnessBits: 2250000,
                 entropyCoder: 'cabac',
@@ -59,10 +61,12 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
         muxStreams: [
           {
             key: 'hls-video',
+            // 🔥 FIX 2: Ye explicitly GCP ko bohot saari physical files banane ko kahega!
+            fileName: 'chunk_%05d.ts', 
             container: 'ts',
             elementaryStreams: ['video-stream0', 'audio-stream0'],
             segmentSettings: {
-               segmentDuration: { seconds: 2 } // ✅ Checked: This is correct
+               segmentDuration: { seconds: 2 }
               },
           }
         ],
