@@ -493,6 +493,7 @@ export const createPost = async (req, res) => {
             });
 
             uploadBuffer = fs.readFileSync(processedAudioPath); // Use fast-start buffer
+            console.log("✅ [SUCCESS] FFmpeg Fast-Start applied to Audio!");
           } catch (e) {
             console.error("⚠️ Backend Audio Fast-Start/Calc Error:", e.message);
           } finally {
@@ -586,20 +587,50 @@ export const createPost = async (req, res) => {
     // ==========================================
     // 🚨 3.5. HLS CONVERSION LOGIC (NEW)
     // ==========================================
-    if (cleanType === 'video' && uploadedVideoFileName) {
-        // HLS conversion background me chalega bina app ko roke
-        startHlsConversion(uploadedVideoFileName, post.id)
-            .then(async (hlsUrl) => {
-                if (hlsUrl) {
-                    await post.update({ mediaUrls: [hlsUrl] }); // Replace MP4 link with M3U8 link
-                    console.log(`✅ Post ${post.id} updated with HLS URL:`, hlsUrl);
+    // if (cleanType === 'video' && uploadedVideoFileName) {
+    //     // HLS conversion background me chalega bina app ko roke
+    //     startHlsConversion(uploadedVideoFileName, post.id)
+    //         .then(async (hlsUrl) => {
+    //             if (hlsUrl) {
+    //                 await post.update({ mediaUrls: [hlsUrl] }); // Replace MP4 link with M3U8 link
+    //                 console.log(`✅ Post ${post.id} updated with HLS URL:`, hlsUrl);
                     
-                    // Clear cache again since URL updated
-                    if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+    //                 // Clear cache again since URL updated
+    //                 if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+    //             }
+    //         })
+    //         .catch(err => console.error("⚠️ HLS Background Error:", err));
+    // }
+
+if (cleanType === 'video' && uploadedVideoFileName) {
+        
+        const attemptHlsWithRetry = async (retries = 3) => {
+            for (let i = 1; i <= retries; i++) {
+                try {
+                    const hlsUrl = await startHlsConversion(uploadedVideoFileName, post.id);
+                    if (hlsUrl) {
+                        await post.update({ mediaUrls: [hlsUrl] });
+                        console.log(`✅ [HLS SUCCESS] Post ${post.id} updated!`);
+                        if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+                        return; // 🎯 Success ho gaya, loop se bahar aa jao
+                    }
+                } catch (err) {
+                    console.error(`⚠️ [HLS ATTEMPT ${i} FAILED]:`, err.message);
+                    if (i === retries) {
+                        // 🚨 Teeno attempt fail ho gaye
+                        console.error(`❌ [CRITICAL] HLS permanently failed for Post ${post.id}`);
+                        // Future me yahan Discord/Slack ya Email par alert bhejne ka code daal sakte ho
+                    } else {
+                        // Agle try se pehle 5 seconds wait karo
+                        await new Promise(res => setTimeout(res, 5000));
+                    }
                 }
-            })
-            .catch(err => console.error("⚠️ HLS Background Error:", err));
+            }
+        };
+
+        attemptHlsWithRetry(); // Function ko background me call kar diya
     }
+
 
     // ==========================================
     // 4. CACHE INVALIDATION & HASHTAGS
