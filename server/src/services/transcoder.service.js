@@ -2,12 +2,12 @@ import { TranscoderServiceClient } from '@google-cloud/video-transcoder';
 
 const transcoderClient = new TranscoderServiceClient();
 
-const RAW_BUCKET_NAME = process.env.GCP_RAW_BUCKET || 'doodlepad-media-staging';
-const HLS_BUCKET_NAME = process.env.GCP_HLS_BUCKET || 'doodlepad-media-staging';
-const projectId = process.env.GCP_PROJECT_ID || 'project-7531567b-e7c3-4c4e-8fe';
-const location = process.env.GCP_LOCATION || 'asia-south1';
-const HLS_BASE_URL = process.env.HLS_BASE_URL || 'http://34.160.65.14';
-
+// 🔥 Yahan se process.env poori tarah hata diya hai taaki galat ID na uthe
+const RAW_BUCKET_NAME = 'doodlepad-media-staging';
+const HLS_BUCKET_NAME = 'doodlepad-media-staging';
+const projectId = 'project-7531567b-e7c3-4c4e-8fe'; // 👈 STRICTLY BINA '4' KE
+const location = 'asia-south1';
+const HLS_BASE_URL = 'http://34.160.65.14';
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function validateInputs(rawFileName, postUniqueId, orientation) {
