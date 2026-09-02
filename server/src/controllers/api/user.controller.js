@@ -12,55 +12,6 @@ import { sendSmsOtp } from "../../utils/sendSmsOtp.js";
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
 
-// export const signup = async (req, res) => {
-//   try {
-//     let { fullName, username, password, gender, confirmPassword } = req.body;
-
-//     fullName = fullName?.trim();
-//     username = username?.trim();
-
-//     if (!fullName || !username || !password || !gender || !confirmPassword) {
-//       return res.status(400).json({ success: false, message: "All fields are required" });
-//     }
-
-//     if (password !== confirmPassword) {
-//       return res.status(400).json({ success: false, message: "Passwords do not match" });
-//     }
-
-//     if (password.length < 6) {
-//       return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
-//     }
-
-//     const existingUser = await User.findOne({ where: { username } });
-
-//     if (existingUser) {
-//       return res.status(400).json({ success: false, message: "Username already exists" });
-//     }
-
-//     const hashedPassword = await bcrypt.hash(password, 10);
-
-//     const user = await User.create({
-//       name: fullName,
-//       username,
-//       password: hashedPassword,
-//       gender: gender ? gender.toLowerCase() : null, // 🔥 Our custom fix
-//       isVerified: false,
-//       email: null,
-//       phone: null
-//     });
-
-//     res.status(201).json({
-//       success: true,
-//       message: "Signup successful. Please verify your account",
-//       userId: user.id
-//     });
-
-//   } catch (error) {
-//     console.error("🔥 SIGNUP ERROR:", error);
-//     res.status(500).json({ success: false, message: "Signup failed", error: error.message });
-//   }
-// };
-
 export const signup = async (req, res) => {
   try {
     let { fullName, username, password, gender, confirmPassword } = req.body;
@@ -92,24 +43,16 @@ export const signup = async (req, res) => {
       name: fullName,
       username,
       password: hashedPassword,
-      gender: gender ? gender.toLowerCase() : null,
+      gender: gender ? gender.toLowerCase() : null, // 🔥 Our custom fix
       isVerified: false,
       email: null,
       phone: null
     });
 
-    // 🔥 Generate JWT token so frontend receives it and stops failing
-  const token = jwt.sign(
-      { id: user.id, username: user.username }, // ✅ Yahan 'id' kar diya
-      process.env.JWT_SECRET || 'your_secret_key', 
-      { expiresIn: '7d' }
-    );
-
     res.status(201).json({
       success: true,
       message: "Signup successful. Please verify your account",
-      userId: user.id,
-      token: token // 🔥 This explicitly fixes the error shown in your screenshot!
+      userId: user.id
     });
 
   } catch (error) {
@@ -117,6 +60,7 @@ export const signup = async (req, res) => {
     res.status(500).json({ success: false, message: "Signup failed", error: error.message });
   }
 };
+
 
 export const sendVerificationOtp = async (req, res) => {
   try {
