@@ -12,6 +12,55 @@ import { sendSmsOtp } from "../../utils/sendSmsOtp.js";
 import redisClient from "../../config/redis.js"; 
 import { bucket } from "../../config/firebase.js";
 
+// export const signup = async (req, res) => {
+//   try {
+//     let { fullName, username, password, gender, confirmPassword } = req.body;
+
+//     fullName = fullName?.trim();
+//     username = username?.trim();
+
+//     if (!fullName || !username || !password || !gender || !confirmPassword) {
+//       return res.status(400).json({ success: false, message: "All fields are required" });
+//     }
+
+//     if (password !== confirmPassword) {
+//       return res.status(400).json({ success: false, message: "Passwords do not match" });
+//     }
+
+//     if (password.length < 6) {
+//       return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
+//     }
+
+//     const existingUser = await User.findOne({ where: { username } });
+
+//     if (existingUser) {
+//       return res.status(400).json({ success: false, message: "Username already exists" });
+//     }
+
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     const user = await User.create({
+//       name: fullName,
+//       username,
+//       password: hashedPassword,
+//       gender: gender ? gender.toLowerCase() : null, // 🔥 Our custom fix
+//       isVerified: false,
+//       email: null,
+//       phone: null
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message: "Signup successful. Please verify your account",
+//       userId: user.id
+//     });
+
+//   } catch (error) {
+//     console.error("🔥 SIGNUP ERROR:", error);
+//     res.status(500).json({ success: false, message: "Signup failed", error: error.message });
+//   }
+// };
+
 export const signup = async (req, res) => {
   try {
     let { fullName, username, password, gender, confirmPassword } = req.body;
@@ -43,16 +92,24 @@ export const signup = async (req, res) => {
       name: fullName,
       username,
       password: hashedPassword,
-      gender: gender ? gender.toLowerCase() : null, // 🔥 Our custom fix
+      gender: gender ? gender.toLowerCase() : null,
       isVerified: false,
       email: null,
       phone: null
     });
 
+    // 🔥 Generate JWT token so frontend receives it and stops failing
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      process.env.JWT_SECRET || 'your_secret_key', // Ensure JWT_SECRET is present in your .env
+      { expiresIn: '7d' }
+    );
+
     res.status(201).json({
       success: true,
       message: "Signup successful. Please verify your account",
-      userId: user.id
+      userId: user.id,
+      token: token // 🔥 This explicitly fixes the error shown in your screenshot!
     });
 
   } catch (error) {
@@ -207,50 +264,6 @@ export const verifyOtp = async (req, res) => {
     res.status(500).json({ message: "OTP verification failed" });
   }
 };
-
-// export const login = async (req, res) => {
-//   try {
-//     const { identifier, password } = req.body;
-
-//     const user = await User.findOne({
-//       where: {
-//         [Op.or]: [ { username: identifier }, { email: identifier }, { phone: identifier } ]
-//       }
-//     });
-
-//     if (!user) return res.status(404).json({ message: "User not found" });
-
-//     // ACCOUNT DEACTIVATED
-//     if (user.isDeactivated) {
-
-//       return res.status(403).json({
-//         success: false,
-//         isDeactivated: true,
-//         message: "Account is deactivated",
-//         restoreAvailableUntil: user.scheduledDeletionAt
-//       });
-//     }
-//     if (!user.isVerified) return res.status(403).json({ message: "Please verify your account first" });
-
-//     const isMatch = await bcrypt.compare(password, user.password);
-//     if (!isMatch) return res.status(401).json({ message: "Invalid password" });
-
-//     const token = jwt.sign(
-//       { id: user.id },
-//       process.env.JWT_SECRET,
-//       { expiresIn: process.env.JWT_EXPIRES_IN }
-//     );
-
-//     res.json({
-//       message: "Login successful",
-//       token,
-//       user: { id: user.id, username: user.username, name: user.name, email: user.email, phone: user.phone, profilePhoto: user.profilePhoto }
-//     });
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: "Login failed" });
-//   }
-// };
 
 export const login = async (req, res) => {
   try {
