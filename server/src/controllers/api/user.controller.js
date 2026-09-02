@@ -99,9 +99,9 @@ export const signup = async (req, res) => {
     });
 
     // 🔥 Generate JWT token so frontend receives it and stops failing
-    const token = jwt.sign(
-      { userId: user.id, username: user.username },
-      process.env.JWT_SECRET || 'your_secret_key', // Ensure JWT_SECRET is present in your .env
+  const token = jwt.sign(
+      { id: user.id, username: user.username }, // ✅ Yahan 'id' kar diya
+      process.env.JWT_SECRET || 'your_secret_key', 
       { expiresIn: '7d' }
     );
 
