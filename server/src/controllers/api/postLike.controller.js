@@ -3,64 +3,102 @@ import PostLike from "../../models/PostLike.js";
 import { createNotification } from "../../services/notification.service.js";
 import User from "../../models/User.js";
 import redisClient from "../../config/redis.js";
+import sequelize from "../../config/db.js";
+import { Op } from "sequelize";
 
 // ============================================================
-// TOGGLE LIKE POST (Like/Unlike with Cache & Notifications)
+// TOGGLE LIKE POST — Race Condition Safe + No Negative Count
 // ============================================================
 export const toggleLikePost = async (req, res) => {
+  const userId = req.user.id;
+  const postId = req.params.id;
+
+  // 🔥 FIX 1: Transaction use karo — race condition prevent
+  const transaction = await sequelize.transaction();
+
   try {
-    const userId = req.user.id;
-    const postId = req.params.id;
-
-    // 1. Check if post exists
-    const post = await Post.findByPk(postId);
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: "Post not found"
-      });
-    }
-
-    const existingLike = await PostLike.findOne({
-      where: { postId, userId }
+    // Post check karo — transaction ke andar
+    const post = await Post.findByPk(postId, { 
+      transaction,
+      lock: transaction.LOCK.UPDATE // 🔥 Row lock — concurrent requests block
     });
 
-    const clearCache = async () => {
-      if (redisClient?.isReady) {
-        await redisClient.del(`post:${postId}`);
-      }
-    };
-
-    // ===============================
-    // 💔 UNLIKE LOGIC
-    // ===============================
-    if (existingLike) {
-      await existingLike.destroy();
-      await post.decrement("likesCount");
-      await post.reload();
-      
-      await clearCache();
-
-      return res.json({
-        success: true,
-        action: "unliked",
-        likesCount: post.likesCount
-      });
+    if (!post) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: "Post not found" });
     }
 
-    // ===============================
-    // ❤️ LIKE LOGIC
-    // ===============================
-    await PostLike.create({ postId, userId });
-    await post.increment("likesCount");
-    await post.reload();
+    // 🔥 FIX 2: Like check transaction ke andar
+    const existingLike = await PostLike.findOne({
+      where: { postId, userId },
+      transaction
+    });
 
-    await clearCache();
+    let action;
+    let newLikesCount;
 
-    // 🔔 Notification logic (Self-like check)
-    // Agar user apni hi post like kare toh notification nahi bhejni
-    if (userId !== post.userId) {
-      await createNotification({
+    if (existingLike) {
+      // ===============================
+      // 💔 UNLIKE LOGIC
+      // ===============================
+      await existingLike.destroy({ transaction });
+
+      // 🔥 FIX 3: likesCount kabhi 0 se kam nahi jayega
+      await Post.update(
+        { likesCount: sequelize.literal(`GREATEST("likesCount" - 1, 0)`) },
+        { where: { id: postId }, transaction }
+      );
+
+      action = "unliked";
+
+    } else {
+      // ===============================
+      // ❤️ LIKE LOGIC
+      // ===============================
+
+      // 🔥 FIX 4: Duplicate like prevent — findOrCreate use karo
+      const [like, created] = await PostLike.findOrCreate({
+        where: { postId, userId },
+        defaults: { postId, userId },
+        transaction
+      });
+
+      if (!created) {
+        // Already liked — duplicate request tha
+        await transaction.rollback();
+        const currentPost = await Post.findByPk(postId);
+        return res.json({
+          success: true,
+          action: "already_liked",
+          likesCount: currentPost.likesCount
+        });
+      }
+
+      await Post.update(
+        { likesCount: sequelize.literal(`"likesCount" + 1`) },
+        { where: { id: postId }, transaction }
+      );
+
+      action = "liked";
+    }
+
+    // Transaction commit
+    await transaction.commit();
+
+    // Fresh count DB se lo
+    const updatedPost = await Post.findByPk(postId, {
+      attributes: ["likesCount"]
+    });
+    newLikesCount = updatedPost.likesCount;
+
+    // Cache clear
+    if (redisClient?.isReady) {
+      await redisClient.del(`post:${postId}`).catch(() => {});
+    }
+
+    // Notification — sirf like pe, unlike pe nahi
+    if (action === "liked" && userId !== post.userId) {
+      createNotification({
         senderId: userId,
         receiverId: post.userId,
         type: "LIKE_POST",
@@ -70,13 +108,14 @@ export const toggleLikePost = async (req, res) => {
 
     return res.json({
       success: true,
-      action: "liked",
-      likesCount: post.likesCount
+      action,
+      likesCount: newLikesCount
     });
 
   } catch (error) {
+    await transaction.rollback();
     console.error("Toggle like error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to toggle like"
     });
@@ -84,7 +123,7 @@ export const toggleLikePost = async (req, res) => {
 };
 
 // ============================================================
-// GET POST LIKES (With User Details)
+// GET POST LIKES
 // ============================================================
 export const getPostLikes = async (req, res) => {
   try {
@@ -92,18 +131,15 @@ export const getPostLikes = async (req, res) => {
 
     const likes = await PostLike.findAll({
       where: { postId },
-      include: [
-        {
-          model: User,
-          as: "user", // 🔥 Fixed Association check
-          attributes: ["id", "username", "name", "profilePhoto", "isVerified"]
-        }
-      ],
+      include: [{
+        model: User,
+        as: "user",
+        attributes: ["id", "username", "name", "profilePhoto", "isVerified"]
+      }],
       order: [["createdAt", "DESC"]]
     });
 
-    // Users list map karna
-    const users = likes.map(like => like.user).filter(user => user !== null);
+    const users = likes.map(like => like.user).filter(Boolean);
 
     return res.json({
       success: true,
