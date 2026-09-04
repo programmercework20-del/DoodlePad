@@ -35,7 +35,6 @@ router.post("/doodle/accept/:requestId", userAuth, acceptDoodleRequest);
 router.post("/doodle/reject/:requestId", userAuth, rejectDoodleRequest);
 
 // 5. Get Other User Profile — SABSE LAST mein
+router.post("/:id/like", protect, toggleProfileLike); 
 router.get("/:id", protect, getUserProfile);
-router.post("/profile/:id/like", protect, toggleProfileLike);
-
 export default router;
