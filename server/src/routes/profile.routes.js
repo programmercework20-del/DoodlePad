@@ -9,7 +9,9 @@ import {
     getDoodleRequests, 
     updateMyProfile, 
     getMyProfile, 
-    rejectDoodleRequest 
+    rejectDoodleRequest,
+    toggleProfileLike
+    
 } from "../controllers/api/profile.controller.js";
 import { getDiscoverPeople } from "../controllers/api/discover.controller.js";
 
@@ -34,5 +36,6 @@ router.post("/doodle/reject/:requestId", userAuth, rejectDoodleRequest);
 
 // 5. Get Other User Profile — SABSE LAST mein
 router.get("/:id", protect, getUserProfile);
+router.post("/profile/:id/like", protect, toggleProfileLike);
 
 export default router;

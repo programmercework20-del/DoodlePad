@@ -5,6 +5,7 @@ import { createNotification } from "../../services/notification.service.js";
 // import { formatDoodleRequestResponseItem } from "../../services/requestPayload.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
+import ProfileLike from '../models/ProfileLike.js';
 
 // 🔥 Helper: Ensures safe array parsing & unified keys for Frontend
 const normalizeDoodles = (arr) => {
@@ -40,11 +41,233 @@ const isPrivacyEnabled = (value) => {
   return Boolean(value);
 };
 
+// export const getUserProfile = async (req, res) => {
+//   try {
+//     const currentUserId = req.user.id;
+//     const targetUserId = req.params.id;
+
+
+//     // 🛡️ GUARD CHECK: DB hit hone se pehle hi invalid ID ko rok do
+//     if (!targetUserId || targetUserId === "undefined" || targetUserId === "null") {
+//       return res.status(400).json({ success: false, message: "Invalid target user ID" });
+//     }
+
+//     const isOwnProfile = String(currentUserId) === String(targetUserId);
+
+//     const user = await User.findByPk(targetUserId, {
+//       attributes: {
+//         exclude: ['password', 'otp', 'otpExpires', 'phoneOtp',
+//                   'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
+//       }
+//     });
+
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
+
+//     if (isOwnProfile) {
+//       const [followersCount, followingCount, postsCount] = await Promise.all([
+//         Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
+//         Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
+//         Post.count({ where: { userId: targetUserId, status: "active" } })
+//       ]);
+
+//       const userPosts = await Post.findAll({
+//         where: {
+//           userId: targetUserId,
+//           status: "active"
+//         },
+//         order: [['createdAt', 'DESC']],
+//         limit: 50
+//       });
+
+//       // Ensure activeDoodles always include explicit owner fields so FE maps correctly
+//       const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
+//         ...d,
+//         name: d.senderName || d.name || null,
+//         username: d.senderUsername || d.username || null,
+//         profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
+//         ownerId: d.senderId || d.ownerId || null
+//       })) : []);
+
+//       return res.status(200).json({
+//         success: true,
+//         data: {
+//           profile: {
+//             user: {
+//               id: user.id,
+//               name: user.name,
+//               username: user.username,
+//               bio: user.bio,
+//               profilePhoto: user.profilePhoto,
+//               isPrivate: user.isPrivate,
+//               isVerified: user.isVerified,
+//               activeDoodles: normalizeDoodles(user.activeDoodles),
+//               doodleImage: user.doodleImage,
+//               doodleData: user.doodleData,
+//               doodleOwnerId: user.doodleOwnerId,
+//               isFollowing: false,
+//               isRequestPending: false,
+//               canViewProfile: true,
+//               isMutualFollow: false,
+//               followsYou: false
+//             },
+//             stats: {
+//               followers: followersCount,
+//               following: followingCount,
+//               posts: postsCount
+//             },
+//             posts: userPosts,
+//             isFollowing: false,
+//             isRequestPending: false,
+//             canViewProfile: true,
+//             isMutualFollow: false,
+//             followsYou: false
+//           },
+//           isFollowing: false,
+//           isRequestPending: false,
+//           canViewProfile: true,
+//           isMutualFollow: false,
+//           followsYou: false
+//         }
+//       });
+//     }
+
+//     // 🛡️ 1. BLOCK CHECK
+//     const blockRecord = await Block.findOne({
+//       where: {
+//         [Op.or]: [
+//           { blockerId: currentUserId, blockedId: targetUserId },
+//           { blockerId: targetUserId, blockedId: currentUserId }
+//         ]
+//       }
+//     });
+
+//     if (blockRecord) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "This profile is not available."
+//       });
+//     }
+
+//     // 📊 2. STATS
+//     const [followersCount, followingCount, postsCount] = await Promise.all([
+//       Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
+//       Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
+//       Post.count({ where: { userId: targetUserId, status: "active" } })
+//     ]);
+
+//     // 🤝 3. FOLLOW STATUS
+//     const currentUserFollowsTarget = await Follower.findOne({
+//       where: {
+//         followerId: currentUserId,
+//         followingId: targetUserId,
+//         status: "accepted"
+//       }
+//     });
+//     const targetFollowsCurrentUser = await Follower.findOne({
+//       where: {
+//         followerId: targetUserId,
+//         followingId: currentUserId,
+//         status: "accepted"
+//       }
+//     });
+//     const isFollowing = !!currentUserFollowsTarget;
+//     const isMutualFollow = !!currentUserFollowsTarget && !!targetFollowsCurrentUser;
+
+//     // 🔥 4. PENDING REQUEST CHECK
+//     const pendingRequest = await Follower.findOne({
+//       where: {
+//         followerId: currentUserId,
+//         followingId: targetUserId,
+//         status: "pending"
+//       }
+//     });
+//     const isRequestPending = !!pendingRequest;
+
+//     // 🖼️ 5. POSTS — Privacy wall
+//     const isTargetPrivate = isPrivacyEnabled(user.isPrivate);
+//     let userPosts = [];
+//     const canViewProfile = !isTargetPrivate || isFollowing || isMutualFollow || !!targetFollowsCurrentUser;
+
+//     if (canViewProfile) {
+//       userPosts = await Post.findAll({
+//         where: {
+//           userId: targetUserId,
+//           status: "active"
+//         },
+//         order: [['createdAt', 'DESC']],
+//         limit: 50
+//       });
+//     }
+
+//     // activeDoodles (cover slider) should be visible to everyone regardless of privacy
+//     const showDoodle = true;
+
+//     const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
+//       ...d,
+//       name: d.senderName || d.name || null,
+//       username: d.senderUsername || d.username || null,
+//       profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
+//       ownerId: d.senderId || d.ownerId || null
+//     })) : []);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: {
+//         profile: {
+//           user: {
+//             id: user.id,
+//             name: user.name,
+//             username: user.username,
+//             bio: user.bio,
+//             profilePhoto: user.profilePhoto,
+//               isPrivate: user.isPrivate,
+//               isVerified: user.isVerified,
+//               activeDoodles: normalizeDoodles(user.activeDoodles),
+//               doodleImage: showDoodle ? user.doodleImage : null,
+//               doodleData: showDoodle ? user.doodleData : null,
+//               doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+//             isFollowing,
+//             isRequestPending,
+//             canViewProfile,
+//             isMutualFollow,
+//             followsYou: !!targetFollowsCurrentUser
+//           },
+//           stats: {
+//             followers: followersCount,
+//             following: followingCount,
+//             posts: postsCount
+//           },
+//           posts: userPosts,
+//           isFollowing,
+//           isRequestPending,
+//           canViewProfile,
+//           isMutualFollow,
+//           followsYou: !!targetFollowsCurrentUser
+//         },
+//         isFollowing,
+//         isRequestPending,
+//         canViewProfile,
+//         isMutualFollow,
+//         followsYou: !!targetFollowsCurrentUser
+//       }
+//     });
+//   } catch (error) {
+//     console.error("🔥 GET USER PROFILE ERROR:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch user profile"
+//     });
+//   }
+// };
+
+// 2. UPDATE MY PROFILE
+
 export const getUserProfile = async (req, res) => {
   try {
     const currentUserId = req.user.id;
     const targetUserId = req.params.id;
-
 
     // 🛡️ GUARD CHECK: DB hit hone se pehle hi invalid ID ko rok do
     if (!targetUserId || targetUserId === "undefined" || targetUserId === "null") {
@@ -63,6 +286,21 @@ export const getUserProfile = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
+
+    // ==========================================
+    // 🔥 NAYA CODE: Profile Likes Fetch Karna
+    // ==========================================
+    const likeCount = await ProfileLike.count({ where: { profileId: targetUserId } });
+    let isLikedByMe = false;
+    
+    // Agar khud ki profile nahi hai, tabhi check karenge ki logged-in user ne like kiya hai ya nahi
+    if (!isOwnProfile) {
+      const likeCheck = await ProfileLike.findOne({
+        where: { likerId: currentUserId, profileId: targetUserId }
+      });
+      isLikedByMe = !!likeCheck;
+    }
+    // ==========================================
 
     if (isOwnProfile) {
       const [followersCount, followingCount, postsCount] = await Promise.all([
@@ -109,7 +347,9 @@ export const getUserProfile = async (req, res) => {
               isRequestPending: false,
               canViewProfile: true,
               isMutualFollow: false,
-              followsYou: false
+              followsYou: false,
+              likeCount: likeCount,       // 🔥 NAYA ADD KIYA
+              isLikedByMe: isLikedByMe    // 🔥 NAYA ADD KIYA
             },
             stats: {
               followers: followersCount,
@@ -221,17 +461,19 @@ export const getUserProfile = async (req, res) => {
             username: user.username,
             bio: user.bio,
             profilePhoto: user.profilePhoto,
-              isPrivate: user.isPrivate,
-              isVerified: user.isVerified,
-              activeDoodles: normalizeDoodles(user.activeDoodles),
-              doodleImage: showDoodle ? user.doodleImage : null,
-              doodleData: showDoodle ? user.doodleData : null,
-              doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
+            isPrivate: user.isPrivate,
+            isVerified: user.isVerified,
+            activeDoodles: normalizeDoodles(user.activeDoodles),
+            doodleImage: showDoodle ? user.doodleImage : null,
+            doodleData: showDoodle ? user.doodleData : null,
+            doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
             isFollowing,
             isRequestPending,
             canViewProfile,
             isMutualFollow,
-            followsYou: !!targetFollowsCurrentUser
+            followsYou: !!targetFollowsCurrentUser,
+            likeCount: likeCount,       // 🔥 NAYA ADD KIYA
+            isLikedByMe: isLikedByMe    // 🔥 NAYA ADD KIYA
           },
           stats: {
             followers: followersCount,
@@ -261,7 +503,6 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
-// 2. UPDATE MY PROFILE
 export const updateMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -657,5 +898,44 @@ export const rejectDoodleRequest = async (req, res) => {
     return res.json({ success: true, message: "Doodle request rejected" });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Failed to reject request" });
+  }
+};
+
+// profile like / unlike function
+export const toggleProfileLike = async (req, res) => {
+  try {
+    const likerId = req.user.id; // Logged-in user jo like kar raha hai
+    const profileId = req.params.id; // Jiski profile like ho rahi hai (URL se aayega)
+
+    // Khud ki profile like karne se rokna
+    if (likerId === profileId) {
+      return res.status(400).json({ success: false, message: "You cannot like your own profile" });
+    }
+
+    // Check karo pehle se like toh nahi kiya hai?
+    const existingLike = await ProfileLike.findOne({
+      where: { likerId, profileId }
+    });
+
+    if (existingLike) {
+      // Agar pehle se like hai, toh UNLIKE (delete) kar do
+      await existingLike.destroy();
+      return res.status(200).json({ 
+        success: true, 
+        message: "Profile unliked", 
+        action: "unliked" 
+      });
+    } else {
+      // Agar like nahi hai, toh naya LIKE create kar do
+      await ProfileLike.create({ likerId, profileId });
+      return res.status(200).json({ 
+        success: true, 
+        message: "Profile liked", 
+        action: "liked" 
+      });
+    }
+  } catch (error) {
+    console.error("🔥 Toggle Profile Like Error:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
