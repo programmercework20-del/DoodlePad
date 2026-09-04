@@ -5,7 +5,8 @@ import { createNotification } from "../../services/notification.service.js";
 // import { formatDoodleRequestResponseItem } from "../../services/requestPayload.js";
 import redisClient from "../../config/redis.js";
 import { bucket } from "../../config/firebase.js";
-import ProfileLike from '../models/ProfileLike.js';
+import ProfileLike from '../../models/ProfileLike.js';
+
 
 // 🔥 Helper: Ensures safe array parsing & unified keys for Frontend
 const normalizeDoodles = (arr) => {
