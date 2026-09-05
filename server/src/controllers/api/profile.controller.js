@@ -289,13 +289,13 @@ export const getUserProfile = async (req, res) => {
     }
 
     // ==========================================
-    // 🔥 NAYA CODE: Profile Likes Fetch Karna
+    // 🔥 ACTUAL LIKES FETCH LOGIC
     // ==========================================
     const likeCount = await ProfileLike.count({ where: { profileId: targetUserId } });
     let isLikedByMe = false;
     
     // Agar khud ki profile nahi hai, tabhi check karenge ki logged-in user ne like kiya hai ya nahi
-    if (!isOwnProfile) {
+    if (!isOwnProfile && currentUserId) {
       const likeCheck = await ProfileLike.findOne({
         where: { likerId: currentUserId, profileId: targetUserId }
       });
@@ -349,8 +349,8 @@ export const getUserProfile = async (req, res) => {
               canViewProfile: true,
               isMutualFollow: false,
               followsYou: false,
-              likeCount: likeCount,       // 🔥 NAYA ADD KIYA
-              isLikedByMe: isLikedByMe    // 🔥 NAYA ADD KIYA
+              likeCount: likeCount,       // 🔥 UPDATED HERE
+              isLikedByMe: isLikedByMe    // 🔥 UPDATED HERE
             },
             stats: {
               followers: followersCount,
@@ -473,8 +473,8 @@ export const getUserProfile = async (req, res) => {
             canViewProfile,
             isMutualFollow,
             followsYou: !!targetFollowsCurrentUser,
-            likeCount: likeCount,       // 🔥 NAYA ADD KIYA
-            isLikedByMe: isLikedByMe    // 🔥 NAYA ADD KIYA
+            likeCount: likeCount,       // 🔥 UPDATED HERE: Dusre users ki profile me bhi bhej diya
+            isLikedByMe: isLikedByMe    // 🔥 UPDATED HERE
           },
           stats: {
             followers: followersCount,
@@ -501,6 +501,72 @@ export const getUserProfile = async (req, res) => {
       success: false,
       message: "Failed to fetch user profile"
     });
+  }
+};
+
+export const getMyProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Check Redis Cache
+    if (redisClient?.isReady) {
+      try {
+        const cached = await redisClient.get(`myProfile:${userId}`);
+        if (cached) {
+          return res.json(JSON.parse(cached));
+        }
+      } catch (e) {
+        console.error("⚠️ Redis GET error:", e.message);
+      }
+    }
+
+    // 2. Fetch User from DB
+    const user = await User.findByPk(userId, {
+      attributes: {
+        exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // 🔥 NAYA CODE: My Profile ke liye DB se Count nikalo
+    const likeCount = await ProfileLike.count({ where: { profileId: userId } });
+    const isLikedByMe = false; // Khud ki profile koi khud like nahi karta, toh false rahega
+
+    // 3. Normalize Active Doodles
+    const activeDoodles = normalizeDoodles(user.activeDoodles);
+
+    // 🔥 FIX: profileData variable explicitly defined here with Like fields
+    const profileData = {
+      success: true,
+      data: {
+        profile: {
+          user: {
+            ...user.toJSON(),
+            activeDoodles: activeDoodles,
+            likeCount: likeCount,       // 🔥 NAYA ADD KIYA
+            isLikedByMe: isLikedByMe    // 🔥 NAYA ADD KIYA
+          }
+        }
+      }
+    };
+
+    // 4. Set Redis Cache with 60 seconds TTL
+    if (redisClient?.isReady) {
+      try {
+        await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
+      } catch (e) {
+        console.error("⚠️ Redis SET error:", e.message);
+      }
+    }
+
+    return res.json(profileData);
+
+  } catch (error) {
+    console.error("🔥 GET PROFILE ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch profile" });
   }
 };
 
@@ -596,65 +662,65 @@ try {
 // ============================================================
 // GET MY PROFILE (Fixed ReferenceError & 60s Redis TTL)
 // ============================================================
-export const getMyProfile = async (req, res) => {
-  try {
-    const userId = req.user.id;
+// export const getMyProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
 
-    // 1. Check Redis Cache
-    if (redisClient?.isReady) {
-      try {
-        const cached = await redisClient.get(`myProfile:${userId}`);
-        if (cached) {
-          return res.json(JSON.parse(cached));
-        }
-      } catch (e) {
-        console.error("⚠️ Redis GET error:", e.message);
-      }
-    }
+//     // 1. Check Redis Cache
+//     if (redisClient?.isReady) {
+//       try {
+//         const cached = await redisClient.get(`myProfile:${userId}`);
+//         if (cached) {
+//           return res.json(JSON.parse(cached));
+//         }
+//       } catch (e) {
+//         console.error("⚠️ Redis GET error:", e.message);
+//       }
+//     }
 
-    // 2. Fetch User from DB
-    const user = await User.findByPk(userId, {
-      attributes: {
-        exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
-      }
-    });
+//     // 2. Fetch User from DB
+//     const user = await User.findByPk(userId, {
+//       attributes: {
+//         exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
+//       }
+//     });
 
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
 
-    // 3. Normalize Active Doodles
-    const activeDoodles = normalizeDoodles(user.activeDoodles);
+//     // 3. Normalize Active Doodles
+//     const activeDoodles = normalizeDoodles(user.activeDoodles);
 
-    // 🔥 FIX: profileData variable explicitly defined here
-    const profileData = {
-      success: true,
-      data: {
-        profile: {
-          user: {
-            ...user.toJSON(),
-            activeDoodles: activeDoodles
-          }
-        }
-      }
-    };
+//     // 🔥 FIX: profileData variable explicitly defined here
+//     const profileData = {
+//       success: true,
+//       data: {
+//         profile: {
+//           user: {
+//             ...user.toJSON(),
+//             activeDoodles: activeDoodles
+//           }
+//         }
+//       }
+//     };
 
-    // 4. Set Redis Cache with 60 seconds TTL
-    if (redisClient?.isReady) {
-      try {
-        await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
-      } catch (e) {
-        console.error("⚠️ Redis SET error:", e.message);
-      }
-    }
+//     // 4. Set Redis Cache with 60 seconds TTL
+//     if (redisClient?.isReady) {
+//       try {
+//         await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
+//       } catch (e) {
+//         console.error("⚠️ Redis SET error:", e.message);
+//       }
+//     }
 
-    return res.json(profileData);
+//     return res.json(profileData);
 
-  } catch (error) {
-    console.error("🔥 GET PROFILE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch profile" });
-  }
-};
+//   } catch (error) {
+//     console.error("🔥 GET PROFILE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch profile" });
+//   }
+// };
 // ============================================================
 // 4. SEND DOODLE REQUEST (Updated GCS Path to doodle_covers)
 // ============================================================
