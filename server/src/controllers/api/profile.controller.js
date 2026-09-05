@@ -905,8 +905,8 @@ export const rejectDoodleRequest = async (req, res) => {
 // profile like / unlike function
 export const toggleProfileLike = async (req, res) => {
   try {
-    const likerId = req.user.id; // Logged-in user jo like kar raha hai
-    const profileId = req.params.id; // Jiski profile like ho rahi hai (URL se aayega)
+    const likerId = req.user.id; // Logged-in user
+    const profileId = req.params.id; // Jiski profile like ho rahi hai
 
     // Khud ki profile like karne se rokna
     if (likerId === profileId) {
@@ -918,23 +918,28 @@ export const toggleProfileLike = async (req, res) => {
       where: { likerId, profileId }
     });
 
+    let action = "";
+
     if (existingLike) {
       // Agar pehle se like hai, toh UNLIKE (delete) kar do
       await existingLike.destroy();
-      return res.status(200).json({ 
-        success: true, 
-        message: "Profile unliked", 
-        action: "unliked" 
-      });
+      action = "unliked";
     } else {
       // Agar like nahi hai, toh naya LIKE create kar do
       await ProfileLike.create({ likerId, profileId });
-      return res.status(200).json({ 
-        success: true, 
-        message: "Profile liked", 
-        action: "liked" 
-      });
+      action = "liked";
     }
+
+    // 🔥 MASTERSTROKE: Database se naya count nikal kar Frontend ko bhej do
+    const newLikeCount = await ProfileLike.count({ where: { profileId } });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: `Profile ${action}`, 
+      action: action,
+      likeCount: newLikeCount  // FE Dev ko ye check karne bolo!
+    });
+
   } catch (error) {
     console.error("🔥 Toggle Profile Like Error:", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
