@@ -969,17 +969,17 @@ export const rejectDoodleRequest = async (req, res) => {
 };
 
 // profile like / unlike function
+// ============================================================
+// TOGGLE PROFILE LIKE (URGENT FIX APPLIED)
+// ============================================================
 export const toggleProfileLike = async (req, res) => {
   try {
-    const likerId = req.user.id; // Logged-in user
-    const profileId = req.params.id; // Jiski profile like ho rahi hai
+    const likerId = req.user.id; 
+    const profileId = req.params.id; 
 
-    // Khud ki profile like karne se rokna
-    if (likerId === profileId) {
-      return res.status(400).json({ success: false, message: "You cannot like your own profile" });
-    }
+    // 🚨 GUARD REMOVED: Ab user khud ki profile bhi like kar sakta hai 
+    // Taki frontend par error popup na aaye.
 
-    // Check karo pehle se like toh nahi kiya hai?
     const existingLike = await ProfileLike.findOne({
       where: { likerId, profileId }
     });
@@ -987,23 +987,27 @@ export const toggleProfileLike = async (req, res) => {
     let action = "";
 
     if (existingLike) {
-      // Agar pehle se like hai, toh UNLIKE (delete) kar do
       await existingLike.destroy();
       action = "unliked";
     } else {
-      // Agar like nahi hai, toh naya LIKE create kar do
       await ProfileLike.create({ likerId, profileId });
       action = "liked";
     }
 
-    // 🔥 MASTERSTROKE: Database se naya count nikal kar Frontend ko bhej do
     const newLikeCount = await ProfileLike.count({ where: { profileId } });
+
+    // 🔥 MASTERSTROKE: REDIS CACHE INVALIDATION
+    // Agar profile par koi cache hai, toh Like hote hi instantly delete kar do
+    // Isse next time jab GET profile call hoga, toh purana 0 nahi balki fresh DB count aayega!
+    if (redisClient?.isReady) {
+      await redisClient.del(`myProfile:${profileId}`);
+    }
 
     return res.status(200).json({ 
       success: true, 
       message: `Profile ${action}`, 
       action: action,
-      likeCount: newLikeCount  // FE Dev ko ye check karne bolo!
+      likeCount: newLikeCount
     });
 
   } catch (error) {
