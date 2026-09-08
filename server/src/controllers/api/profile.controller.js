@@ -1012,22 +1012,30 @@ export const toggleProfileLike = async (req, res) => {
 // ============================================================
 export const getProfileLikers = async (req, res) => {
   try {
-    const profileId = req.params.id;
+    const profileId = req.params.id; // Jis profile ke likes dekhne hain
+    const currentUserId = req.user.id; // Jo user list dekhne ki koshish kar raha hai
 
-    // Database se wo saare users nikalo jinhone is profile ko like kiya hai
+    // 🛡️ PRIVACY GUARD: Sirf apni profile ke likes dekhne allow karo
+    if (String(profileId) !== String(currentUserId)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Privacy restriction: You can only view the likers of your own profile." 
+      });
+    }
+
+    // Agar user khud ki hi list maang raha hai, toh fetch karke de do
     const likers = await ProfileLike.findAll({
       where: { profileId },
       include: [
         {
           model: User,
-          as: "liker", // ⚠️ Ensure your model association uses this alias
+          as: "liker", 
           attributes: ["id", "username", "name", "profilePhoto", "isVerified"]
         }
       ],
       order: [['createdAt', 'DESC']]
     });
 
-    // Frontend ke liye data clean karna
     const likersList = likers.map(like => like.liker);
 
     return res.status(200).json({
