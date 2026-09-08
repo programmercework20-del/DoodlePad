@@ -967,23 +967,15 @@ export const rejectDoodleRequest = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to reject request" });
   }
 };
-
-// profile like / unlike function
 // ============================================================
-// TOGGLE PROFILE LIKE (URGENT FIX APPLIED)
+// 1. TOGGLE PROFILE LIKE (PRO-FIXED)
 // ============================================================
 export const toggleProfileLike = async (req, res) => {
   try {
     const likerId = req.user.id; 
     const profileId = req.params.id; 
 
-    // 🚨 GUARD REMOVED: Ab user khud ki profile bhi like kar sakta hai 
-    // Taki frontend par error popup na aaye.
-
-    const existingLike = await ProfileLike.findOne({
-      where: { likerId, profileId }
-    });
-
+    const existingLike = await ProfileLike.findOne({ where: { likerId, profileId } });
     let action = "";
 
     if (existingLike) {
@@ -996,22 +988,56 @@ export const toggleProfileLike = async (req, res) => {
 
     const newLikeCount = await ProfileLike.count({ where: { profileId } });
 
-    // 🔥 MASTERSTROKE: REDIS CACHE INVALIDATION
-    // Agar profile par koi cache hai, toh Like hote hi instantly delete kar do
-    // Isse next time jab GET profile call hoga, toh purana 0 nahi balki fresh DB count aayega!
+    // 🔥 CACHE BUSTER: Jiski profile like hui hai, uska saara cache uda do
     if (redisClient?.isReady) {
-      await redisClient.del(`myProfile:${profileId}`);
+      await redisClient.del(`myProfile:${profileId}`); // Agar wo khud dekh raha ho
+      await redisClient.del(`profile:${profileId}`);   // Agar koi aur dekh raha ho
+      // Taki app refresh hote hi purana zero (0) na dikhe
     }
 
     return res.status(200).json({ 
       success: true, 
       message: `Profile ${action}`, 
-      action: action,
+      action,
       likeCount: newLikeCount
     });
-
   } catch (error) {
     console.error("🔥 Toggle Profile Like Error:", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+// ============================================================
+// 2. GET PROFILE LIKERS LIST (NEW FEATURE)
+// ============================================================
+export const getProfileLikers = async (req, res) => {
+  try {
+    const profileId = req.params.id;
+
+    // Database se wo saare users nikalo jinhone is profile ko like kiya hai
+    const likers = await ProfileLike.findAll({
+      where: { profileId },
+      include: [
+        {
+          model: User,
+          as: "liker", // ⚠️ Ensure your model association uses this alias
+          attributes: ["id", "username", "name", "profilePhoto", "isVerified"]
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Frontend ke liye data clean karna
+    const likersList = likers.map(like => like.liker);
+
+    return res.status(200).json({
+      success: true,
+      count: likersList.length,
+      data: likersList
+    });
+
+  } catch (error) {
+    console.error("🔥 GET Profile Likers Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch likers" });
   }
 };
