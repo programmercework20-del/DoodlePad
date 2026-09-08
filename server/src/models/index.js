@@ -20,6 +20,9 @@ import Hashtag from "./Hashtag.js";
 import HashtagUsage from "./HashtagUsage.js";
 import Block from "./Block.js";
 
+// 🔥 ADDED: ProfileLike Import
+import ProfileLike from "./ProfileLike.js"; 
+
 
 // =====================================================
 // ================= FOLLOW RELATION =====================
@@ -281,6 +284,12 @@ Block.belongsTo(User, {
 });
 
 
+// =====================================================
+// 🔥 PROFILE LIKES ASSOCIATIONS (ADDED)
+// =====================================================
+ProfileLike.belongsTo(User, { foreignKey: "likerId", as: "liker" });
+User.hasMany(ProfileLike, { foreignKey: "likerId", as: "givenProfileLikes" });
+
 
 // EXPORT
 export {
@@ -295,6 +304,7 @@ export {
   Message,
   Follower,
   PostLike,
+  ProfileLike, // 🔥 ADDED: Export me add kiya taaki controllers isko read kar sakein
   Share,
   DoodleRequest,
   Notification,
