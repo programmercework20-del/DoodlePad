@@ -289,13 +289,13 @@ export const getUserProfile = async (req, res) => {
     }
 
     // ==========================================
-    // 🔥 ACTUAL LIKES FETCH LOGIC
+    // 🔥 ACTUAL LIKES FETCH LOGIC (PRO-FIXED)
     // ==========================================
     const likeCount = await ProfileLike.count({ where: { profileId: targetUserId } });
-    let isLikedByMe = false;
     
-    // Agar khud ki profile nahi hai, tabhi check karenge ki logged-in user ne like kiya hai ya nahi
-    if (!isOwnProfile && currentUserId) {
+    let isLikedByMe = false;
+    // 🚨 Hata di gayi condition (!isOwnProfile). Ab hamesha check karega!
+    if (currentUserId) {
       const likeCheck = await ProfileLike.findOne({
         where: { likerId: currentUserId, profileId: targetUserId }
       });
@@ -349,8 +349,8 @@ export const getUserProfile = async (req, res) => {
               canViewProfile: true,
               isMutualFollow: false,
               followsYou: false,
-              likeCount: likeCount,       // 🔥 UPDATED HERE
-              isLikedByMe: isLikedByMe    // 🔥 UPDATED HERE
+              likeCount: likeCount,       // 🔥 REAL DB COUNT
+              isLikedByMe: isLikedByMe    // 🔥 REAL DB STATE
             },
             stats: {
               followers: followersCount,
@@ -473,8 +473,8 @@ export const getUserProfile = async (req, res) => {
             canViewProfile,
             isMutualFollow,
             followsYou: !!targetFollowsCurrentUser,
-            likeCount: likeCount,       // 🔥 UPDATED HERE: Dusre users ki profile me bhi bhej diya
-            isLikedByMe: isLikedByMe    // 🔥 UPDATED HERE
+            likeCount: likeCount,       // 🔥 REAL DB COUNT
+            isLikedByMe: isLikedByMe    // 🔥 REAL DB STATE
           },
           stats: {
             followers: followersCount,
@@ -531,14 +531,21 @@ export const getMyProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // 🔥 NAYA CODE: My Profile ke liye DB se Count nikalo
+    // ==========================================
+    // 🔥 FIX: REAL DB FETCH FOR LIKES
+    // ==========================================
     const likeCount = await ProfileLike.count({ where: { profileId: userId } });
-    const isLikedByMe = false; // Khud ki profile koi khud like nahi karta, toh false rahega
+    
+    // 🚨 Hata diya hardcoded 'false'. Ab DB se original state check hogi!
+    const likeCheck = await ProfileLike.findOne({
+      where: { likerId: userId, profileId: userId }
+    });
+    const isLikedByMe = !!likeCheck; 
 
     // 3. Normalize Active Doodles
     const activeDoodles = normalizeDoodles(user.activeDoodles);
 
-    // 🔥 FIX: profileData variable explicitly defined here with Like fields
+    // 🔥 FIX: Profile data updated with exact true/false state
     const profileData = {
       success: true,
       data: {
@@ -546,14 +553,15 @@ export const getMyProfile = async (req, res) => {
           user: {
             ...user.toJSON(),
             activeDoodles: activeDoodles,
-            likeCount: likeCount,       // 🔥 NAYA ADD KIYA
-            isLikedByMe: isLikedByMe    // 🔥 NAYA ADD KIYA
+            likeCount: likeCount,       // ✅ True DB Count
+            isLikedByMe: isLikedByMe    // ✅ True DB State
           }
         }
       }
     };
 
     // 4. Set Redis Cache with 60 seconds TTL
+    // (Jab bhi Toggle API hit hogi, wo is cache ko uda degi, toh naya fresh data DB se aayega)
     if (redisClient?.isReady) {
       try {
         await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
@@ -569,7 +577,6 @@ export const getMyProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch profile" });
   }
 };
-
 export const updateMyProfile = async (req, res) => {
   try {
     const userId = req.user.id;
