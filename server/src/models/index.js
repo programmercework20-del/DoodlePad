@@ -49,6 +49,7 @@ User.hasMany(Post, { foreignKey: "userId", as: "posts" });
 User.hasMany(Comment, { foreignKey: "userId", as: "comments" });
 User.hasMany(CommentLike, { foreignKey: "userId", as: "commentLikes" });
 User.hasMany(Live, { foreignKey: "hostId", as: "liveStreams" });
+Live.belongsTo(User, { foreignKey: "hostId", as: "host" });
 User.hasMany(Message, { foreignKey: "senderId", as: "sentMessages" });
 User.hasMany(Message, { foreignKey: "receiverId", as: "receivedMessages" });
 User.hasMany(Report, { foreignKey: "reporterId", as: "reportsMade" });
