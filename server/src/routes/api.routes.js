@@ -38,7 +38,8 @@ import {
 import { createPost, deletePost, getUserPosts, getArchivedPosts, restoreArchivedPost, archivePost } 
 from "../controllers/api/post.controller.js";
 
-import { sharePost } from "../controllers/api/share.controller.js";
+import { sharePost , handleSharedLink } from "../controllers/api/share.controller.js";
+
 
 
 import userAuth from "../middlewares/userAuth.js";
@@ -112,6 +113,8 @@ router.delete(
 router.post("/posts/:id/like", protect, toggleLikePost);
 router.get("/posts/:id/likes", getPostLikes);
 router.post("/posts/:id/share", protect, sharePost);
+router.get("/share/p/:id", handleSharedLink);
+
 
 
 
