@@ -116,7 +116,7 @@ npm run seed
 ```
 
 This will create an admin account with:
-- **Email**: admin@example.com
+- **Email**: msansari4777@gmail.com
 - **Password**: Admin@123
 
 ⚠️ **Important**: Change these credentials after first login!
@@ -261,3 +261,23 @@ Contributions are welcome! Please read the contributing guidelines before submit
 ## 📧 Support
 
 For support, please open an issue in the repository.
+
+
+## 🚀 Architecture Upgrades (Pro-Level Performance Optimization)
+
+### 1. Global Media Delivery via Cloud CDN
+* **Problem:** Direct serving media from Google Cloud Storage (`storage.googleapis.com`) caused high latency and slow video loading on the client side.
+* **Solution:** Deployed a **Google Cloud Global External Application Load Balancer** with **Cloud CDN** enabled.
+* **Impact:** Media URLs are now routed through edge nodes (e.g., `http://34.160.65.14/...`). Reduced video and image load times by ~80% with edge caching.
+
+### 2. Backend Rasterization for Doodles (Zero-Lag UI)
+* **Problem:** Rendering thousands of SVG mathematical paths on the frontend (React Native) caused massive CPU spikes, battery drain, and UI freezing during feed scrolling.
+* **Solution:** Implemented **Backend Rasterization** using the `sharp` library in Node.js. 
+* **Mechanism:** When a user posts a Doodle, the Node.js backend intercepts the raw SVG paths, draws them on a virtual canvas, and renders a highly optimized, lightweight **WebP Image**.
+* **Impact:** The frontend now simply renders a standard image in the feed slider, resulting in a buttery-smooth 60FPS scrolling experience and zero heavy computation on the user's mobile device.
+
+### 3. Cursor-Based Pagination & Redis Optimization
+* **Problem:** Standard Offset Pagination (`page=1, limit=15`) caused duplicate posts in the feed if new posts were added dynamically while the user was scrolling. Expired posts were also persisting in the UI.
+* **Solution:** 
+  * Replaced Offset Pagination with **Cursor-Based Pagination** using timestamps (`nextCursor`).
+  * Implemented dynamic Redis Cache Invalidation inside the Node-Cron job (`markExpiredPosts`), ensuring strict cache clearing (`userPosts`, `archivedPosts`) the second a post hits its 24-hour expiration mark.

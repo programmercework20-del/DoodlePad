@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/video-transcoder": "^5.0.0",
     "nodemon": "^3.1.11",
     "redis": "^5.12.0"
   }

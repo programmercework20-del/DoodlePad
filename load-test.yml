@@ -1,0 +1,29 @@
+config:
+  # Tumhara server IP
+  target: "http://34.93.122.180:5000" 
+  phases:
+    # Phase 1: DB Warm up (300 requests)
+    - duration: 30
+      arrivalRate: 10
+      name: "Warm up DB"
+      
+    # Phase 2: DB Ramp up (Ramping to 50 users/sec)
+    - duration: 30
+      arrivalRate: 10
+      rampTo: 50
+      name: "Ramp up DB load"
+      
+    # Phase 3: DB Sustained Peak (3000 requests lagatar)
+    - duration: 60
+      arrivalRate: 50
+      name: "Sustained DB peak load"
+
+scenarios:
+  - name: "Fetch Profile Load Test"
+    flow:
+      - get:
+          # Yahan apni actual API ka path daalna (jaise /api/profile/my-profile ya jo bhi tumhara route hai)
+          url: "/api/profile/my-profile" 
+          headers:
+            # "Bearer " ke baad ek space rakhna aur apna asli token paste karna
+            Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjdkZDI0ZTc1LTVmMjMtNDQ1MS05ZGYxLTE4ZWIwMTVjZWFmNyIsImlhdCI6MTc4NDUzOTU0NCwiZXhwIjoxNzg1MTQ0MzQ0fQ.ou5xsnBujQBcBC5bopdD82Yt_CbWyPWpbySPyxWyI-c"

@@ -1,6 +1,7 @@
 import express from "express";
 import {
   sendMessage,
+  sendCardMessage,
   editMessage,
   deleteMessage,
   markSeen,
@@ -15,6 +16,8 @@ import  upload  from "../middlewares/upload.js";
 const router = express.Router();
 
 router.post("/send", protect, upload.single("file"), sendMessage);
+router.post("/card", protect, upload.fields([{ name: "image", maxCount: 1 }, { name: "audio", maxCount: 1 }]),
+ sendCardMessage);
 router.get("/:conversationId", protect, getMessages);
 router.put("/:messageId", protect, editMessage);
 router.delete("/:messageId", protect, deleteMessage);
