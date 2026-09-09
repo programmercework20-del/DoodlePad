@@ -309,5 +309,7 @@ export {
   DoodleRequest,
   Notification,
   Conversation,             
-  ConversationParticipant 
+  ConversationParticipant,
+  Hashtag,
+  HashtagUsage 
 };

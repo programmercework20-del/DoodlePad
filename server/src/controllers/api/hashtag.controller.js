@@ -4,7 +4,7 @@ import HashtagUsage from "../../models/HashtagUsage.js";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 
-// 🔥 HELPER IMPORT (Ye isLiked flag lagayega)
+// 🔥 HELPER IMPORT
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 // =======================================
@@ -13,9 +13,9 @@ import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 export const searchHashtags = async (req, res) => {
   try {
-    const query = req.query.q?.replace("#", "") || "";
+    const query = req.query.q?.replace("#", "").trim() || "";
 
-    if (!query.trim()) {
+    if (!query) {
       return res.json({
         success: true,
         hashtags: []
@@ -40,7 +40,7 @@ export const searchHashtags = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("🔥 SEARCH HASHTAGS ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Hashtag search failed"
@@ -48,26 +48,39 @@ export const searchHashtags = async (req, res) => {
   }
 };
 
-
 // =======================================
-// 📌 GET POSTS BY HASHTAG (Updated with isLiked)
+// 📌 GET POSTS BY HASHTAG (PRO-FIXED)
 // =======================================
 
 export const getPostsByHashtag = async (req, res) => {
   try {
-    const { name } = req.params;
-    const currentUserId = req.user?.id; // 🔥 Current user ID safely nikali (optional chaining ke sath)
+    // 🔥 Support both Query Params (?hashtag=food / ?name=food) and Route Params (:name)
+    const rawTag = req.query.hashtag || req.query.name || req.params.name;
+    const currentUserId = req.user?.id;
+
+    if (!rawTag || !rawTag.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Hashtag parameter is required"
+      });
+    }
+
+    // 🔥 Sanitize input: remove '#' if present, trim, and lowercase for exact match
+    const cleanTagName = rawTag.replace(/^#/, "").trim().toLowerCase();
 
     const hashtag = await Hashtag.findOne({
       where: {
-        name: name.toLowerCase()
+        name: cleanTagName
       }
     });
 
+    // Agar hashtag database me exist nahi karta, toh strict empty array do (No fallback!)
     if (!hashtag) {
-      return res.status(404).json({
-        success: false,
-        message: "Hashtag not found"
+      return res.json({
+        success: true,
+        hashtag: cleanTagName,
+        totalPosts: 0,
+        posts: []
       });
     }
 
@@ -99,32 +112,30 @@ export const getPostsByHashtag = async (req, res) => {
           ]
         }
       ],
-      // ✅ FIXED
       order: [["post", "createdAt", "DESC"]]
     });
 
-    // 1. Raw posts nikal liye
-    const rawPosts = usages.map(u => u.post);
+    // 1. Extract raw posts safely
+    const rawPosts = usages.map(u => u.post).filter(Boolean);
 
-    // 🔥 2. MAGIC: isLiked flag inject kiya O(1) query mein
+    // 🔥 2. Inject isLiked flag O(1)
     const finalizedPosts = await injectIsLikedFlag(rawPosts, currentUserId);
 
     return res.json({
       success: true,
       hashtag: hashtag.name,
-      totalPosts: hashtag.postsCount,
-      posts: finalizedPosts // 🔥 Updated posts frontend ko bhej diye
+      totalPosts: hashtag.postsCount || finalizedPosts.length,
+      posts: finalizedPosts
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
+    console.error("🔥 GET POSTS BY HASHTAG ERROR:", error);
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch hashtag posts"
     });
   }
 };
-
 
 // =======================================
 // 🔥 TRENDING HASHTAGS
@@ -145,7 +156,7 @@ export const getTrendingHashtags = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("🔥 TRENDING HASHTAGS ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch trends"
