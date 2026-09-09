@@ -4,13 +4,12 @@ import HashtagUsage from "../../models/HashtagUsage.js";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 
-// 🔥 HELPER IMPORT
+// 🔥 HELPER IMPORT FOR LIKES FLAG
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 // =======================================
 // 🔍 SEARCH HASHTAGS
 // =======================================
-
 export const searchHashtags = async (req, res) => {
   try {
     const query = req.query.q?.replace("#", "").trim() || "";
@@ -48,13 +47,12 @@ export const searchHashtags = async (req, res) => {
   }
 };
 
-// =======================================
-// 📌 GET POSTS BY HASHTAG (PRO-FIXED)
-// =======================================
 
+// =======================================
+// 📌 GET POSTS BY HASHTAG (PRO-FIXED WITH STATS & ZERO FALLBACK)
+// =======================================
 export const getPostsByHashtag = async (req, res) => {
   try {
-    // 🔥 Support both Query Params (?hashtag=food / ?name=food) and Route Params (:name)
     const rawTag = req.query.hashtag || req.query.name || req.params.name;
     const currentUserId = req.user?.id;
 
@@ -65,7 +63,7 @@ export const getPostsByHashtag = async (req, res) => {
       });
     }
 
-    // 🔥 Sanitize input: remove '#' if present, trim, and lowercase for exact match
+    // 1. Sanitize input (# hatao, lowercase karo)
     const cleanTagName = rawTag.replace(/^#/, "").trim().toLowerCase();
 
     const hashtag = await Hashtag.findOne({
@@ -74,7 +72,7 @@ export const getPostsByHashtag = async (req, res) => {
       }
     });
 
-    // Agar hashtag database me exist nahi karta, toh strict empty array do (No fallback!)
+    // 🚨 ZERO FALLBACK RULE: Agar hashtag exist nahi karta, toh strict empty array do!
     if (!hashtag) {
       return res.json({
         success: true,
@@ -84,6 +82,7 @@ export const getPostsByHashtag = async (req, res) => {
       });
     }
 
+    // 2. Fetch usages with complete Post + Author details
     const usages = await HashtagUsage.findAll({
       where: {
         hashtagId: hashtag.id
@@ -102,12 +101,7 @@ export const getPostsByHashtag = async (req, res) => {
               where: {
                 isDeactivated: false
               },
-              attributes: [
-                "id",
-                "username",
-                "profilePhoto",
-                "isVerified"
-              ]
+              attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
             }
           ]
         }
@@ -115,11 +109,47 @@ export const getPostsByHashtag = async (req, res) => {
       order: [["post", "createdAt", "DESC"]]
     });
 
-    // 1. Extract raw posts safely
+    // 3. Extract raw posts safely
     const rawPosts = usages.map(u => u.post).filter(Boolean);
 
-    // 🔥 2. Inject isLiked flag O(1)
-    const finalizedPosts = await injectIsLikedFlag(rawPosts, currentUserId);
+    if (rawPosts.length === 0) {
+      return res.json({
+        success: true,
+        hashtag: hashtag.name,
+        totalPosts: 0,
+        posts: []
+      });
+    }
+
+    // 4. Format posts uniformly just like the Feed API (Ensuring likesCount, commentsCount exist)
+    const formattedPosts = rawPosts.map(post => {
+      let parsedPaths = [];
+      if (post.type === "doodle" && post.content) {
+        try { parsedPaths = JSON.parse(post.content); } catch { parsedPaths = []; }
+      }
+
+      return {
+        id: post.id,
+        type: post.type,
+        caption: post.caption,
+        content: post.content,
+        location: post.location || null,
+        mediaUrls: post.mediaUrls || [],
+        mediaOrientation: post.mediaOrientation || 'landscape',
+        thumbnail: post.thumbnail || null, 
+        duration: post.duration || 0,
+        backgroundMusicUrl: post.backgroundMusicUrl || [], 
+        paths: parsedPaths,
+        createdAt: post.createdAt,
+        likesCount: post.likesCount || 0,         // ✅ Stats fixed
+        commentsCount: post.commentsCount || 0,   // ✅ Stats fixed
+        sharesCount: post.sharesCount || 0,
+        user: post.author
+      };
+    });
+
+    // 🔥 5. Inject isLiked flag safely using O(1) helper
+    const finalizedPosts = await injectIsLikedFlag(formattedPosts, currentUserId);
 
     return res.json({
       success: true,
@@ -137,10 +167,10 @@ export const getPostsByHashtag = async (req, res) => {
   }
 };
 
+
 // =======================================
 // 🔥 TRENDING HASHTAGS
 // =======================================
-
 export const getTrendingHashtags = async (req, res) => {
   try {
     const hashtags = await Hashtag.findAll({

@@ -1,25 +1,105 @@
-
 import { Op } from "sequelize";
 import { User, Follower } from "../../models/index.js";
 import Post from "../../models/Post.js";
 import Ad from "../../models/Ad.js";
 import Block from "../../models/Block.js";
+import Hashtag from "../../models/Hashtag.js";
+import HashtagUsage from "../../models/HashtagUsage.js";
 import { calculateFeedScore } from "../../utils/feedRanking.js";
 import redisClient from "../../config/redis.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
 export const getFeed = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const hashtagQuery = req.query.hashtag || req.query.name;
+
+  // =====================================================
+  // 🔍 HASHAG INTERCEPTOR (Strict Zero Fallback & Stats Sync)
+  // =====================================================
+  if (hashtagQuery) {
+    const cleanTagName = hashtagQuery.replace(/^#/, "").trim().toLowerCase();
+    
+    // 1. Find hashtag in DB
+    const hashtag = await Hashtag.findOne({ where: { name: cleanTagName } });
+    
+    // 🚨 ZERO FALLBACK: Agar hashtag exist nahi karta, toh strict empty array do!
+    if (!hashtag) {
+      return res.json({ success: true, feed: [], nextCursor: null });
+    }
+
+    // 2. Fetch usages for this hashtag
+    const usages = await HashtagUsage.findAll({
+      where: { hashtagId: hashtag.id },
+      include: [
+        {
+          model: Post,
+          as: "post",
+          where: { status: "active" },
+          include: [
+            {
+              model: User,
+              as: "author",
+              where: { isDeactivated: false },
+              attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
+            }
+          ]
+        }
+      ],
+      order: [["post", "createdAt", "DESC"]]
+    });
+
+    const rawPosts = usages.map(u => u.post).filter(Boolean);
+    if (rawPosts.length === 0) {
+      return res.json({ success: true, feed: [], nextCursor: null });
+    }
+
+    // 3. Format posts uniformly with complete stats like normal feed
+    const formattedPosts = rawPosts.map(post => {
+      let parsedPaths = [];
+      if (post.type === "doodle" && post.content) {
+        try { parsedPaths = JSON.parse(post.content); } catch { parsedPaths = []; }
+      }
+
+      return {
+        id: post.id,
+        type: post.type,
+        caption: post.caption,
+        content: post.content,
+        location: post.location || null,
+        mediaUrls: post.mediaUrls || [],
+        mediaOrientation: post.mediaOrientation || 'landscape',
+        thumbnail: post.thumbnail || null, 
+        duration: post.duration || 0,
+        backgroundMusicUrl: post.backgroundMusicUrl || [], 
+        paths: parsedPaths,
+        createdAt: post.createdAt,
+        likesCount: post.likesCount || 0,         // ✅ Stats fixed
+        commentsCount: post.commentsCount || 0,   // ✅ Stats fixed
+        sharesCount: post.sharesCount || 0,
+        user: post.author
+      };
+    });
+
+    // 4. Inject isLiked flag O(1)
+    const feedWithLikes = await injectIsLikedFlag(formattedPosts, userId);
+
+    return res.json({
+      success: true,
+      feed: feedWithLikes,
+      nextCursor: null 
+    });
+  }
+
+  // =====================================================
+  // 🌍 NORMAL FEED LOGIC (Cursor & Ranking Based)
+  // =====================================================
   const limit = parseInt(req.query.limit) || 15;
   const isRefresh = req.query.refresh === 'true'; 
-  const userId = req.user.id;
 
   // 🚀 PRO-LEVEL: CURSOR PAGINATION
-  // Frontend se 'page' ki jagah pichle post ka 'createdAt' timestamp aayega
   const cursor = req.query.cursor; 
   const cursorDate = cursor ? new Date(cursor) : null;
-
-  // Agar cursor hai, toh hum sirf us time se PURANI posts layenge (No duplicates ever!)
   const timeCondition = cursorDate ? { createdAt: { [Op.lt]: cursorDate } } : {};
 
   // =====================================
@@ -71,7 +151,7 @@ export const getFeed = asyncHandler(async (req, res) => {
   // =====================================
   const followingPosts = await Post.findAll({
     where: {
-      ...timeCondition, // 🚀 CURSOR INJECTED
+      ...timeCondition,
       userId: safeFollowingIds.length > 0 ? { [Op.in]: safeFollowingIds } : { [Op.eq]: userId },
       status: "active",
       [Op.or]: [{ isSaved: true }, { expiresAt: { [Op.gt]: new Date() } }]
@@ -79,7 +159,7 @@ export const getFeed = asyncHandler(async (req, res) => {
     include: [{
       model: User, as: "author",
       where: { isDeactivated: false },
-      attributes: ["id", "name", "username", "profilePhoto", "isVerified"] // Optimized payload
+      attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
     order: [["createdAt", "DESC"]],
     limit: limit
@@ -90,7 +170,7 @@ export const getFeed = asyncHandler(async (req, res) => {
   // =====================================
   const explorePosts = await Post.findAll({
     where: {
-      ...timeCondition, // 🚀 CURSOR INJECTED
+      ...timeCondition,
       userId: { [Op.notIn]: [...followingIds, ...blockedIds] },
       status: "active",
       [Op.or]: [{ isSaved: true }, { expiresAt: { [Op.gt]: new Date() } }]
@@ -110,7 +190,6 @@ export const getFeed = asyncHandler(async (req, res) => {
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  // Cursor and 7 days logic merged
   let trendingTimeCondition = { [Op.gte]: sevenDaysAgo };
   if (cursorDate) {
     trendingTimeCondition = { [Op.and]: [{ [Op.gte]: sevenDaysAgo }, { [Op.lt]: cursorDate }] };
@@ -120,19 +199,19 @@ export const getFeed = asyncHandler(async (req, res) => {
     where: {
       userId: blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : { [Op.notIn]: [] },
       status: "active",
-      createdAt: trendingTimeCondition // 🚀 CURSOR INJECTED
+      createdAt: trendingTimeCondition
     },
     include: [{
       model: User, as: "author",
       where: { isPrivate: false, isDeactivated: false }, 
       attributes: ["id", "name", "username", "profilePhoto", "isVerified"]
     }],
-    order: [["likesCount", "DESC"], ["createdAt", "DESC"]], // Adjusted order for cursor stability
+    order: [["likesCount", "DESC"], ["createdAt", "DESC"]],
     limit: limit
   });
 
   // =====================================
-  // 🧠 7. MERGE, DEDUPLICATE & FORMAT (Optimized)
+  // 🧠 7. MERGE, DEDUPLICATE & FORMAT
   // =====================================
   const allPosts = [...followingPosts, ...explorePosts, ...trendingPosts];
   const uniquePosts = [];
@@ -159,7 +238,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       content: post.content,
       location: post.location || null,
       mediaUrls: post.mediaUrls || [],
-        mediaOrientation: post.mediaOrientation || 'landscape', // 🔥 ADD
+      mediaOrientation: post.mediaOrientation || 'landscape',
       thumbnail: post.thumbnail || null, 
       duration: post.duration || 0,
       backgroundMusicUrl: post.backgroundMusicUrl || [], 
@@ -179,15 +258,12 @@ export const getFeed = asyncHandler(async (req, res) => {
     let score = (typeof calculateFeedScore === "function") ? calculateFeedScore(item) : 0;
     if (followingIds.includes(item.user.id)) score += 20;
     if (item.user.isVerified) score += 10;
-    
-    // Slight random shuffle logic only on refresh
     if (isRefresh) score += Math.floor(Math.random() * 50);
 
     return { ...item, score };
   });
 
-  // Sort by score then by createdAt to keep time flow logic stable
-  feed.sort((a, b) => b.score - a.score || new Date(b.createdAt) - new Date(a.createdAt));
+  feed.sort((a, b) => b.score - a.score || new Date(b.createdAt) - new Date(b.createdAt));
   const paginatedFeed = feed.slice(0, limit).map(({ score, ...rest }) => rest);
 
   // =====================================
@@ -218,7 +294,6 @@ export const getFeed = asyncHandler(async (req, res) => {
   // =====================================
   let nextCursor = null;
   if (finalFeed.length > 0) {
-    // Find the last real post (not an ad) to use as the next cursor
     const lastPost = [...finalFeed].reverse().find(item => !item.isAd);
     if (lastPost) {
       nextCursor = lastPost.createdAt;
