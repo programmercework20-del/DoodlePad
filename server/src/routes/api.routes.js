@@ -10,7 +10,7 @@ import {
   likeComment
 } from "../controllers/api/comment.controller.js";
 import { googleLogin } from "../controllers/user.controller.js";
-
+import { getPostsByHashtag } from "../controllers/api/hashtag.controller.js";
 
 import { createReport } from "../controllers/api/report.controller.js";
 import { toggleLikePost , getPostLikes } from "../controllers/api/postLike.controller.js";
@@ -99,7 +99,18 @@ router.post("/posts/:id/archive", protect, archivePost);
 router.post("/posts/:id/restore", protect, restoreArchivedPost);
 
 
-router.get("/posts",protect, postController.getFeedPosts);
+// router.get("/posts",protect, postController.getFeedPosts);
+router.get("/posts", protect, (req, res, next) => {
+    // Agar frontend ne query me ?hashtag= bheja hai
+    if (req.query.hashtag) {
+        console.log(`🔀 [API GATEWAY] Hashtag detected: #${req.query.hashtag} -> Routing to Hashtag Controller`);
+        return getPostsByHashtag(req, res); // Tumhara bulletproof hashtag logic chalega
+    }
+    
+    // Agar hashtag nahi hai, toh normal feed dikhao
+    console.log("➡️ [API GATEWAY] Normal feed requested -> Routing to Feed Controller");
+    return postController.getFeedPosts(req, res, next);
+});
 router.get("/posts/:id",protect, postController.getPostById);
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
