@@ -941,6 +941,30 @@ export const saveFcmToken = async (req, res) => {
   res.json({ success: true });
 };
 
+export const deleteFcmToken = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // User table me fcmToken ko null kar rahe hain (MNC standard for logout)
+    await User.update(
+      { fcmToken: null }, 
+      { where: { id: userId } }
+    );
+
+    return res.json({
+      success: true,
+      message: "FCM token removed successfully"
+    });
+
+  } catch (error) {
+    console.error("🔥 DELETE FCM TOKEN ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to remove FCM token"
+    });
+  }
+};
+
 export const uploadProfilePhoto = async (req, res) => {
   try {
     if (!req.file) {

@@ -32,7 +32,8 @@ import {
   rejectFollowRequest,
   getUniqueConnectionsCount,
   togglePrivacy,
-  saveFcmToken
+  saveFcmToken,
+  deleteFcmToken
 } from "../controllers/api/user.controller.js";
 
 import { createPost, deletePost, getUserPosts, getArchivedPosts, restoreArchivedPost, archivePost } 
@@ -76,7 +77,7 @@ router.get('/connections/:id/count', getUniqueConnectionsCount);
 router.patch("/users/privacy", userAuth, togglePrivacy);
 
 router.post("/save-fcm-token", protect, saveFcmToken);
-
+router.delete("/delete-fcm-token", protect, deleteFcmToken);
 
 
 /* ================= POST APIs ================= */
