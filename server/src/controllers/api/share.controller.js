@@ -1,7 +1,7 @@
 import Share from "../../models/Share.js";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
-import sequelize from "../config/db.js"; 
+import sequelize from "../../config/database.js";
 
 // =====================================================
 // 1. RECORD SHARE & GENERATE URL (POST)
