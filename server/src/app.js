@@ -4,226 +4,167 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
-import hpp from "hpp";  
+import hpp from "hpp";
 import config from "./config/env.js";
-import cron from "node-cron";
-
-// Routes
-import messageRoutes from "./routes/message.routes.js";
-import userRoutes from "./routes/user.routes.js";
-import commentRoutes from "./routes/comment.routes.js";
-import postRoutes from "./routes/post.routes.js";
-import reportRoutes from "./routes/report.routes.js";
-import liveRoutes from "./routes/live.routes.js";
-import adminMessageRoutes from "./routes/adminMessage.routes.js"
-import analyticsRoutes from "./routes/analytics.routes.js";
-import searchRoutes from "./routes/search.routes.js";
-import feedRoutes from "./routes/feed.routes.js";
-import notificationRoutes from "./routes/notification.routes.js";
-import conversationRoutes from './routes/conversation.routes.js';
-import profileRoutes from './routes/profile.routes.js';
-import adRoutes from "./routes/ad.routes.js"; 
-import blockUnblockRoutes from "./routes/blockUnblock.routes.js";
-import hashtagRoutes from "./routes/hashtag.routes.js";
-import exploreRoutes from "./routes/explore.routes.js";
-import "./jobs/cron.js"; // ✅ ADD THIS LINE
-import archiveExpiredPosts from "./jobs/archivePosts.js";
-import errorMiddleware from "./middlewares/error.middleware.js";
-
 import path from "path";
-// import adRoutes from "./routes/ad.routes.js";
-
-import apiRoutes from "./routes/api.routes.js";          // ✅ APK routes
-import adminRoutes from "./routes/admin.routes.js";      // ✅ Admin panel
-
-// Middlewares  
-import adminAuth from "./middlewares/adminAuth.js";
-
-
 
 const app = express();
 
 /* =========================
    GLOBAL MIDDLEWARES
 ========================= */
+app.set("trust proxy", 1);
 
-// CORS
-app.use(
-  cors({
-    origin: config.clientUrl,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+app.use(cors({
+  origin: ["http://localhost:5173", config.clientUrl].filter(Boolean),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
-// Security
 app.use(helmet());
 app.use(hpp());
 app.use(compression());
 
-// Rate limit (API only)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10000,
-  message: {
-    success: false,
-    message: "Too many requests, try again later",
-  },
+  max: 1000,
+  message: { success: false, message: "Too many requests" },
 });
 app.use("/api", limiter);
 
-// Body parsers
-// Apne server.js/app.js me isko update karein:
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
 
-// Logger
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
   next();
 });
 
-app.set("trust proxy", 1);
+app.use("/uploads", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+}, express.static(path.join(process.cwd(), "uploads")));
 
 /* =========================
    HEALTH CHECK
 ========================= */
-
 app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "API Server Running",
-    version: "1.0.0",
-  });
+  res.json({ success: true, message: "API Server Running", version: "1.0.0" });
 });
 
 app.get("/health", (req, res) => {
+  res.json({ success: true, status: "OK", time: new Date().toISOString() });
+});
+
+/* =========================
+   🔥 FAULT-TOLERANT ROUTE LOADER
+========================= */
+const loadedRoutes = [];
+const failedRoutes = [];
+
+const safeLoadRoute = async (routePath, mountPath, routeName) => {
+  try {
+    const module = await import(routePath);
+    const router = module.default;
+    if (!router) throw new Error("No default export found");
+    app.use(mountPath, router);
+    loadedRoutes.push({ name: routeName, path: mountPath });
+    console.log(`✅ Route loaded: ${routeName} → ${mountPath}`);
+  } catch (err) {
+    failedRoutes.push({ name: routeName, path: mountPath, error: err.message });
+    console.error(`❌ Route FAILED: ${routeName} → ${err.message}`);
+
+    // 🔥 Failed route ke liye fallback — 503 return karo, app crash nahi hogi
+    app.use(mountPath, (req, res) => {
+      res.status(503).json({
+        success: false,
+        message: `${routeName} service is temporarily unavailable`,
+        code: "SERVICE_UNAVAILABLE"
+      });
+    });
+  }
+};
+
+// 🚀 Saare routes load karo — ek fail hone par baaki chalta rahe
+const initRoutes = async () => {
+  const routes = [
+    // Core routes — sabse important
+    ["./routes/api.routes.js", "/api", "API"],
+    ["./routes/profile.routes.js", "/api/profile", "Profile"],
+    ["./routes/user.routes.js", "/api/users", "Users"],
+    ["./routes/post.routes.js", "/api/posts", "Posts"],
+    ["./routes/feed.routes.js", "/api/feed", "Feed"],
+    ["./routes/message.routes.js", "/api/messages", "Messages"],
+    ["./routes/conversation.routes.js", "/api/conversations", "Conversations"],
+    
+    // Secondary routes
+    ["./routes/notification.routes.js", "/api/notifications", "Notifications"],
+    ["./routes/search.routes.js", "/api/search", "Search"],
+    ["./routes/comment.routes.js", "/api/comments", "Comments"],
+    ["./routes/report.routes.js", "/api/reports", "Reports"],
+    ["./routes/live.routes.js", "/api/live", "Live"],
+    ["./routes/analytics.routes.js", "/api/analytics", "Analytics"],
+    ["./routes/blockUnblock.routes.js", "/api/block", "Block"],
+    ["./routes/ad.routes.js", "/api/ads", "Ads"],
+    ["./routes/hashtag.routes.js", "/api/hashtags", "Hashtags"],
+    ["./routes/explore.routes.js", "/api/explore", "Explore"],
+    ["./routes/account.routes.js", "/api/account", "Account"],
+    ["./routes/closeFriend.routes.js", "/api/close-friends", "CloseFriends"],
+    
+    // Admin routes
+    ["./routes/admin.routes.js", "/api/admin", "Admin"],
+    ["./routes/adminMessage.routes.js", "/admin/messages", "AdminMessages"],
+  ];
+
+  // Parallel load karo — fast startup
+  await Promise.allSettled(
+    routes.map(([routePath, mountPath, routeName]) =>
+      safeLoadRoute(routePath, mountPath, routeName)
+    )
+  );
+
+  // Summary print karo
+  console.log("\n📊 Route Loading Summary:");
+  console.log(`✅ Loaded: ${loadedRoutes.length} routes`);
+  if (failedRoutes.length > 0) {
+    console.warn(`❌ Failed: ${failedRoutes.length} routes`);
+    failedRoutes.forEach(r => console.warn(`   → ${r.name}: ${r.error}`));
+  }
+  console.log("");
+};
+
+// Routes initialize karo
+await initRoutes();
+
+/* =========================
+   ROUTE STATUS ENDPOINT
+========================= */
+app.get("/api/route-status", (req, res) => {
   res.json({
     success: true,
-    status: "OK",
-    time: new Date().toISOString(),
+    loaded: loadedRoutes,
+    failed: failedRoutes,
+    total: loadedRoutes.length + failedRoutes.length
   });
 });
 
-app.use(
-  "/uploads",
-  (req, res, next) => {
-    res.header(
-      "Access-Control-Allow-Origin",
-      "*"
-    );
-
-    res.header(
-      "Cross-Origin-Resource-Policy",
-      "cross-origin"
-    );
-
-    next();
-  },
-  express.static(
-    path.join(process.cwd(), "uploads")
-  )
-);
-
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
-// ✅ API routes
-app.use("/api/profile", profileRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/messages", messageRoutes);
-app.use("/api/conversations", conversationRoutes);
-
-
-app.use("/api/posts", postRoutes);
-
-app.use("/api/explore", exploreRoutes);
-
-app.use("/api/reports", reportRoutes);
-app.use("/api/feed", feedRoutes);
-app.use("/api/live", liveRoutes);
-app.use("/api/analytics", analyticsRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/block", blockUnblockRoutes);
-app.use("/api/hashtags", hashtagRoutes);
-// app.use("/api/explore", exploreRoutes);
-app.use("/api", apiRoutes);
-// app.use(express.static("public"));
-
-
-
-// 404 handler
-/* =========================
-   ROUTES (IMPORTANT PART)
-========================= */
-
-  // // 🔓 APK / MOBILE USER APIs
-  // // signup, login, profile, change-password
-  // app.use("/api", apiRoutes);
-// 🔓 APK / MOBILE USER APIs
-// signup, login, profile, change-password
-
-
-// 🔐 ADMIN PANEL APIs (protected)
-app.use("/api/admin", adminRoutes);
-
-app.use("/admin/comments", commentRoutes);
-
-app.use("/admin/messages", adminMessageRoutes);
-
-app.use("/api/ads", adRoutes);
-
-
-// app.use("/api/admin/ads", adRoutes);
-
 /* =========================
    ERROR HANDLING
 ========================= */
-/* =========================
-   ROUTES (IMPORTANT PART)
-========================= */
-
-// 🔓 APK / MOBILE USER APIs
-// signup, login, profile, change-password
-
-  // // 🔐 ADMIN PANEL APIs (protected)
-  // app.use("/api/admin", adminAuth, adminRoutes);
-
-
-
-  
-archiveExpiredPosts();
-
-
-/* =========================
-   ERROR HANDLING
-========================= */
-
-// 404
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found",
-  });
+  res.status(404).json({ success: false, message: "Route not found" });
 });
 
-// Aapka existing error middleware
-app.use(errorMiddleware);
-
-// ==========================================
-// 🛡️ SAFETY NET 1: ULTIMATE GLOBAL ERROR HANDLER
-// ==========================================
-// Global error handler — app crash nahi hoga
 app.use((err, req, res, next) => {
   console.error("Global error:", err);
-  
-  // Multer file error
+
+  // Multer errors
   if (err.code === "LIMIT_FILE_SIZE") {
     return res.status(400).json({ success: false, message: "File too large" });
   }
-  
   if (err.message === "Invalid file type") {
     return res.status(400).json({ success: false, message: "Invalid file type" });
   }
