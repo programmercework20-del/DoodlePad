@@ -57,7 +57,7 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
                   bitrateBps: 2500000,
                   frameRate: 30,
                   allowOpenGop: false,
-                  gopDuration: { seconds: 2, nanos: 0 },
+                  gopDuration: { seconds: 1, nanos: 0 },
                   vbvSizeBits: 2500000,
                   vbvFullnessBits: 2250000,
                   entropyCoder: 'cabac',
