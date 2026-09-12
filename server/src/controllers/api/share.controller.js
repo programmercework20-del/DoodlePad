@@ -37,8 +37,8 @@ export const sharePost = async (req, res) => {
 
     // 3. Generate the Pro-level share URL (Change domain based on environment)
     // Ye link FE developer React Native me Share API ke through bhejega
-    const backendDomain = process.env.API_BASE_URL || "https://api.doodlepad.in"; // Tumhara actual backend domain
-    const shareUrl = `${backendDomain}/api/share/p/${postId}`;
+    // const backendDomain = process.env.API_BASE_URL || "https://api.doodlepad.in"; // Tumhara actual backend domain
+    const shareUrl = `https://doodlepad.programmerce.com/posts/${postId}`;
 
     return res.json({
       success: true,
@@ -63,22 +63,27 @@ export const sharePost = async (req, res) => {
 export const handleSharedLink = async (req, res) => {
   try {
     const postId = req.params.id;
-    
+
     // Fetch post details for the WhatsApp Preview Card
     const post = await Post.findByPk(postId, {
       include: [{ model: User, as: 'author', attributes: ['name', 'username', 'profilePhoto'] }]
     });
 
     if (!post) {
-       return res.status(404).send("<h1>Oops! This post is no longer available.</h1>");
+      return res.status(404).send("<h1>Oops! This post is no longer available.</h1>");
     }
 
     // 1. Data for Open Graph (WhatsApp Preview Metadata)
     const title = `DoodlePad: Post by ${post.author?.name || 'User'}`;
     const description = post.caption ? post.caption.substring(0, 100) + "..." : "Check out this amazing post on DoodlePad!";
     // Make sure you replace 'mediaUrl' with whatever field holds your post image
-    const imageUrl = post.doodleImage || post.author?.profilePhoto || 'https://yourwebsite.com/default-logo.png'; 
-
+const imageUrl =
+  post.thumbnail ||
+  (Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0
+    ? post.mediaUrls[0]
+    : null) ||
+  post.author?.profilePhoto ||
+  "https://doodlepad.programmerce.com/default-logo.png";
     // 2. HTML Template generating Meta Tags & Deep Link JS
     const htmlPreview = `
     <!DOCTYPE html>
@@ -90,7 +95,10 @@ export const handleSharedLink = async (req, res) => {
         
         <!-- 🔥 MAGIC FOR WHATSAPP/INSTA PREVIEWS -->
         <meta property="og:type" content="website">
-        <meta property="og:url" content="https://api.doodlepad.in/api/share/p/${postId}">
+        <meta
+  property="og:url"
+  content="https://doodlepad.programmerce.com/posts/${postId}"
+>
         <meta property="og:title" content="${title}">
         <meta property="og:description" content="${description}">
         <meta property="og:image" content="${imageUrl}">
