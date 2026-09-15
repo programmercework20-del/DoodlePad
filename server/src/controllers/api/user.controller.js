@@ -941,11 +941,15 @@ export const saveFcmToken = async (req, res) => {
   res.json({ success: true });
 };
 
+// =====================================================
+// 🗑️ DELETE FCM TOKEN (On Logout)
+// =====================================================
 export const deleteFcmToken = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { token } = req.body; // 🔥 FE jo token bhej raha hai usko accept kar liya
 
-    // User table me fcmToken ko null kar rahe hain (MNC standard for logout)
+    // Hum explicitly us user ka FCM token null kar rahe hain
     await User.update(
       { fcmToken: null }, 
       { where: { id: userId } }
