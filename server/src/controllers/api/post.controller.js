@@ -46,327 +46,14 @@ async function generateDoodleImage(pathsArray) {
     .webp({ quality: 80, lossless: false }) // WebP is super light
     .toBuffer();
 }
-
-// trim only in audio and caption audio
-// export const createPost = async (req, res) => {
-//   try {
-//     console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
-
-//     const { type, content, caption, isSaved, duration, location } = req.body;
-    
-//     console.log("🕵️‍♂️ [DEBUG] Raw Duration received:", duration);
-//     console.log("🕵️‍♂️ [DEBUG] Raw Location received:", location);
-
-//     const userId = req.user.id;
-//     const cleanType = type?.toLowerCase();
-//     const isSavedBool = isSaved === "true" || isSaved === true;
-
-//     let mediaUrls = [];
-//     let thumbnail = null; 
-//     let backgroundAudios = [];
-//     let parsedDoodlePaths = [];
-//     let uploadedVideoFileName = null;
-
-//     // ==========================================
-//     // 🔥 AUDIO POST TRIM PARAMS
-//     // ==========================================
-//     let audioTrimStart = 0;
-//     let audioTrimDuration = null;
-//     // Sirf Audio type ke liye trim params nikalenge
-//     if (cleanType === 'audio' && content) {
-//         try {
-//             const parsedContent = typeof content === "string" ? JSON.parse(content) : content;
-//             if (parsedContent.trimStartSecs !== undefined) audioTrimStart = parseFloat(parsedContent.trimStartSecs);
-//             if (parsedContent.durationSecs !== undefined) audioTrimDuration = parseFloat(parsedContent.durationSecs);
-//             console.log(`✂️ [AUDIO POST TRIM] Start: ${audioTrimStart}s, Duration: ${audioTrimDuration}s`);
-//         } catch (e) {
-//             console.error("⚠️ Failed to parse audio trim metadata:", e.message);
-//         }
-//     }
-
-//     // ==========================================
-//     // 🎨 0. DOODLE RASTERIZATION
-//     // ==========================================
-//     if (cleanType === "doodle" && content) {
-//       try {
-//         parsedDoodlePaths = typeof content === "string" ? JSON.parse(content) : content;
-//         if (Array.isArray(parsedDoodlePaths) && parsedDoodlePaths.length > 0) {
-//           const imageBuffer = await generateDoodleImage(parsedDoodlePaths);
-//           if (imageBuffer) {
-//             const fileName = `post_doodles_rendered/doodle_${userId}_${Date.now()}.webp`;
-//             const blob = bucket.file(fileName);
-//             await blob.save(imageBuffer, { metadata: { contentType: 'image/webp' } });
-
-//             const doodleImageUrl = `${CDN_BASE_URL}/${fileName}`;
-//             thumbnail = doodleImageUrl; 
-//             mediaUrls.push(doodleImageUrl); 
-//             console.log("✅ Doodle Successfully Rendered to WebP:", doodleImageUrl);
-//           }
-//         }
-//       } catch (e) {
-//         console.error("⚠️ Doodle paths parse or render error:", e);
-//       }
-//     }
-
-//     // ==========================================
-//     // 1. BACKGROUND MUSIC HANDLING (Caption Audio Trimming + Fast-Start)
-//     // ==========================================
-//     if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
-//       const musicFile = req.files.backgroundMusic[0];
-      
-//       let calculatedAudioDuration = 0;
-//       const tempAudioPath = path.join(os.tmpdir(), `temp_bgm_${Date.now()}.mp4`);
-//       const processedAudioPath = path.join(os.tmpdir(), `processed_bgm_${Date.now()}.mp4`);
-//       let uploadBuffer = musicFile.buffer; 
-
-//       // 🔥 BGM TRIM PARAMS (Frontend yahan data bhejega)
-//       let bgmTrimStart = req.body.bgmTrimStart ? parseFloat(req.body.bgmTrimStart) : 0;
-//       let bgmTrimDuration = req.body.bgmDuration ? parseFloat(req.body.bgmDuration) : null;
-      
-//       try {
-//         fs.writeFileSync(tempAudioPath, musicFile.buffer);
-
-//         // ✂️ BGM Fast-Start + Trimming
-//         await new Promise((resolve, reject) => {
-//           let ffCommand = ffmpeg(tempAudioPath);
-//           if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
-//           if (bgmTrimDuration > 0) ffCommand = ffCommand.setDuration(bgmTrimDuration);
-
-//           ffCommand.outputOptions(['-c', 'copy', '-movflags', '+faststart'])
-//             .save(processedAudioPath)
-//             .on('end', resolve)
-//             .on('error', reject);
-//         });
-
-//         uploadBuffer = fs.readFileSync(processedAudioPath);
-//         calculatedAudioDuration = await getVideoDuration(processedAudioPath); // Get trimmed duration
-//         console.log(`✅ [SUCCESS] Caption Audio (BGM) Trimmed! Duration: ${calculatedAudioDuration}s`);
-
-//       } catch (e) {
-//         console.error("⚠️ Backend BGM Trim Error:", e.message);
-//         calculatedAudioDuration = await getVideoDuration(tempAudioPath).catch(() => 0); // Fallback
-//       } finally {
-//         if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
-//         if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
-//       }
-
-//       const folderName = 'background_music';
-//       const fileName = `${folderName}/user_${userId}_${Date.now()}_music`;
-//       const blob = bucket.file(fileName);
-      
-//       await blob.save(uploadBuffer, { 
-//         metadata: { contentType: musicFile.mimetype },
-//         resumable: uploadBuffer.length > 5 * 1024 * 1024,
-//       });
-      
-//       const fileUrl = `${CDN_BASE_URL}/${fileName}`;
-//       backgroundAudios = [{
-//         url: fileUrl,
-//         duration: parseFloat(parseFloat(calculatedAudioDuration).toFixed(2)) 
-//       }];
-//     } 
-//     else if (req.body.backgroundMusicUrl || req.body.backgroundAudios) {
-//       const rawInput = req.body.backgroundMusicUrl || req.body.backgroundAudios;
-//       const fallbackDuration = req.body.audioDuration || req.body.backgroundMusicDuration || duration || 0;
-//       try {
-//         if (typeof rawInput === "string") {
-//           const parsed = JSON.parse(rawInput);
-//           if (Array.isArray(parsed)) {
-//             backgroundAudios = parsed.map(item => ({
-//               url: item.url || "",
-//               duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(fallbackDuration)
-//             }));
-//           } else if (typeof parsed === "object" && parsed !== null) {
-//             backgroundAudios = [{ url: parsed.url || "", duration: parsed.duration !== undefined ? parseFloat(parsed.duration) : parseFloat(fallbackDuration) }];
-//           } else {
-//             backgroundAudios = [{ url: rawInput, duration: parseFloat(fallbackDuration) }];
-//           }
-//         } else if (Array.isArray(rawInput)) {
-//           backgroundAudios = rawInput.map(item => ({ url: item.url || "", duration: item.duration !== undefined ? parseFloat(item.duration) : parseFloat(fallbackDuration) }));
-//         } else if (typeof rawInput === "object" && rawInput !== null) {
-//           backgroundAudios = [{ url: rawInput.url || "", duration: rawInput.duration !== undefined ? parseFloat(rawInput.duration) : parseFloat(fallbackDuration) }];
-//         }
-//       } catch (e) {
-//         backgroundAudios = [{ url: rawInput, duration: parseFloat(fallbackDuration) }];
-//       }
-//     }
-
-//     // ==========================================
-//     // 2. MAIN MEDIA UPLOAD
-//     // ==========================================
-//     if (req.files && req.files.media && req.files.media.length > 0) {
-//       const uploadPromises = req.files.media.map(async (file, index) => {
-//         let folderName = 'post_images'; 
-//         let isVideo = file.mimetype.startsWith('video');
-//         let isAudio = file.mimetype.startsWith('audio');
-
-//         if (isVideo) folderName = 'post_videos';
-//         else if (isAudio) folderName = 'post_audios';
-
-//         const rawFileNameWithoutPath = `user_${userId}_${Date.now()}_${index}`;
-//         const fileName = `${folderName}/${rawFileNameWithoutPath}`;
-        
-//         if (isVideo) uploadedVideoFileName = fileName; 
-        
-//         const blob = bucket.file(fileName);
-//         let calculatedMediaAudioDuration = 0;
-//         let uploadBuffer = file.buffer; // Raw buffer
-
-//         // 🎵 AUDIO HANDLING: Apply Trim & Fast-Start
-//         if (isAudio) {
-//           const tempAudioPath = path.join(os.tmpdir(), `temp_audio_${Date.now()}_${index}.mp4`);
-//           const processedAudioPath = path.join(os.tmpdir(), `processed_audio_${Date.now()}_${index}.mp4`);
-          
-//           try {
-//             fs.writeFileSync(tempAudioPath, file.buffer);
-
-//             await new Promise((resolve, reject) => {
-//               let ffCommand = ffmpeg(tempAudioPath);
-//               if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
-//               if (audioTrimDuration > 0) ffCommand = ffCommand.setDuration(audioTrimDuration);
-
-//               ffCommand.outputOptions(['-c', 'copy', '-movflags', '+faststart'])
-//                 .save(processedAudioPath)
-//                 .on('end', resolve)
-//                 .on('error', reject);
-//             });
-
-//             uploadBuffer = fs.readFileSync(processedAudioPath); 
-//             calculatedMediaAudioDuration = await getVideoDuration(processedAudioPath); 
-//             console.log(`✅ [SUCCESS] Audio Post Trimmed & Fast-Start applied! Duration: ${calculatedMediaAudioDuration}s`);
-            
-//           } catch (e) {
-//             console.error("⚠️ Backend Audio Trim Error:", e.message);
-//             calculatedMediaAudioDuration = await getVideoDuration(tempAudioPath).catch(() => 0);
-//           } finally {
-//             if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
-//             if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
-//           }
-//         }
-
-//         // 🎥 VIDEO HANDLING: Original Flow (No Trimming, just extract thumbnail)
-//         if (isVideo && !thumbnail) {
-//           const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}.mp4`);
-//           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
-          
-//           try {
-//             fs.writeFileSync(tempVideoPath, file.buffer);
-
-//             await new Promise((resolve, reject) => {
-//               ffmpeg(tempVideoPath)
-//                 .inputOptions('-threads 2')
-//                 .screenshots({
-//                   count: 1, timemarks: ['00:00:01'], filename: path.basename(tempThumbPath),
-//                   folder: os.tmpdir(), size: '640x?'
-//                 })
-//                 .on('end', resolve).on('error', reject);
-//             });
-
-//             const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
-//             const thumbBlob = bucket.file(thumbFileName);
-//             await thumbBlob.save(fs.readFileSync(tempThumbPath), { metadata: { contentType: 'image/jpeg' } });
-//             thumbnail = `${CDN_BASE_URL}/${thumbFileName}`;
-
-//           } catch (thumbErr) {
-//             console.error("⚠️ Thumbnail extraction failed:", thumbErr);
-//           } finally {
-//             if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-//             if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
-//           }
-//         }
-
-//         // Final Upload to GCP
-//         await blob.save(uploadBuffer, {
-//           metadata: { contentType: file.mimetype },
-//           resumable: uploadBuffer.length > 5 * 1024 * 1024,
-//         });
-
-//         const fileUrl = `${CDN_BASE_URL}/${fileName}`;
-
-//         if (isAudio) {
-//           backgroundAudios.push({
-//             url: fileUrl,
-//             duration: parseFloat(parseFloat(calculatedMediaAudioDuration).toFixed(2))
-//           });
-//           return null; 
-//         }
-
-//         return fileUrl;
-//       });
-
-//       const results = await Promise.all(uploadPromises);
-//       const filteredResults = results.filter(url => url !== null);
-//       mediaUrls = [...mediaUrls, ...filteredResults];
-//     }
-
-//     // ==========================================
-//     // 3. VALIDATION & DATABASE SAVE
-//     // ==========================================
-//     const mediaRequiredTypes = ["image", "video", "audio"];
-//     if (mediaRequiredTypes.includes(cleanType) && mediaUrls.length === 0 && (!backgroundAudios || backgroundAudios.length === 0)) {
-//       return res.status(400).json({ success: false, message: "Media file missing" });
-//     }
-
-//     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-//     const post = await Post.create({
-//       userId,
-//       type: cleanType,
-//       content: cleanType === "doodle" ? (content || "Doodle Post") : content,
-//       caption: caption || "",
-//       mediaUrls, 
-//       thumbnail, 
-//       location: location || null,
-//       isSaved: isSavedBool,
-//       expiresAt,
-//       duration: duration ? parseInt(duration, 10) : 0,  
-//       backgroundAudios, 
-//     });
-    
-//     // ==========================================
-//     // 🚨 3.5. HLS CONVERSION LOGIC
-//     // ==========================================
-//     if (cleanType === 'video' && uploadedVideoFileName) {
-//         const attemptHlsWithRetry = async (retries = 3) => {
-//             for (let i = 1; i <= retries; i++) {
-//                 try {
-//                     const hlsUrl = await startHlsConversion(uploadedVideoFileName, post.id);
-//                     if (hlsUrl) {
-//                         await post.update({ mediaUrls: [hlsUrl] });
-//                         console.log(`✅ [HLS SUCCESS] Post ${post.id} updated!`);
-//                         if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
-//                         return;
-//                     }
-//                 } catch (err) {
-//                     console.error(`⚠️ [HLS ATTEMPT ${i} FAILED]:`, err.message);
-//                     if (i === retries) {
-//                         console.error(`❌ [CRITICAL] HLS permanently failed for Post ${post.id}`);
-//                     } else {
-//                         await new Promise(res => setTimeout(res, 5000));
-//                     }
-//                 }
-//             }
-//         };
-//         attemptHlsWithRetry(); 
-//     }
-
-//     // ==========================================
-//     // 4. CACHE INVALIDATION & HASHTAGS
-//     // ==========================================
-//     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
-    
-//     await processHashtags({ caption, postId: post.id });
-    
-//     return res.status(201).json({ success: true, message: "Post created!", post });
-
-//   } catch (error) {
-//     console.error("Create Post Error:", error);
-//     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
-//   }
-// };
 // trim only in audio and caption audio
 export const createPost = async (req, res) => {
   try {
+    // ⏱️ PERF: Start Timer
+    const { performance } = await import('perf_hooks');
+    const tStart = performance.now();
+    const timeLog = {};
+
     console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
 
     const { type, content, caption, isSaved, duration, location } = req.body;
@@ -383,6 +70,9 @@ export const createPost = async (req, res) => {
     let backgroundAudios = [];
     let parsedDoodlePaths = [];
     let uploadedVideoFileName = null;
+
+    timeLog['Multipart_Parsing'] = (performance.now() - tStart).toFixed(2) + "ms";
+    const tParseEnd = performance.now();
 
     // ==========================================
     // 🔥 AUDIO POST TRIM PARAMS
@@ -403,6 +93,7 @@ export const createPost = async (req, res) => {
     // ==========================================
     // 🎨 0. DOODLE RASTERIZATION
     // ==========================================
+    const tDoodleStart = performance.now();
     if (cleanType === "doodle" && content) {
       try {
         parsedDoodlePaths = typeof content === "string" ? JSON.parse(content) : content;
@@ -423,19 +114,19 @@ export const createPost = async (req, res) => {
         console.error("⚠️ Doodle paths parse or render error:", e);
       }
     }
+    timeLog['Sharp_Doodle'] = (performance.now() - tDoodleStart).toFixed(2) + "ms";
 
     // ==========================================
     // 1. BACKGROUND MUSIC HANDLING
     // ==========================================
+    const tBgmStart = performance.now();
     if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
       const musicFile = req.files.backgroundMusic[0];
       
-      // 🔥 FIX 1: Extract Original Extension (Fallback to .m4a if empty)
       let bgmExt = path.extname(musicFile.originalname).toLowerCase();
       if (!bgmExt) bgmExt = '.m4a'; 
 
       let calculatedAudioDuration = 0;
-      // 🔥 FIX 2: Use Original Extension for Temp Files
       const tempAudioPath = path.join(os.tmpdir(), `temp_bgm_${Date.now()}${bgmExt}`);
       const processedAudioPath = path.join(os.tmpdir(), `processed_bgm_${Date.now()}${bgmExt}`);
       
@@ -471,7 +162,6 @@ export const createPost = async (req, res) => {
       }
 
       const folderName = 'background_music';
-      // 🔥 FIX 3: Append Extension to Final GCP File Name
       const fileName = `${folderName}/user_${userId}_${Date.now()}_music${bgmExt}`;
       const blob = bucket.file(fileName);
       
@@ -487,7 +177,6 @@ export const createPost = async (req, res) => {
       }];
     } 
     else if (req.body.backgroundMusicUrl || req.body.backgroundAudios) {
-        // ... (Tumhara purana URL handling code same rahega)
         const rawInput = req.body.backgroundMusicUrl || req.body.backgroundAudios;
         const fallbackDuration = req.body.audioDuration || req.body.backgroundMusicDuration || duration || 0;
         try {
@@ -512,10 +201,12 @@ export const createPost = async (req, res) => {
           backgroundAudios = [{ url: rawInput, duration: parseFloat(fallbackDuration) }];
         }
     }
+    timeLog['BGM_Process_Upload'] = (performance.now() - tBgmStart).toFixed(2) + "ms";
 
     // ==========================================
     // 2. MAIN MEDIA UPLOAD
     // ==========================================
+    const tMediaStart = performance.now();
     if (req.files && req.files.media && req.files.media.length > 0) {
       const uploadPromises = req.files.media.map(async (file, index) => {
         let folderName = 'post_images'; 
@@ -525,15 +216,13 @@ export const createPost = async (req, res) => {
         if (isVideo) folderName = 'post_videos';
         else if (isAudio) folderName = 'post_audios';
 
-        // 🔥 FIX 4: Extract Media Extension safely
         let ext = path.extname(file.originalname).toLowerCase();
         if (!ext) {
             if (isVideo) ext = '.mp4';
             else if (isAudio) ext = '.m4a';
-            else ext = ''; // Images might already have it or we ignore
+            else ext = ''; 
         }
 
-        // 🔥 FIX 5: Append Extension to Raw File Name
         const rawFileNameWithoutPath = `user_${userId}_${Date.now()}_${index}${ext}`;
         const fileName = `${folderName}/${rawFileNameWithoutPath}`;
         
@@ -543,9 +232,7 @@ export const createPost = async (req, res) => {
         let calculatedMediaAudioDuration = 0;
         let uploadBuffer = file.buffer; 
 
-        // 🎵 AUDIO HANDLING: Apply Trim & Fast-Start
         if (isAudio) {
-          // 🔥 FIX 6: Use Original Extension for FFmpeg Temp paths
           const tempAudioPath = path.join(os.tmpdir(), `temp_audio_${Date.now()}_${index}${ext}`);
           const processedAudioPath = path.join(os.tmpdir(), `processed_audio_${Date.now()}_${index}${ext}`);
           
@@ -576,9 +263,8 @@ export const createPost = async (req, res) => {
           }
         }
 
-        // 🎥 VIDEO HANDLING: (Purana video logic same rahega)
         if (isVideo && !thumbnail) {
-          const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}${ext}`); // yahan bhi ext de diya
+          const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}${ext}`); 
           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
           
           try {
@@ -607,7 +293,6 @@ export const createPost = async (req, res) => {
           }
         }
 
-        // Final Upload to GCP
         await blob.save(uploadBuffer, {
           metadata: { contentType: file.mimetype },
           resumable: uploadBuffer.length > 5 * 1024 * 1024,
@@ -630,6 +315,7 @@ export const createPost = async (req, res) => {
       const filteredResults = results.filter(url => url !== null);
       mediaUrls = [...mediaUrls, ...filteredResults];
     }
+    timeLog['Main_Media_FFmpeg_GCP'] = (performance.now() - tMediaStart).toFixed(2) + "ms";
 
     // ==========================================
     // 3. VALIDATION & DATABASE SAVE
@@ -641,6 +327,7 @@ export const createPost = async (req, res) => {
 
     let expiresAt = isSavedBool ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    const tDbStart = performance.now();
     const post = await Post.create({
       userId,
       type: cleanType,
@@ -654,6 +341,7 @@ export const createPost = async (req, res) => {
       duration: duration ? parseInt(duration, 10) : 0,  
       backgroundAudios, 
     });
+    timeLog['Database_Insert'] = (performance.now() - tDbStart).toFixed(2) + "ms";
     
     // ==========================================
     // 🚨 3.5. HLS CONVERSION LOGIC
@@ -686,9 +374,12 @@ export const createPost = async (req, res) => {
     // 4. CACHE INVALIDATION & HASHTAGS
     // ==========================================
     if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
-    
     await processHashtags({ caption, postId: post.id });
     
+    timeLog['TOTAL_DURATION'] = (performance.now() - tStart).toFixed(2) + "ms";
+    console.log("📊 [PERF] POST /api/posts TIMING REPORT:");
+    console.table(timeLog);
+
     return res.status(201).json({ success: true, message: "Post created!", post });
 
   } catch (error) {
