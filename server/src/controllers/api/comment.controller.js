@@ -64,13 +64,28 @@ export const addComment = async (req, res) => {
       }
     }
 
+    // 🎨 PRO-LEVEL UX FIX: Parse content for Push Notifications so raw JSON isn't sent
+    let notificationBody = content || "Sent a comment";
+    if (type === "doodle") {
+        notificationBody = "🎨 Sent you a doodle";
+    } else if (type === "image") {
+        notificationBody = "📷 Sent an image";
+    } else if (type === "video") {
+        notificationBody = "🎥 Sent a video";
+    } else if (type === "audio") {
+        notificationBody = "🎵 Sent a voice note";
+    }
+
     if (receiverId !== userId) {
+      // NOTE: Ensure your createNotification helper is passing this 'notificationBody' 
+      // instead of 'content' to FCM if that's where the push payload is built!
       createNotification({
         senderId: userId,
         receiverId,
         type: notificationType,
         postId,
-        commentId: comment.id
+        commentId: comment.id,
+        message: notificationBody // Passed down so FCM uses this clean string
       }).catch(e => console.error("Notification delivery failed:", e));
     }
 
