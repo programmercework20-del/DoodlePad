@@ -44,6 +44,7 @@ import { sharePost , handleSharedLink } from "../controllers/api/share.controlle
 
 
 import userAuth from "../middlewares/userAuth.js";
+import messageRoutes from './message.route.js'; 
 
 const router = express.Router();
 
@@ -133,6 +134,10 @@ router.get("/share/p/:id", handleSharedLink);
 /* ================= REPORT ================= */
 
 router.post("/reports", userAuth, createReport);
+
+/* ================= MESSAGES ================= */
+router.use("/messages", messageRoutes);
+
 
 /* ================= TEST ================= */
 
