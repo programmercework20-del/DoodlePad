@@ -1,4 +1,5 @@
 import Comment from "../../models/Comment.js";
+import Notification from "../../models/Notification.js";
 import Post from "../../models/Post.js";
 import User from "../../models/User.js";
 import CommentLike from "../../models/CommentLike.js";
@@ -227,9 +228,17 @@ export const deleteOwnComment = async (req, res) => {
       });
     }
 
-    const targetPostId = postId || comment.postId; // Get Post ID safely
+    const targetPostId = postId || comment.postId; 
 
-    // 3. Delete comment (Hard delete as requested by FE tests)
+    // 🔥 FIX: OPTION 1 - CLEAN UP ORPHANED FOREIGN KEYS BEFORE DELETING
+    // Ye line database ko crash hone se bachayegi (Foreign Key Constraint Fix)
+    if (Notification) await Notification.destroy({ where: { commentId } }).catch(() => {});
+    if (CommentLike) await CommentLike.destroy({ where: { commentId } }).catch(() => {});
+    
+    // Optional: Agar is comment ke replies hain, toh unhe soft-delete/unlink kar do
+    await Comment.update({ parentId: null }, { where: { parentId: commentId } }).catch(() => {});
+
+    // 3. Delete main comment
     await comment.destroy();
 
     // 4. Decrement post comments count
@@ -246,7 +255,7 @@ export const deleteOwnComment = async (req, res) => {
       await redisClient.del(`post:${targetPostId}`);
     }
 
-    // 6. Success Response matched perfectly to FE expectations
+    // 6. Success Response
     return res.status(200).json({ 
       success: true, 
       message: "Comment deleted successfully",
