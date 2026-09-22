@@ -207,30 +207,57 @@ export const getCommentReplies = async (req, res) => {
 export const deleteOwnComment = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { commentId } = req.params;
+    const { postId, commentId } = req.params;
 
+    // 1. Find comment
     const comment = await Comment.findByPk(commentId);
-    if (!comment || comment.userId !== userId) {
-      return res.status(403).json({ success: false, message: "Unauthorized" });
+    
+    if (!comment) {
+      return res.status(404).json({ success: false, message: "Comment not found" });
     }
 
-    if (comment.status === "deleted") return res.status(400).json({ message: "Already deleted" });
+    // 2. Check Authorization (Owner OR Admin)
+    const isOwner = comment.userId === userId;
+    const isAdmin = Boolean(req.user.isAdmin) || req.user.role === 'admin';
 
-    const post = await Post.findByPk(comment.postId);
-    await comment.update({ status: "deleted" });
-
-    if (post && post.commentsCount > 0) {
-      await post.decrement("commentsCount");
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "You are not authorized to delete this comment" 
+      });
     }
 
+    const targetPostId = postId || comment.postId; // Get Post ID safely
+
+    // 3. Delete comment (Hard delete as requested by FE tests)
+    await comment.destroy();
+
+    // 4. Decrement post comments count
+    if (targetPostId) {
+      await Post.decrement('commentsCount', { 
+        by: 1, 
+        where: { id: targetPostId } 
+      });
+    }
+
+    // 5. Clear Redis Cache
     if (redisClient?.isReady) {
-      await redisClient.del(`comments:${comment.postId}`);
-      await redisClient.del(`post:${comment.postId}`);
+      await redisClient.del(`comments:${targetPostId}`);
+      await redisClient.del(`post:${targetPostId}`);
     }
 
-    return res.json({ success: true, message: "Comment deleted" });
+    // 6. Success Response matched perfectly to FE expectations
+    return res.status(200).json({ 
+      success: true, 
+      message: "Comment deleted successfully",
+      commentId 
+    });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Delete failed" });
+    console.error("🔥 Delete comment error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || "Delete failed" 
+    });
   }
 };
 

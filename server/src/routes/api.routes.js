@@ -122,6 +122,8 @@ router.delete(
   protect,
   deleteOwnComment
 );
+// 🔥 FE Dev ki requested NEW route
+router.delete("/posts/:postId/comments/:commentId", protect, deleteOwnComment);
 
 router.post("/posts/:id/like", protect, toggleLikePost);
 router.get("/posts/:id/likes", getPostLikes);
