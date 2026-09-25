@@ -123,11 +123,11 @@ export const createPost = async (req, res) => {
     if (req.files && req.files.backgroundMusic && req.files.backgroundMusic.length > 0) {
       const musicFile = req.files.backgroundMusic[0];
       
-      let bgmExt = path.extname(musicFile.originalname).toLowerCase();
-      if (!bgmExt) bgmExt = '.m4a'; 
+      let originalExt = path.extname(musicFile.originalname).toLowerCase();
+      let bgmExt = '.m4a'; // 🔥 FORCED to .m4a for AAC/Faststart optimization
 
       let calculatedAudioDuration = 0;
-      const tempAudioPath = path.join(os.tmpdir(), `temp_bgm_${Date.now()}${bgmExt}`);
+      const tempAudioPath = path.join(os.tmpdir(), `temp_bgm_${Date.now()}${originalExt || '.mp3'}`);
       const processedAudioPath = path.join(os.tmpdir(), `processed_bgm_${Date.now()}${bgmExt}`);
       
       let uploadBuffer = musicFile.buffer; 
@@ -143,19 +143,21 @@ export const createPost = async (req, res) => {
           if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
           if (bgmTrimDuration > 0) ffCommand = ffCommand.setDuration(bgmTrimDuration);
 
-          ffCommand.outputOptions(['-c', 'copy'])
-          .save(processedAudioPath)
+          // 🔥 PRO FIX: Exact Precision + Instant Playback
+          ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
+            .save(processedAudioPath)
             .on('end', resolve)
             .on('error', reject);
         });
 
         uploadBuffer = fs.readFileSync(processedAudioPath);
         calculatedAudioDuration = await getVideoDuration(processedAudioPath); 
-        console.log(`✅ [SUCCESS] Caption Audio (BGM) Trimmed! Duration: ${calculatedAudioDuration}s`);
+        console.log(`✅ [SUCCESS] Caption Audio (BGM) Trimmed perfectly! Duration: ${calculatedAudioDuration}s`);
 
       } catch (e) {
         console.error("⚠️ Backend BGM Trim Error:", e.message);
-        calculatedAudioDuration = await getVideoDuration(tempAudioPath).catch(() => 0); 
+        // 🔥 STRICT SECURITY: No silent fallback! Abort request if trim fails.
+        throw new Error("BGM Audio trimming failed. Request aborted."); 
       } finally {
         if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
         if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
@@ -166,7 +168,7 @@ export const createPost = async (req, res) => {
       const blob = bucket.file(fileName);
       
       await blob.save(uploadBuffer, { 
-        metadata: { contentType: musicFile.mimetype },
+        metadata: { contentType: 'audio/mp4' },
         resumable: uploadBuffer.length > 5 * 1024 * 1024,
       });
       
@@ -216,12 +218,17 @@ export const createPost = async (req, res) => {
         if (isVideo) folderName = 'post_videos';
         else if (isAudio) folderName = 'post_audios';
 
-        let ext = path.extname(file.originalname).toLowerCase();
+        let originalExt = path.extname(file.originalname).toLowerCase();
+        let ext = originalExt;
+
         if (!ext) {
             if (isVideo) ext = '.mp4';
             else if (isAudio) ext = '.m4a';
             else ext = ''; 
         }
+
+        // 🔥 FORCED output to .m4a for audio to support Fast-Start
+        if (isAudio) ext = '.m4a';
 
         const rawFileNameWithoutPath = `user_${userId}_${Date.now()}_${index}${ext}`;
         const fileName = `${folderName}/${rawFileNameWithoutPath}`;
@@ -234,7 +241,7 @@ export const createPost = async (req, res) => {
 
         // 🎵 AUDIO HANDLING
         if (isAudio) {
-          const tempAudioPath = path.join(os.tmpdir(), `temp_audio_${Date.now()}_${index}${ext}`);
+          const tempAudioPath = path.join(os.tmpdir(), `temp_audio_${Date.now()}_${index}${originalExt || '.mp3'}`);
           const processedAudioPath = path.join(os.tmpdir(), `processed_audio_${Date.now()}_${index}${ext}`);
           
           try {
@@ -245,7 +252,8 @@ export const createPost = async (req, res) => {
               if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
               if (audioTrimDuration > 0) ffCommand = ffCommand.setDuration(audioTrimDuration);
 
-              ffCommand.outputOptions(['-c', 'copy'])
+              // 🔥 PRO FIX: Exact Precision + Instant Playback
+              ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
                 .save(processedAudioPath)
                 .on('end', resolve)
                 .on('error', reject);
@@ -253,18 +261,19 @@ export const createPost = async (req, res) => {
 
             uploadBuffer = fs.readFileSync(processedAudioPath); 
             calculatedMediaAudioDuration = await getVideoDuration(processedAudioPath); 
-            console.log(`✅ [SUCCESS] Audio Post Trimmed & Fast-Start applied! Duration: ${calculatedMediaAudioDuration}s`);
+            console.log(`✅ [SUCCESS] Audio Post Trimmed exactly & Fast-Start applied! Duration: ${calculatedMediaAudioDuration}s`);
             
           } catch (e) {
             console.error("⚠️ Backend Audio Trim Error:", e.message);
-            calculatedMediaAudioDuration = await getVideoDuration(tempAudioPath).catch(() => 0);
+            // 🔥 STRICT SECURITY: No silent fallback! Abort request if trim fails.
+            throw new Error("Main Audio trimming failed. Request aborted.");
           } finally {
             if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
             if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
           }
         }
 
-        // 🎥 VIDEO HANDLING: (🔥 FIX APPLIED HERE for Fast-Start & Buffer issues)
+        // 🎥 VIDEO HANDLING: (Fast-Start & Buffer issues fix)
         if (isVideo) {
           const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}${ext}`); 
           const processedVideoPath = path.join(os.tmpdir(), `processed_${Date.now()}_${index}.mp4`); 
@@ -314,7 +323,7 @@ export const createPost = async (req, res) => {
 
         // Upload to GCP
         await blob.save(uploadBuffer, {
-          metadata: { contentType: file.mimetype },
+          metadata: { contentType: isAudio ? 'audio/mp4' : file.mimetype },
           resumable: uploadBuffer.length > 5 * 1024 * 1024,
         });
 
