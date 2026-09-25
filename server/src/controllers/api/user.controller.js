@@ -3,6 +3,7 @@ import TokenBlacklist from "../../models/TokenBlacklist.js";
 import jwt from "jsonwebtoken";
 import { User, Follower, sequelize} from "../../models/index.js";
 import { Op } from "sequelize";
+import sequelize from "../../config/db.js";
 import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
 import { createNotification } from "../../services/notification.service.js";
@@ -843,21 +844,47 @@ export const getFollowCounts = async (req, res) => {
       if (cachedData) return res.json(JSON.parse(cachedData));
     }
 
-    const followers = await Follower.count({ where: { followingId: userId, status: "accepted" } });
-    const following = await Follower.count({ where: { followerId: userId, status: "accepted" } });
+    const followers = await Follower.count({ 
+      where: { followingId: userId, status: "accepted" } 
+    });
+    
+    const following = await Follower.count({ 
+      where: { followerId: userId, status: "accepted" } 
+    });
 
-    const counts = { followers, following };
+    // 🔥 FIX: Unique connections — dono taraf follow ho lekin ek baar count ho
+    const mutualConnections = await Follower.count({
+      where: {
+        followerId: userId,
+        status: "accepted",
+        // Sirf woh log jinhe current user follow karta hai 
+        // AUR woh bhi current user ko follow karte hain
+        followingId: {
+          [Op.in]: sequelize.literal(`(
+            SELECT "followerId" FROM "followers" 
+            WHERE "followingId" = '${userId}' 
+            AND "status" = 'accepted'
+          )`)
+        }
+      }
+    });
+
+    const counts = { 
+      followers,      // Total followers count
+      following,      // Total following count
+      connections: mutualConnections  // 🔥 Cycle icon ke liye — mutual only
+    };
 
     if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(counts));
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(counts));
     }
 
     res.json(counts);
   } catch (error) {
+    console.error("getFollowCounts error:", error);
     res.status(500).json({ error: error.message });
   }
 };
-
 export const getFollowStatus = async (req, res) => {
   try {
     const loggedInUserId = req.user.id;
