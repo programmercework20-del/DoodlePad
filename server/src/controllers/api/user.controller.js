@@ -3,7 +3,6 @@ import TokenBlacklist from "../../models/TokenBlacklist.js";
 import jwt from "jsonwebtoken";
 import { User, Follower, sequelize} from "../../models/index.js";
 import { Op } from "sequelize";
-import sequelize from "../../config/db.js";
 import crypto from "crypto";
 import { sendEmail } from "../../utils/sendEmail.js";
 import { createNotification } from "../../services/notification.service.js";
