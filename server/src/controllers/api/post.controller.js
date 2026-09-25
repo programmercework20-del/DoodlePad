@@ -143,8 +143,7 @@ export const createPost = async (req, res) => {
           if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
           if (bgmTrimDuration > 0) ffCommand = ffCommand.setDuration(bgmTrimDuration);
 
-          ffCommand.outputOptions(['-c', 'copy', '-movflags', '+faststart'])
-            .save(processedAudioPath)
+          ffCommand.save(processedAudioPath)
             .on('end', resolve)
             .on('error', reject);
         });
@@ -245,8 +244,7 @@ export const createPost = async (req, res) => {
               if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
               if (audioTrimDuration > 0) ffCommand = ffCommand.setDuration(audioTrimDuration);
 
-              ffCommand.outputOptions(['-c', 'copy', '-movflags', '+faststart'])
-                .save(processedAudioPath)
+              ffCommand.save(processedAudioPath)
                 .on('end', resolve)
                 .on('error', reject);
             });
