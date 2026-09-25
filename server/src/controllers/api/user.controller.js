@@ -851,13 +851,11 @@ export const getFollowCounts = async (req, res) => {
       where: { followerId: userId, status: "accepted" } 
     });
 
-    // 🔥 FIX: Unique connections — dono taraf follow ho lekin ek baar count ho
+    // 🤝 Mutual connections (dono taraf se follow)
     const mutualConnections = await Follower.count({
       where: {
         followerId: userId,
         status: "accepted",
-        // Sirf woh log jinhe current user follow karta hai 
-        // AUR woh bhi current user ko follow karte hain
         followingId: {
           [Op.in]: sequelize.literal(`(
             SELECT "followerId" FROM "followers" 
@@ -868,10 +866,15 @@ export const getFollowCounts = async (req, res) => {
       }
     });
 
+    // 🔥 FIX: Total Unique Connections (Duplicate hatane ke baad)
+    // Formula: Total Followers + Total Following - Mutual
+    const totalUniqueConnections = followers + following - mutualConnections;
+
     const counts = { 
-      followers,      // Total followers count
-      following,      // Total following count
-      connections: mutualConnections  // 🔥 Cycle icon ke liye — mutual only
+      followers,                // 📱 Insta-style Followers Tab ke neeche dikhane ke liye
+      following,                // 📱 Insta-style Following Tab ke neeche dikhane ke liye
+      mutualConnections,        // Agar future me "mutuals" dikhana ho 
+      totalUniqueConnections    // 🚲 Cycle Icon ke left me dikhane ke liye (Ye exact 6 dega)
     };
 
     if (redisClient?.isReady) {
