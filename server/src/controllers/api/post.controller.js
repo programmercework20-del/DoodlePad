@@ -232,6 +232,7 @@ export const createPost = async (req, res) => {
         let calculatedMediaAudioDuration = 0;
         let uploadBuffer = file.buffer; 
 
+        // 🎵 AUDIO HANDLING
         if (isAudio) {
           const tempAudioPath = path.join(os.tmpdir(), `temp_audio_${Date.now()}_${index}${ext}`);
           const processedAudioPath = path.join(os.tmpdir(), `processed_audio_${Date.now()}_${index}${ext}`);
@@ -263,36 +264,55 @@ export const createPost = async (req, res) => {
           }
         }
 
-        if (isVideo && !thumbnail) {
+        // 🎥 VIDEO HANDLING: (🔥 FIX APPLIED HERE for Fast-Start & Buffer issues)
+        if (isVideo) {
           const tempVideoPath = path.join(os.tmpdir(), `temp_${Date.now()}_${index}${ext}`); 
+          const processedVideoPath = path.join(os.tmpdir(), `processed_${Date.now()}_${index}.mp4`); 
           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}_${index}.jpg`);
           
           try {
             fs.writeFileSync(tempVideoPath, file.buffer);
 
+            // Thumbnail extraction
+            if (!thumbnail) {
+                await new Promise((resolve, reject) => {
+                  ffmpeg(tempVideoPath)
+                    .inputOptions('-threads 2')
+                    .screenshots({
+                      count: 1, timemarks: ['00:00:01'], filename: path.basename(tempThumbPath),
+                      folder: os.tmpdir(), size: '640x?'
+                    })
+                    .on('end', resolve).on('error', reject);
+                });
+
+                const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
+                const thumbBlob = bucket.file(thumbFileName);
+                await thumbBlob.save(fs.readFileSync(tempThumbPath), { metadata: { contentType: 'image/jpeg' } });
+                thumbnail = `${CDN_BASE_URL}/${thumbFileName}`;
+            }
+
+            // Apply Fast-Start to Video
             await new Promise((resolve, reject) => {
               ffmpeg(tempVideoPath)
-                .inputOptions('-threads 2')
-                .screenshots({
-                  count: 1, timemarks: ['00:00:01'], filename: path.basename(tempThumbPath),
-                  folder: os.tmpdir(), size: '640x?'
-                })
-                .on('end', resolve).on('error', reject);
+                .outputOptions(['-c', 'copy', '-movflags', '+faststart'])
+                .save(processedVideoPath)
+                .on('end', resolve)
+                .on('error', reject);
             });
 
-            const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}_${index}.jpg`;
-            const thumbBlob = bucket.file(thumbFileName);
-            await thumbBlob.save(fs.readFileSync(tempThumbPath), { metadata: { contentType: 'image/jpeg' } });
-            thumbnail = `${CDN_BASE_URL}/${thumbFileName}`;
+            uploadBuffer = fs.readFileSync(processedVideoPath); // Update buffer with fast-start video
+            console.log(`✅ [SUCCESS] Video Fast-Start applied successfully!`);
 
-          } catch (thumbErr) {
-            console.error("⚠️ Thumbnail extraction failed:", thumbErr);
+          } catch (err) {
+            console.error("⚠️ Video processing failed:", err);
           } finally {
             if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
+            if (fs.existsSync(processedVideoPath)) fs.unlinkSync(processedVideoPath);
             if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
           }
         }
 
+        // Upload to GCP
         await blob.save(uploadBuffer, {
           metadata: { contentType: file.mimetype },
           resumable: uploadBuffer.length > 5 * 1024 * 1024,
