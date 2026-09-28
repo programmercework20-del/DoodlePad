@@ -36,7 +36,7 @@ import {
   deleteFcmToken
 } from "../controllers/api/user.controller.js";
 
-import { createPost, deletePost, getUserPosts, getArchivedPosts, restoreArchivedPost, archivePost } 
+import { createPost, deletePost, getUserPosts, getArchivedPosts, restoreArchivedPost, archivePost ,generateResumableUploadUrl } 
 from "../controllers/api/post.controller.js";
 
 import { sharePost , handleSharedLink } from "../controllers/api/share.controller.js";
@@ -94,7 +94,7 @@ router.post(
 );
 router.delete("/posts/:id", protect, deletePost);
 router.get("/users/:id/posts", getUserPosts);
-
+router.post("/posts/resumable-url", protect, generateResumableUploadUrl);
 
 router.get("/posts/archive", protect, getArchivedPosts);
 router.post("/posts/:id/archive", protect, archivePost);

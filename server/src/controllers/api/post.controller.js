@@ -759,3 +759,44 @@ export const getUserPosts = async (req, res) => {
     });
   }
 };
+// ==========================================
+// 🚀 NEW: GENERATE RESUMABLE UPLOAD URL (CHUNKED)
+// ==========================================
+export const generateResumableUploadUrl = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // Frontend hume batayega ki file audio hai ya video, aur uska extension kya hai
+    const { fileType, ext, contentType } = req.body; 
+
+    // Folder decide karo
+    let folderName = 'post_images';
+    if (fileType === 'video') folderName = 'post_videos';
+    else if (fileType === 'audio') folderName = 'post_audios';
+
+    // Ek unique file name banao
+    const rawFileName = `user_${userId}_${Date.now()}${ext || '.mp4'}`;
+    const fileName = `${folderName}/${rawFileName}`;
+
+    const file = bucket.file(fileName);
+
+    // 🔥 GCP se ek "Resumable Session" initiate karo
+    const [uploadUrl] = await file.createResumableUpload({
+      metadata: {
+        contentType: contentType, // e.g., 'video/mp4'
+      },
+      origin: '*', // Mobile app se direct access allow karne ke liye
+    });
+
+    // Frontend ko wo direct URL aur File ka naam de do
+    return res.status(200).json({
+      success: true,
+      uploadUrl, // Mobile app is URL par seedha chunks (tukde) bhejegi
+      fileName,  // Mobile app ye naam hume wapas degi post create karte time
+      mediaUrl: `${process.env.CDN_BASE_URL}/${fileName}` // Final CDN link (optional reference ke liye)
+    });
+
+  } catch (error) {
+    console.error("⚠️ Resumable URL Error:", error);
+    res.status(500).json({ success: false, message: "Could not generate resumable upload URL" });
+  }
+};
