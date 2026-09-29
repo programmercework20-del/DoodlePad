@@ -42,228 +42,6 @@ const isPrivacyEnabled = (value) => {
   return Boolean(value);
 };
 
-// export const getUserProfile = async (req, res) => {
-//   try {
-//     const currentUserId = req.user.id;
-//     const targetUserId = req.params.id;
-
-
-//     // 🛡️ GUARD CHECK: DB hit hone se pehle hi invalid ID ko rok do
-//     if (!targetUserId || targetUserId === "undefined" || targetUserId === "null") {
-//       return res.status(400).json({ success: false, message: "Invalid target user ID" });
-//     }
-
-//     const isOwnProfile = String(currentUserId) === String(targetUserId);
-
-//     const user = await User.findByPk(targetUserId, {
-//       attributes: {
-//         exclude: ['password', 'otp', 'otpExpires', 'phoneOtp',
-//                   'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
-//       }
-//     });
-
-//     if (!user) {
-//       return res.status(404).json({ success: false, message: "User not found" });
-//     }
-
-//     if (isOwnProfile) {
-//       const [followersCount, followingCount, postsCount] = await Promise.all([
-//         Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
-//         Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
-//         Post.count({ where: { userId: targetUserId, status: "active" } })
-//       ]);
-
-//       const userPosts = await Post.findAll({
-//         where: {
-//           userId: targetUserId,
-//           status: "active"
-//         },
-//         order: [['createdAt', 'DESC']],
-//         limit: 50
-//       });
-
-//       // Ensure activeDoodles always include explicit owner fields so FE maps correctly
-//       const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
-//         ...d,
-//         name: d.senderName || d.name || null,
-//         username: d.senderUsername || d.username || null,
-//         profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
-//         ownerId: d.senderId || d.ownerId || null
-//       })) : []);
-
-//       return res.status(200).json({
-//         success: true,
-//         data: {
-//           profile: {
-//             user: {
-//               id: user.id,
-//               name: user.name,
-//               username: user.username,
-//               bio: user.bio,
-//               profilePhoto: user.profilePhoto,
-//               isPrivate: user.isPrivate,
-//               isVerified: user.isVerified,
-//               activeDoodles: normalizeDoodles(user.activeDoodles),
-//               doodleImage: user.doodleImage,
-//               doodleData: user.doodleData,
-//               doodleOwnerId: user.doodleOwnerId,
-//               isFollowing: false,
-//               isRequestPending: false,
-//               canViewProfile: true,
-//               isMutualFollow: false,
-//               followsYou: false
-//             },
-//             stats: {
-//               followers: followersCount,
-//               following: followingCount,
-//               posts: postsCount
-//             },
-//             posts: userPosts,
-//             isFollowing: false,
-//             isRequestPending: false,
-//             canViewProfile: true,
-//             isMutualFollow: false,
-//             followsYou: false
-//           },
-//           isFollowing: false,
-//           isRequestPending: false,
-//           canViewProfile: true,
-//           isMutualFollow: false,
-//           followsYou: false
-//         }
-//       });
-//     }
-
-//     // 🛡️ 1. BLOCK CHECK
-//     const blockRecord = await Block.findOne({
-//       where: {
-//         [Op.or]: [
-//           { blockerId: currentUserId, blockedId: targetUserId },
-//           { blockerId: targetUserId, blockedId: currentUserId }
-//         ]
-//       }
-//     });
-
-//     if (blockRecord) {
-//       return res.status(403).json({
-//         success: false,
-//         message: "This profile is not available."
-//       });
-//     }
-
-//     // 📊 2. STATS
-//     const [followersCount, followingCount, postsCount] = await Promise.all([
-//       Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
-//       Follower.count({ where: { followerId: targetUserId, status: "accepted" } }),
-//       Post.count({ where: { userId: targetUserId, status: "active" } })
-//     ]);
-
-//     // 🤝 3. FOLLOW STATUS
-//     const currentUserFollowsTarget = await Follower.findOne({
-//       where: {
-//         followerId: currentUserId,
-//         followingId: targetUserId,
-//         status: "accepted"
-//       }
-//     });
-//     const targetFollowsCurrentUser = await Follower.findOne({
-//       where: {
-//         followerId: targetUserId,
-//         followingId: currentUserId,
-//         status: "accepted"
-//       }
-//     });
-//     const isFollowing = !!currentUserFollowsTarget;
-//     const isMutualFollow = !!currentUserFollowsTarget && !!targetFollowsCurrentUser;
-
-//     // 🔥 4. PENDING REQUEST CHECK
-//     const pendingRequest = await Follower.findOne({
-//       where: {
-//         followerId: currentUserId,
-//         followingId: targetUserId,
-//         status: "pending"
-//       }
-//     });
-//     const isRequestPending = !!pendingRequest;
-
-//     // 🖼️ 5. POSTS — Privacy wall
-//     const isTargetPrivate = isPrivacyEnabled(user.isPrivate);
-//     let userPosts = [];
-//     const canViewProfile = !isTargetPrivate || isFollowing || isMutualFollow || !!targetFollowsCurrentUser;
-
-//     if (canViewProfile) {
-//       userPosts = await Post.findAll({
-//         where: {
-//           userId: targetUserId,
-//           status: "active"
-//         },
-//         order: [['createdAt', 'DESC']],
-//         limit: 50
-//       });
-//     }
-
-//     // activeDoodles (cover slider) should be visible to everyone regardless of privacy
-//     const showDoodle = true;
-
-//     const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
-//       ...d,
-//       name: d.senderName || d.name || null,
-//       username: d.senderUsername || d.username || null,
-//       profilePhoto: d.senderProfilePhoto || d.profilePhoto || null,
-//       ownerId: d.senderId || d.ownerId || null
-//     })) : []);
-
-//     return res.status(200).json({
-//       success: true,
-//       data: {
-//         profile: {
-//           user: {
-//             id: user.id,
-//             name: user.name,
-//             username: user.username,
-//             bio: user.bio,
-//             profilePhoto: user.profilePhoto,
-//               isPrivate: user.isPrivate,
-//               isVerified: user.isVerified,
-//               activeDoodles: normalizeDoodles(user.activeDoodles),
-//               doodleImage: showDoodle ? user.doodleImage : null,
-//               doodleData: showDoodle ? user.doodleData : null,
-//               doodleOwnerId: showDoodle ? user.doodleOwnerId : null,
-//             isFollowing,
-//             isRequestPending,
-//             canViewProfile,
-//             isMutualFollow,
-//             followsYou: !!targetFollowsCurrentUser
-//           },
-//           stats: {
-//             followers: followersCount,
-//             following: followingCount,
-//             posts: postsCount
-//           },
-//           posts: userPosts,
-//           isFollowing,
-//           isRequestPending,
-//           canViewProfile,
-//           isMutualFollow,
-//           followsYou: !!targetFollowsCurrentUser
-//         },
-//         isFollowing,
-//         isRequestPending,
-//         canViewProfile,
-//         isMutualFollow,
-//         followsYou: !!targetFollowsCurrentUser
-//       }
-//     });
-//   } catch (error) {
-//     console.error("🔥 GET USER PROFILE ERROR:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch user profile"
-//     });
-//   }
-// };
-
-// 2. UPDATE MY PROFILE
 
 export const getUserProfile = async (req, res) => {
   try {
@@ -665,70 +443,6 @@ try {
   }
 };
 
-// get my profile (with caching)
-// ============================================================
-// GET MY PROFILE (Fixed ReferenceError & 60s Redis TTL)
-// ============================================================
-// export const getMyProfile = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-
-//     // 1. Check Redis Cache
-//     if (redisClient?.isReady) {
-//       try {
-//         const cached = await redisClient.get(`myProfile:${userId}`);
-//         if (cached) {
-//           return res.json(JSON.parse(cached));
-//         }
-//       } catch (e) {
-//         console.error("⚠️ Redis GET error:", e.message);
-//       }
-//     }
-
-//     // 2. Fetch User from DB
-//     const user = await User.findByPk(userId, {
-//       attributes: {
-//         exclude: ['password', 'otp', 'otpExpires', 'phoneOtp', 'phoneOtpExpires', 'fcmToken', 'resetPasswordToken']
-//       }
-//     });
-
-//     if (!user) {
-//       return res.status(404).json({ success: false, message: "User not found" });
-//     }
-
-//     // 3. Normalize Active Doodles
-//     const activeDoodles = normalizeDoodles(user.activeDoodles);
-
-//     // 🔥 FIX: profileData variable explicitly defined here
-//     const profileData = {
-//       success: true,
-//       data: {
-//         profile: {
-//           user: {
-//             ...user.toJSON(),
-//             activeDoodles: activeDoodles
-//           }
-//         }
-//       }
-//     };
-
-//     // 4. Set Redis Cache with 60 seconds TTL
-//     if (redisClient?.isReady) {
-//       try {
-//         await redisClient.setEx(`myProfile:${userId}`, 60, JSON.stringify(profileData));
-//       } catch (e) {
-//         console.error("⚠️ Redis SET error:", e.message);
-//       }
-//     }
-
-//     return res.json(profileData);
-
-//   } catch (error) {
-//     console.error("🔥 GET PROFILE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to fetch profile" });
-//   }
-// };
-// ============================================================
 // 4. SEND DOODLE REQUEST (Updated GCS Path to doodle_covers)
 // ============================================================
 export const sendDoodleRequest = async (req, res) => {
@@ -1019,8 +733,8 @@ export const toggleProfileLike = async (req, res) => {
 // ============================================================
 export const getProfileLikers = async (req, res) => {
   try {
-    const profileId = req.params.id; // Jis profile ke likes dekhne hain
-    const currentUserId = req.user.id; // Jo user list dekhne ki koshish kar raha hai
+    const profileId = req.params.id; 
+    const currentUserId = req.user.id; 
 
     // 🛡️ PRIVACY GUARD: Sirf apni profile ke likes dekhne allow karo
     if (String(profileId) !== String(currentUserId)) {
@@ -1030,7 +744,6 @@ export const getProfileLikers = async (req, res) => {
       });
     }
 
-    // Agar user khud ki hi list maang raha hai, toh fetch karke de do
     const likers = await ProfileLike.findAll({
       where: { profileId },
       include: [
@@ -1043,7 +756,13 @@ export const getProfileLikers = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
-    const likersList = likers.map(like => like.liker);
+    // 🔥 PRO-LEVEL FIX: Null check aur Timestamp addition
+    const likersList = likers
+      .filter(like => like.liker) // Agar koi liker delete ho chuka hai toh usko list se hata do (App crash se bachegi)
+      .map(like => ({
+        ...like.liker.toJSON(), // User ki saari details (name, username, etc.) le lo
+        likedAt: like.createdAt // 🔥 UI par time dikhane ke liye exact time attach kar diya
+      }));
 
     return res.status(200).json({
       success: true,
