@@ -200,7 +200,7 @@ export const createPost = async (req, res) => {
       let isVideo = cleanType === 'video';
       let isAudio = cleanType === 'audio';
 
-      // 1. Handle Main Media (Audio Post Trimming)
+      // 1. Handle Main Media (Audio/Video/Image)
       if (req.body.uploadedFileName) {
         let fileName = req.body.uploadedFileName;
         let fileUrl = `${CDN_BASE_URL}/${fileName}`;
@@ -240,13 +240,13 @@ export const createPost = async (req, res) => {
         mediaUrls.push(fileUrl);
       }
 
-      // 2. Handle Background Music (BGM Trimming)
+      // 2. Handle Background Music (BGM Trimming) - FOR ALL TYPES (Doodle, Text, Image, Video)
       if (req.body.backgroundMusic) {
         let bgmFileName = req.body.backgroundMusic;
         let bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`;
-        let bgmTrimStart = req.body.bgmTrimStart ? parseFloat(req.body.bgmTrimStart) : 0;
-        let bgmTrimDuration = req.body.bgmDuration ? parseFloat(req.body.bgmDuration) : null;
-        let finalDuration = bgmTrimDuration || (duration ? parseFloat(duration) : 0);
+        let bgmTrimStart = parseFloat(req.body.bgmTrimStart || 0);
+        let bgmTrimDuration = parseFloat(req.body.bgmDuration || 0);
+        let finalDuration = bgmTrimDuration > 0 ? bgmTrimDuration : (duration ? parseFloat(duration) : 0);
 
         // ✂️ PHYSICAL TRIM LOGIC: Background Music
         if (bgmTrimStart > 0 || bgmTrimDuration > 0) {
@@ -268,9 +268,9 @@ export const createPost = async (req, res) => {
 
                bgmFileName = trimmedFileName; 
                bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`; 
-               console.log(`✅ BGM physically trimmed & saved: ${bgmUrl}`);
+               console.log(`✅ BGM physically trimmed & saved for ${cleanType}: ${bgmUrl}`);
            } catch (e) {
-               console.error("⚠️ BGM GCP Trim Error:", e);
+               console.error(`⚠️ BGM GCP Trim Error for ${cleanType}:`, e);
            } finally {
                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
