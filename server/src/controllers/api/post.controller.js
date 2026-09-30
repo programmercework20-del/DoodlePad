@@ -434,9 +434,12 @@ export const createPost = async (req, res) => {
                             await post.update({ mediaUrls: [hlsUrl] });
                         } else {
                             // Audio post ka HLS link 'backgroundAudios' me update hoga
-                            await post.update({ 
-                                backgroundAudios: [{ url: hlsUrl, duration: post.backgroundAudios[0]?.duration || 0 }] 
-                            });
+                            // 🔥 BUG FIX: Ab ye duration galti se 0 nahi karega, main post ki duration uthayega
+                        let correctDuration = post.duration || (post.backgroundAudios && post.backgroundAudios[0] ? post.backgroundAudios[0].duration : 0);
+                                                
+                        await post.update({ 
+                            backgroundAudios: [{ url: hlsUrl, duration: correctDuration }] 
+                        });
                         }
                         
                         console.log(`✅ [HLS SUCCESS] Post ${post.id} updated with ${fileTypeParams.toUpperCase()} HLS URL!`);
