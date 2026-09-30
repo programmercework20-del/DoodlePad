@@ -46,7 +46,7 @@ async function generateDoodleImage(pathsArray) {
     .webp({ quality: 80, lossless: false }) // WebP is super light
     .toBuffer();
 }
-// trim only in audio and caption audio
+
 export const createPost = async (req, res) => {
   try {
     // ⏱️ PERF: Start Timer
@@ -167,7 +167,6 @@ export const createPost = async (req, res) => {
       }];
     } 
     else if (req.body.backgroundMusicUrl || req.body.backgroundAudios) {
-        // ... (Keep existing fallback parsing logic as is)
         const rawInput = req.body.backgroundMusicUrl || req.body.backgroundAudios;
         const fallbackDuration = req.body.audioDuration || req.body.backgroundMusicDuration || duration || 0;
         try {
@@ -195,7 +194,27 @@ export const createPost = async (req, res) => {
     // 2. MAIN MEDIA UPLOAD
     // ==========================================
     const tMediaStart = performance.now();
-    if (req.files && req.files.media && req.files.media.length > 0) {
+
+    // 🔥 NAYA FLOW (GCP Direct Upload via Frontend)
+    if (req.body.uploadedFileName) {
+      let isVideo = cleanType === 'video';
+      let isAudio = cleanType === 'audio';
+
+      const fileName = req.body.uploadedFileName;
+      const fileUrl = `${CDN_BASE_URL}/${fileName}`;
+
+      if (isVideo) {
+        uploadedVideoFileName = fileName;
+        mediaUrls.push(fileUrl);
+      } else if (isAudio) {
+        uploadedAudioFileName = fileName;
+        backgroundAudios.push({ url: fileUrl, duration: parseFloat(duration || 0) });
+      } else {
+        mediaUrls.push(fileUrl);
+      }
+    }
+    // 🐢 PURANA FLOW (Fallback - Agar file Node.js par aayi hai)
+    else if (req.files && req.files.media && req.files.media.length > 0) {
       const uploadPromises = req.files.media.map(async (file, index) => {
         let isVideo = file.mimetype.startsWith('video');
         let isAudio = file.mimetype.startsWith('audio');
@@ -209,7 +228,7 @@ export const createPost = async (req, res) => {
         const fileName = `${folderName}/${rawFileNameWithoutPath}`;
         
         if (isVideo) uploadedVideoFileName = fileName; 
-        if (isAudio) uploadedAudioFileName = fileName; // 🔥 Capturing Audio filename for HLS
+        if (isAudio) uploadedAudioFileName = fileName; 
 
         const blob = bucket.file(fileName);
         let calculatedMediaAudioDuration = 0;
