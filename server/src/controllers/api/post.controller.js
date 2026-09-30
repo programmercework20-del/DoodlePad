@@ -196,21 +196,30 @@ export const createPost = async (req, res) => {
     const tMediaStart = performance.now();
 
     // 🔥 NAYA FLOW (GCP Direct Upload via Frontend)
-    if (req.body.uploadedFileName) {
+    if (req.body.uploadedFileName || req.body.backgroundMusic) {
       let isVideo = cleanType === 'video';
       let isAudio = cleanType === 'audio';
 
-      const fileName = req.body.uploadedFileName;
-      const fileUrl = `${CDN_BASE_URL}/${fileName}`;
+      // 1. Handle Main Media (Image/Video/Audio)
+      if (req.body.uploadedFileName) {
+        const fileName = req.body.uploadedFileName;
+        const fileUrl = `${CDN_BASE_URL}/${fileName}`;
 
-      if (isVideo) {
-        uploadedVideoFileName = fileName;
+        if (isVideo) uploadedVideoFileName = fileName;
+        if (isAudio) uploadedAudioFileName = fileName; 
+
+        // 🔥 FIX 1: Har type ki main media 'mediaUrls' me hi jayegi (FE Audio Caption issue fixed)
         mediaUrls.push(fileUrl);
-      } else if (isAudio) {
-        uploadedAudioFileName = fileName;
-        backgroundAudios.push({ url: fileUrl, duration: parseFloat(duration || 0) });
-      } else {
-        mediaUrls.push(fileUrl);
+      }
+
+      // 2. Handle Background Music (BGM)
+      if (req.body.backgroundMusic) {
+        // 🔥 FIX 2: Correct payload mapping for BGM
+        const bgmFileName = req.body.backgroundMusic;
+        const bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`;
+        const bgmDur = req.body.bgmDuration ? parseFloat(req.body.bgmDuration) : (duration ? parseFloat(duration) : 0);
+        
+        backgroundAudios.push({ url: bgmUrl, duration: bgmDur });
       }
     }
     // 🐢 PURANA FLOW (Fallback - Agar file Node.js par aayi hai)
