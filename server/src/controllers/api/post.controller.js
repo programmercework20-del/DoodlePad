@@ -193,33 +193,91 @@ export const createPost = async (req, res) => {
     // ==========================================
     // 2. MAIN MEDIA UPLOAD
     // ==========================================
-    const tMediaStart = performance.now();
+   const tMediaStart = performance.now();
 
     // 🔥 NAYA FLOW (GCP Direct Upload via Frontend)
     if (req.body.uploadedFileName || req.body.backgroundMusic) {
       let isVideo = cleanType === 'video';
       let isAudio = cleanType === 'audio';
 
-      // 1. Handle Main Media (Image/Video/Audio)
+      // 1. Handle Main Media (Audio Post Trimming)
       if (req.body.uploadedFileName) {
-        const fileName = req.body.uploadedFileName;
-        const fileUrl = `${CDN_BASE_URL}/${fileName}`;
+        let fileName = req.body.uploadedFileName;
+        let fileUrl = `${CDN_BASE_URL}/${fileName}`;
+
+        // ✂️ PHYSICAL TRIM LOGIC: Main Audio Post
+        if (isAudio && (audioTrimStart > 0 || audioTrimDuration > 0)) {
+           const tempInput = path.join(os.tmpdir(), `raw_main_${Date.now()}.m4a`);
+           const tempOutput = path.join(os.tmpdir(), `trimmed_main_${Date.now()}.m4a`);
+           try {
+               await bucket.file(fileName).download({ destination: tempInput });
+               
+               await new Promise((resolve, reject) => {
+                 let ffCommand = ffmpeg(tempInput);
+                 if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
+                 if (audioTrimDuration > 0) ffCommand = ffCommand.setDuration(audioTrimDuration);
+                 ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
+                   .save(tempOutput).on('end', resolve).on('error', reject);
+               });
+
+               const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
+               await bucket.file(trimmedFileName).upload(tempOutput, { metadata: { contentType: 'audio/mp4' } });
+
+               fileName = trimmedFileName; 
+               fileUrl = `${CDN_BASE_URL}/${fileName}`; 
+               console.log(`✅ Main Audio physically trimmed & saved: ${fileUrl}`);
+           } catch (e) {
+               console.error("⚠️ Main Audio GCP Trim Error:", e);
+           } finally {
+               if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+               if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+           }
+        }
 
         if (isVideo) uploadedVideoFileName = fileName;
-        if (isAudio) uploadedAudioFileName = fileName; 
-
-        // 🔥 FIX 1: Har type ki main media 'mediaUrls' me hi jayegi (FE Audio Caption issue fixed)
+        if (isAudio) uploadedAudioFileName = fileName; // Trimmed file HLS me jayegi
+        
         mediaUrls.push(fileUrl);
       }
 
-      // 2. Handle Background Music (BGM)
+      // 2. Handle Background Music (BGM Trimming)
       if (req.body.backgroundMusic) {
-        // 🔥 FIX 2: Correct payload mapping for BGM
-        const bgmFileName = req.body.backgroundMusic;
-        const bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`;
-        const bgmDur = req.body.bgmDuration ? parseFloat(req.body.bgmDuration) : (duration ? parseFloat(duration) : 0);
+        let bgmFileName = req.body.backgroundMusic;
+        let bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`;
+        let bgmTrimStart = req.body.bgmTrimStart ? parseFloat(req.body.bgmTrimStart) : 0;
+        let bgmTrimDuration = req.body.bgmDuration ? parseFloat(req.body.bgmDuration) : null;
+        let finalDuration = bgmTrimDuration || (duration ? parseFloat(duration) : 0);
+
+        // ✂️ PHYSICAL TRIM LOGIC: Background Music
+        if (bgmTrimStart > 0 || bgmTrimDuration > 0) {
+           const tempInput = path.join(os.tmpdir(), `raw_bgm_${Date.now()}.m4a`);
+           const tempOutput = path.join(os.tmpdir(), `trimmed_bgm_${Date.now()}.m4a`);
+           try {
+               await bucket.file(bgmFileName).download({ destination: tempInput });
+               
+               await new Promise((resolve, reject) => {
+                 let ffCommand = ffmpeg(tempInput);
+                 if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
+                 if (bgmTrimDuration > 0) ffCommand = ffCommand.setDuration(bgmTrimDuration);
+                 ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
+                   .save(tempOutput).on('end', resolve).on('error', reject);
+               });
+
+               const trimmedFileName = `background_music/trimmed_${userId}_${Date.now()}.m4a`;
+               await bucket.file(trimmedFileName).upload(tempOutput, { metadata: { contentType: 'audio/mp4' } });
+
+               bgmFileName = trimmedFileName; 
+               bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`; 
+               console.log(`✅ BGM physically trimmed & saved: ${bgmUrl}`);
+           } catch (e) {
+               console.error("⚠️ BGM GCP Trim Error:", e);
+           } finally {
+               if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+               if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+           }
+        }
         
-        backgroundAudios.push({ url: bgmUrl, duration: bgmDur });
+        backgroundAudios.push({ url: bgmUrl, duration: finalDuration });
       }
     }
     // 🐢 PURANA FLOW (Fallback - Agar file Node.js par aayi hai)
