@@ -54,7 +54,7 @@ export const createPost = async (req, res) => {
     const tStart = performance.now();
     const timeLog = {};
 
-    console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
+    console.log("🕵️‍♂️️ [DEBUG] Create Post Frontend Payload:", req.body);
 
     const { type, content, caption, isSaved, duration, location } = req.body;
     const userId = req.user.id;
@@ -108,7 +108,7 @@ export const createPost = async (req, res) => {
           }
         }
       } catch (e) {
-        console.error("⚠️ Doodle paths parse error:", e);
+        console.error("⚠️️ Doodle paths parse error:", e);
       }
     }
     timeLog['Sharp_Doodle'] = (performance.now() - tDoodleStart).toFixed(2) + "ms";
@@ -222,7 +222,6 @@ export const createPost = async (req, res) => {
                const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
                const trimmedBuffer = fs.readFileSync(tempOutput);
                
-               // 🔥 FIXED: Using .save() instead of .upload()
                await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
 
                fileName = trimmedFileName; 
@@ -230,6 +229,8 @@ export const createPost = async (req, res) => {
                console.log(`✅ Main Audio physically trimmed & saved: ${fileUrl}`);
            } catch (e) {
                console.error("⚠️ Main Audio GCP Trim Error:", e);
+               // 🔥 STRICT ERROR THROW: Prevents raw file from being saved if FFmpeg fails
+               throw new Error(`FFmpeg Main Audio Trimming Failed: ${e.message}`);
            } finally {
                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
@@ -272,7 +273,6 @@ export const createPost = async (req, res) => {
                const trimmedFileName = `background_music/trimmed_${userId}_${Date.now()}.m4a`;
                const trimmedBuffer = fs.readFileSync(tempOutput);
                
-               // 🔥 FIXED: Using .save() instead of .upload()
                await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
 
                bgmFileName = trimmedFileName; 
@@ -280,6 +280,8 @@ export const createPost = async (req, res) => {
                console.log(`✅ BGM physically trimmed & saved successfully: ${bgmUrl}`);
            } catch (e) {
                console.error(`⚠️ BGM GCP Trim Error:`, e);
+               // 🔥 STRICT ERROR THROW: Prevents raw file from being saved if FFmpeg fails
+               throw new Error(`FFmpeg BGM Trimming Failed: ${e.message}`);
            } finally {
                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
