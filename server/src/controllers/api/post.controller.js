@@ -244,12 +244,19 @@ export const createPost = async (req, res) => {
       if (req.body.backgroundMusic) {
         let bgmFileName = req.body.backgroundMusic;
         let bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`;
-        let bgmTrimStart = parseFloat(req.body.bgmTrimStart || 0);
-        let bgmTrimDuration = parseFloat(req.body.bgmDuration || 0);
+        
+        // 🔥 MULTI-FALLBACK: Support both bgmTrimStart and trimStartSecs
+        let rawTrimStart = req.body.bgmTrimStart !== undefined ? req.body.bgmTrimStart : req.body.trimStartSecs;
+        let rawTrimDuration = req.body.bgmDuration !== undefined ? req.body.bgmDuration : req.body.durationSecs;
+
+        let bgmTrimStart = rawTrimStart !== undefined ? parseFloat(rawTrimStart) : 0;
+        let bgmTrimDuration = rawTrimDuration !== undefined ? parseFloat(rawTrimDuration) : null;
         let finalDuration = bgmTrimDuration > 0 ? bgmTrimDuration : (duration ? parseFloat(duration) : 0);
 
-        // ✂️ PHYSICAL TRIM LOGIC: Background Music
-        if (bgmTrimStart > 0 || bgmTrimDuration > 0) {
+        console.log(`🎵 [BGM TRIM DEBUG] File: ${bgmFileName} | Start: ${bgmTrimStart} | Duration: ${bgmTrimDuration}`);
+
+        // ✂️ PHYSICAL TRIM LOGIC: Background Music (Triggers even if start is 0, as long as duration > 0)
+        if (bgmTrimStart >= 0 && bgmTrimDuration > 0) {
            const tempInput = path.join(os.tmpdir(), `raw_bgm_${Date.now()}.m4a`);
            const tempOutput = path.join(os.tmpdir(), `trimmed_bgm_${Date.now()}.m4a`);
            try {
@@ -268,9 +275,9 @@ export const createPost = async (req, res) => {
 
                bgmFileName = trimmedFileName; 
                bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`; 
-               console.log(`✅ BGM physically trimmed & saved for ${cleanType}: ${bgmUrl}`);
+               console.log(`✅ BGM physically trimmed & saved successfully: ${bgmUrl}`);
            } catch (e) {
-               console.error(`⚠️ BGM GCP Trim Error for ${cleanType}:`, e);
+               console.error(`⚠️ BGM GCP Trim Error:`, e);
            } finally {
                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
