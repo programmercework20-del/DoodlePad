@@ -205,7 +205,6 @@ export const createPost = async (req, res) => {
         let fileName = req.body.uploadedFileName;
         let fileUrl = `${CDN_BASE_URL}/${fileName}`;
 
-        // ✂️ PHYSICAL TRIM LOGIC: Main Audio Post
         if (isAudio && (audioTrimStart > 0 || audioTrimDuration > 0)) {
            const tempInput = path.join(os.tmpdir(), `raw_main_${Date.now()}.m4a`);
            const tempOutput = path.join(os.tmpdir(), `trimmed_main_${Date.now()}.m4a`);
@@ -221,7 +220,10 @@ export const createPost = async (req, res) => {
                });
 
                const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
-               await bucket.file(trimmedFileName).upload(tempOutput, { metadata: { contentType: 'audio/mp4' } });
+               const trimmedBuffer = fs.readFileSync(tempOutput);
+               
+               // 🔥 FIXED: Using .save() instead of .upload()
+               await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
 
                fileName = trimmedFileName; 
                fileUrl = `${CDN_BASE_URL}/${fileName}`; 
@@ -235,17 +237,15 @@ export const createPost = async (req, res) => {
         }
 
         if (isVideo) uploadedVideoFileName = fileName;
-        if (isAudio) uploadedAudioFileName = fileName; // Trimmed file HLS me jayegi
-        
+        if (isAudio) uploadedAudioFileName = fileName; 
         mediaUrls.push(fileUrl);
       }
 
-      // 2. Handle Background Music (BGM Trimming) - FOR ALL TYPES (Doodle, Text, Image, Video)
+      // 2. Handle Background Music (BGM Trimming)
       if (req.body.backgroundMusic) {
         let bgmFileName = req.body.backgroundMusic;
         let bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`;
         
-        // 🔥 MULTI-FALLBACK: Support both bgmTrimStart and trimStartSecs
         let rawTrimStart = req.body.bgmTrimStart !== undefined ? req.body.bgmTrimStart : req.body.trimStartSecs;
         let rawTrimDuration = req.body.bgmDuration !== undefined ? req.body.bgmDuration : req.body.durationSecs;
 
@@ -255,7 +255,6 @@ export const createPost = async (req, res) => {
 
         console.log(`🎵 [BGM TRIM DEBUG] File: ${bgmFileName} | Start: ${bgmTrimStart} | Duration: ${bgmTrimDuration}`);
 
-        // ✂️ PHYSICAL TRIM LOGIC: Background Music (Triggers even if start is 0, as long as duration > 0)
         if (bgmTrimStart >= 0 && bgmTrimDuration > 0) {
            const tempInput = path.join(os.tmpdir(), `raw_bgm_${Date.now()}.m4a`);
            const tempOutput = path.join(os.tmpdir(), `trimmed_bgm_${Date.now()}.m4a`);
@@ -271,7 +270,10 @@ export const createPost = async (req, res) => {
                });
 
                const trimmedFileName = `background_music/trimmed_${userId}_${Date.now()}.m4a`;
-               await bucket.file(trimmedFileName).upload(tempOutput, { metadata: { contentType: 'audio/mp4' } });
+               const trimmedBuffer = fs.readFileSync(tempOutput);
+               
+               // 🔥 FIXED: Using .save() instead of .upload()
+               await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
 
                bgmFileName = trimmedFileName; 
                bgmUrl = `${CDN_BASE_URL}/${bgmFileName}`; 
