@@ -54,7 +54,7 @@ export const createPost = async (req, res) => {
     const tStart = performance.now();
     const timeLog = {};
 
-    console.log("🕵️‍♂️️ [DEBUG] Create Post Frontend Payload:", req.body);
+    console.log("🕵️‍♂ [DEBUG] Create Post Frontend Payload:", req.body);
 
     const { type, content, caption, isSaved, duration, location } = req.body;
     const userId = req.user.id;
@@ -66,7 +66,7 @@ export const createPost = async (req, res) => {
     let backgroundAudios = [];
     let parsedDoodlePaths = [];
     
-    // 🔥 Naya variable Audio filename track karne ke liye
+    // 🔥 Variable Audio/Video filename track karne ke liye
     let uploadedVideoFileName = null;
     let uploadedAudioFileName = null; 
 
@@ -108,7 +108,7 @@ export const createPost = async (req, res) => {
           }
         }
       } catch (e) {
-        console.error("⚠️️ Doodle paths parse error:", e);
+        console.error("⚠ Doodle paths parse error:", e);
       }
     }
     timeLog['Sharp_Doodle'] = (performance.now() - tDoodleStart).toFixed(2) + "ms";
@@ -229,7 +229,6 @@ export const createPost = async (req, res) => {
                console.log(`✅ Main Audio physically trimmed & saved: ${fileUrl}`);
            } catch (e) {
                console.error("⚠️ Main Audio GCP Trim Error:", e);
-               // 🔥 STRICT ERROR THROW: Prevents raw file from being saved if FFmpeg fails
                throw new Error(`FFmpeg Main Audio Trimming Failed: ${e.message}`);
            } finally {
                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
@@ -280,7 +279,6 @@ export const createPost = async (req, res) => {
                console.log(`✅ BGM physically trimmed & saved successfully: ${bgmUrl}`);
            } catch (e) {
                console.error(`⚠️ BGM GCP Trim Error:`, e);
-               // 🔥 STRICT ERROR THROW: Prevents raw file from being saved if FFmpeg fails
                throw new Error(`FFmpeg BGM Trimming Failed: ${e.message}`);
            } finally {
                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
@@ -416,41 +414,26 @@ export const createPost = async (req, res) => {
     timeLog['Database_Insert'] = (performance.now() - tDbStart).toFixed(2) + "ms";
     
     // ==========================================
-    // 🚨 3.5. DUAL HLS CONVERSION (VIDEO & AUDIO)
+    // 🚨 3.5. MEDIA PROCESSING (HLS FOR VIDEO, DIRECT M4A FOR AUDIO)
     // ==========================================
-    if ((cleanType === 'video' && uploadedVideoFileName) || (cleanType === 'audio' && uploadedAudioFileName)) {
+    
+    // 🎥 1. ONLY VIDEO POSTS get HLS conversion
+    if (cleanType === 'video' && uploadedVideoFileName) {
         const attemptHlsWithRetry = async (retries = 3) => {
             for (let i = 1; i <= retries; i++) {
                 try {
-                    const isVideo = cleanType === 'video';
-                    const targetFileName = isVideo ? uploadedVideoFileName : uploadedAudioFileName;
-                    const fileTypeParams = isVideo ? 'video' : 'audio';
-
-                    // 🔥 Yahan audio/video dono ka HLS generate hoga async tarike se
-                    const hlsUrl = await startHlsConversion(targetFileName, post.id, 'portrait', 3, fileTypeParams);
+                    const hlsUrl = await startHlsConversion(uploadedVideoFileName, post.id, 'portrait', 3, 'video');
                     
                     if (hlsUrl) {
-                        if (isVideo) {
-                            await post.update({ mediaUrls: [hlsUrl] });
-                        } else {
-                            // Audio post ka HLS link 'backgroundAudios' me update hoga
-                            // 🔥 BUG FIX: Ab ye duration galti se 0 nahi karega, main post ki duration uthayega
-                        let correctDuration = post.duration || (post.backgroundAudios && post.backgroundAudios[0] ? post.backgroundAudios[0].duration : 0);
-                                                
-                       // HLS ki jagah direct trimmed .m4a URL bhej do
-await post.update({ 
-    backgroundAudios: [{ url: trimmedAudioUrl, duration: correctDuration }] 
-});
-                        }
-                        
-                        console.log(`✅ [HLS SUCCESS] Post ${post.id} updated with ${fileTypeParams.toUpperCase()} HLS URL!`);
+                        await post.update({ mediaUrls: [hlsUrl] });
+                        console.log(`✅ [HLS SUCCESS] Post ${post.id} updated with VIDEO HLS URL!`);
                         if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
                         return;
                     }
                 } catch (err) {
                     console.error(`⚠️ [HLS ATTEMPT ${i} FAILED]:`, err.message);
                     if (i === retries) {
-                        console.error(`❌ [CRITICAL] HLS permanently failed for Post ${post.id}`);
+                        console.error(`❌ [CRITICAL] HLS permanently failed for Video Post ${post.id}`);
                     } else {
                         await new Promise(res => setTimeout(res, 5000));
                     }
@@ -458,6 +441,27 @@ await post.update({
             }
         };
         attemptHlsWithRetry(); 
+    }
+    // 🎵 2. AUDIO POSTS BYPASS HLS -> Update directly with pure .m4a link
+    else if (cleanType === 'audio' && uploadedAudioFileName) {
+        try {
+            // Priority: Calculate safe duration
+            const correctDuration = post.duration || (post.backgroundAudios && post.backgroundAudios.length > 0 ? post.backgroundAudios[0].duration : 15);
+            
+            // Priority: Agar mediaUrls me trimmed URL pehle se hai toh wo le lo, warna construct kar lo
+            const directAudioUrl = (post.mediaUrls && post.mediaUrls.length > 0) 
+                ? post.mediaUrls[0] 
+                : `${CDN_BASE_URL}/${uploadedAudioFileName}`;
+
+            await post.update({ 
+                backgroundAudios: [{ url: directAudioUrl, duration: correctDuration }] 
+            });
+
+            console.log(`✅ [AUDIO SUCCESS] Post ${post.id} bypassed HLS, saved direct .m4a URL: ${directAudioUrl}`);
+            if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+        } catch (e) {
+            console.error(`❌ [AUDIO POST FATAL ERROR] Failed to update direct audio URL:`, e.message);
+        }
     }
 
     // ==========================================
@@ -476,7 +480,6 @@ await post.update({
     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
   }
 };
-
 export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
