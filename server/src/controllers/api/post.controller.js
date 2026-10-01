@@ -207,33 +207,54 @@ export const createPost = async (req, res) => {
 
         if (isAudio && (audioTrimStart > 0 || audioTrimDuration > 0)) {
            const tempInput = path.join(os.tmpdir(), `raw_main_${Date.now()}.m4a`);
-           const tempOutput = path.join(os.tmpdir(), `trimmed_main_${Date.now()}.m4a`);
-           try {
-               await bucket.file(fileName).download({ destination: tempInput });
-               
-               await new Promise((resolve, reject) => {
-                 let ffCommand = ffmpeg(tempInput);
-                 if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
-                 if (audioTrimDuration > 0) ffCommand = ffCommand.setDuration(audioTrimDuration);
-                 ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
-                   .save(tempOutput).on('end', resolve).on('error', reject);
-               });
+const tempOutput = path.join(os.tmpdir(), `trimmed_main_${Date.now()}.m4a`);
+try {
+    await bucket.file(fileName).download({ destination: tempInput });
+    
+    // 🛡️ SAFETY CHECK 1 (Main Audio): File corrupt ya khali toh nahi hai?
+    const statsMain = fs.statSync(tempInput);
+    if (statsMain.size === 0) {
+        throw new Error("Uploaded Main Audio file is corrupt or 0 bytes.");
+    }
 
-               const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
-               const trimmedBuffer = fs.readFileSync(tempOutput);
-               
-               await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
+    // 🛡️ SAFETY CHECK 2 (Main Audio): Duration validation
+    const actualMainDuration = await getVideoDuration(tempInput); 
+    if (actualMainDuration && audioTrimStart >= actualMainDuration) {
+        console.log(`⚠️ [WARNING] audioTrimStart (${audioTrimStart}s) actual duration se bada hai. Resetting to 0.`);
+        audioTrimStart = 0; 
+    }
+    
+    await new Promise((resolve, reject) => {
+      let ffCommand = ffmpeg(tempInput);
+      
+      if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
+      
+      // Safe Duration Logic
+      if (audioTrimDuration > 0 && audioTrimStart + audioTrimDuration <= actualMainDuration) {
+          ffCommand = ffCommand.setDuration(audioTrimDuration);
+      } else if (audioTrimDuration > 0) {
+          ffCommand = ffCommand.setDuration(actualMainDuration - audioTrimStart);
+      }
 
-               fileName = trimmedFileName; 
-               fileUrl = `${CDN_BASE_URL}/${fileName}`; 
-               console.log(`✅ Main Audio physically trimmed & saved: ${fileUrl}`);
-           } catch (e) {
-               console.error("⚠️ Main Audio GCP Trim Error:", e);
-               throw new Error(`FFmpeg Main Audio Trimming Failed: ${e.message}`);
-           } finally {
-               if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-               if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
-           }
+      ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
+        .save(tempOutput).on('end', resolve).on('error', reject);
+    });
+
+    const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
+    const trimmedBuffer = fs.readFileSync(tempOutput);
+    
+    await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
+
+    fileName = trimmedFileName; 
+    fileUrl = `${CDN_BASE_URL}/${fileName}`; 
+    console.log(`✅ Main Audio physically trimmed safely & saved: ${fileUrl}`);
+} catch (e) {
+    console.error("⚠️ Main Audio GCP Trim Error:", e);
+    throw new Error(`FFmpeg Main Audio Trimming Failed: ${e.message}`);
+} finally {
+    if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+    if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+}
         }
 
         if (isVideo) uploadedVideoFileName = fileName;
