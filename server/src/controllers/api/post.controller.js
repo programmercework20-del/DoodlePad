@@ -281,30 +281,40 @@ try {
            const tempOutput = path.join(os.tmpdir(), `trimmed_bgm_${Date.now()}.m4a`);
            try {
               await bucket.file(bgmFileName).download({ destination: tempInput });
-
 // 🛡️ SAFETY CHECK 1: File corrupt ya khali toh nahi hai?
 const stats = fs.statSync(tempInput);
 if (stats.size === 0) {
     throw new Error("Uploaded BGM file is corrupt or 0 bytes.");
 }
 
-// 🛡️ SAFETY CHECK 2: Kya trimStart actual file se bada hai?
-const actualAudioDuration = await getVideoDuration(tempInput); // Tumhara existing function
-if (actualAudioDuration && bgmTrimStart >= actualAudioDuration) {
+// 🛡️ SAFETY CHECK 2: Duration validation with NaN (Not a Number) Protection
+let actualAudioDuration = 0;
+try {
+    let durationRaw = await getVideoDuration(tempInput);
+    actualAudioDuration = parseFloat(durationRaw);
+    if (isNaN(actualAudioDuration)) actualAudioDuration = 0; // Agar read nahi hua toh 0 maan lo
+} catch (e) {
+    console.log("⚠️ Could not read audio duration via probe, using fallback.");
+}
+
+if (actualAudioDuration > 0 && bgmTrimStart >= actualAudioDuration) {
     console.log(`⚠️ [WARNING] bgmTrimStart (${bgmTrimStart}s) actual duration (${actualAudioDuration}s) se bada hai. Resetting to 0.`);
-    bgmTrimStart = 0; // Galti sudhar li, gaana shuru se start kar do
+    bgmTrimStart = 0; 
 }
 
 await new Promise((resolve, reject) => {
     let ffCommand = ffmpeg(tempInput);
     
-    // Ab FFmpeg kabhi fail nahi hoga out-of-bounds error ki wajah se
     if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
-    if (bgmTrimDuration > 0 && bgmTrimStart + bgmTrimDuration <= actualAudioDuration) {
-        ffCommand = ffCommand.setDuration(bgmTrimDuration);
-    } else if (bgmTrimDuration > 0) {
-        // Agar bacha hua time trim duration se kam hai
-        ffCommand = ffCommand.setDuration(actualAudioDuration - bgmTrimStart);
+    
+    // 🔥 SAFE DURATION LOGIC (No NaN allowed)
+    if (bgmTrimDuration > 0) {
+        if (actualAudioDuration > 0 && (bgmTrimStart + bgmTrimDuration > actualAudioDuration)) {
+            let safeDuration = actualAudioDuration - bgmTrimStart;
+            if (safeDuration > 0) ffCommand = ffCommand.setDuration(safeDuration);
+        } else {
+            ffCommand = ffCommand.setDuration(bgmTrimDuration);
+        }
     }
 
     ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
