@@ -138,7 +138,8 @@ export const createPost = async (req, res) => {
           if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
           if (bgmTrimDuration > 0) ffCommand = ffCommand.setDuration(bgmTrimDuration);
 
-          ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
+          // 🔥 MAGIC FIX: Added '-vn' to ignore album cover art in fallback flow
+          ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
             .save(processedAudioPath)
             .on('end', resolve)
             .on('error', reject);
@@ -207,54 +208,55 @@ export const createPost = async (req, res) => {
 
         if (isAudio && (audioTrimStart > 0 || audioTrimDuration > 0)) {
            const tempInput = path.join(os.tmpdir(), `raw_main_${Date.now()}.m4a`);
-const tempOutput = path.join(os.tmpdir(), `trimmed_main_${Date.now()}.m4a`);
-try {
-    await bucket.file(fileName).download({ destination: tempInput });
-    
-    // 🛡️ SAFETY CHECK 1 (Main Audio): File corrupt ya khali toh nahi hai?
-    const statsMain = fs.statSync(tempInput);
-    if (statsMain.size === 0) {
-        throw new Error("Uploaded Main Audio file is corrupt or 0 bytes.");
-    }
+           const tempOutput = path.join(os.tmpdir(), `trimmed_main_${Date.now()}.m4a`);
+           try {
+               await bucket.file(fileName).download({ destination: tempInput });
+               
+               // 🛡️ SAFETY CHECK 1 (Main Audio): File corrupt ya khali toh nahi hai?
+               const statsMain = fs.statSync(tempInput);
+               if (statsMain.size === 0) {
+                   throw new Error("Uploaded Main Audio file is corrupt or 0 bytes.");
+               }
 
-    // 🛡️ SAFETY CHECK 2 (Main Audio): Duration validation
-    const actualMainDuration = await getVideoDuration(tempInput); 
-    if (actualMainDuration && audioTrimStart >= actualMainDuration) {
-        console.log(`⚠️ [WARNING] audioTrimStart (${audioTrimStart}s) actual duration se bada hai. Resetting to 0.`);
-        audioTrimStart = 0; 
-    }
-    
-    await new Promise((resolve, reject) => {
-      let ffCommand = ffmpeg(tempInput);
-      
-      if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
-      
-      // Safe Duration Logic
-      if (audioTrimDuration > 0 && audioTrimStart + audioTrimDuration <= actualMainDuration) {
-          ffCommand = ffCommand.setDuration(audioTrimDuration);
-      } else if (audioTrimDuration > 0) {
-          ffCommand = ffCommand.setDuration(actualMainDuration - audioTrimStart);
-      }
+               // 🛡️ SAFETY CHECK 2 (Main Audio): Duration validation
+               const actualMainDuration = await getVideoDuration(tempInput); 
+               if (actualMainDuration && audioTrimStart >= actualMainDuration) {
+                   console.log(`⚠️ [WARNING] audioTrimStart (${audioTrimStart}s) actual duration se bada hai. Resetting to 0.`);
+                   audioTrimStart = 0; 
+               }
+               
+               await new Promise((resolve, reject) => {
+                 let ffCommand = ffmpeg(tempInput);
+                 
+                 if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
+                 
+                 // Safe Duration Logic
+                 if (audioTrimDuration > 0 && audioTrimStart + audioTrimDuration <= actualMainDuration) {
+                     ffCommand = ffCommand.setDuration(audioTrimDuration);
+                 } else if (audioTrimDuration > 0) {
+                     ffCommand = ffCommand.setDuration(actualMainDuration - audioTrimStart);
+                 }
 
-      ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
-        .save(tempOutput).on('end', resolve).on('error', reject);
-    });
+                 // 🔥 MAGIC FIX: Added '-vn' to ignore album cover art in Main Audio
+                 ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
+                   .save(tempOutput).on('end', resolve).on('error', reject);
+               });
 
-    const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
-    const trimmedBuffer = fs.readFileSync(tempOutput);
-    
-    await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
+               const trimmedFileName = `post_audios/trimmed_${userId}_${Date.now()}.m4a`;
+               const trimmedBuffer = fs.readFileSync(tempOutput);
+               
+               await bucket.file(trimmedFileName).save(trimmedBuffer, { metadata: { contentType: 'audio/mp4' } });
 
-    fileName = trimmedFileName; 
-    fileUrl = `${CDN_BASE_URL}/${fileName}`; 
-    console.log(`✅ Main Audio physically trimmed safely & saved: ${fileUrl}`);
-} catch (e) {
-    console.error("⚠️ Main Audio GCP Trim Error:", e);
-    throw new Error(`FFmpeg Main Audio Trimming Failed: ${e.message}`);
-} finally {
-    if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-    if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
-}
+               fileName = trimmedFileName; 
+               fileUrl = `${CDN_BASE_URL}/${fileName}`; 
+               console.log(`✅ Main Audio physically trimmed safely & saved: ${fileUrl}`);
+           } catch (e) {
+               console.error("⚠️ Main Audio GCP Trim Error:", e);
+               throw new Error(`FFmpeg Main Audio Trimming Failed: ${e.message}`);
+           } finally {
+               if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+               if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+           }
         }
 
         if (isVideo) uploadedVideoFileName = fileName;
@@ -281,45 +283,47 @@ try {
            const tempOutput = path.join(os.tmpdir(), `trimmed_bgm_${Date.now()}.m4a`);
            try {
               await bucket.file(bgmFileName).download({ destination: tempInput });
-// 🛡️ SAFETY CHECK 1: File corrupt ya khali toh nahi hai?
-const stats = fs.statSync(tempInput);
-if (stats.size === 0) {
-    throw new Error("Uploaded BGM file is corrupt or 0 bytes.");
-}
+              
+              // 🛡️ SAFETY CHECK 1: File corrupt ya khali toh nahi hai?
+              const stats = fs.statSync(tempInput);
+              if (stats.size === 0) {
+                  throw new Error("Uploaded BGM file is corrupt or 0 bytes.");
+              }
 
-// 🛡️ SAFETY CHECK 2: Duration validation with NaN (Not a Number) Protection
-let actualAudioDuration = 0;
-try {
-    let durationRaw = await getVideoDuration(tempInput);
-    actualAudioDuration = parseFloat(durationRaw);
-    if (isNaN(actualAudioDuration)) actualAudioDuration = 0; // Agar read nahi hua toh 0 maan lo
-} catch (e) {
-    console.log("⚠️ Could not read audio duration via probe, using fallback.");
-}
+              // 🛡️️ SAFETY CHECK 2: Duration validation with NaN (Not a Number) Protection
+              let actualAudioDuration = 0;
+              try {
+                  let durationRaw = await getVideoDuration(tempInput);
+                  actualAudioDuration = parseFloat(durationRaw);
+                  if (isNaN(actualAudioDuration)) actualAudioDuration = 0; // Agar read nahi hua toh 0 maan lo
+              } catch (e) {
+                  console.log("⚠️ Could not read audio duration via probe, using fallback.");
+              }
 
-if (actualAudioDuration > 0 && bgmTrimStart >= actualAudioDuration) {
-    console.log(`⚠️ [WARNING] bgmTrimStart (${bgmTrimStart}s) actual duration (${actualAudioDuration}s) se bada hai. Resetting to 0.`);
-    bgmTrimStart = 0; 
-}
+              if (actualAudioDuration > 0 && bgmTrimStart >= actualAudioDuration) {
+                  console.log(`⚠️ [WARNING] bgmTrimStart (${bgmTrimStart}s) actual duration (${actualAudioDuration}s) se bada hai. Resetting to 0.`);
+                  bgmTrimStart = 0; 
+              }
 
-await new Promise((resolve, reject) => {
-    let ffCommand = ffmpeg(tempInput);
-    
-    if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
-    
-    // 🔥 SAFE DURATION LOGIC (No NaN allowed)
-    if (bgmTrimDuration > 0) {
-        if (actualAudioDuration > 0 && (bgmTrimStart + bgmTrimDuration > actualAudioDuration)) {
-            let safeDuration = actualAudioDuration - bgmTrimStart;
-            if (safeDuration > 0) ffCommand = ffCommand.setDuration(safeDuration);
-        } else {
-            ffCommand = ffCommand.setDuration(bgmTrimDuration);
-        }
-    }
+              await new Promise((resolve, reject) => {
+                  let ffCommand = ffmpeg(tempInput);
+                  
+                  if (bgmTrimStart > 0) ffCommand = ffCommand.setStartTime(bgmTrimStart);
+                  
+                  // 🔥 SAFE DURATION LOGIC (No NaN allowed)
+                  if (bgmTrimDuration > 0) {
+                      if (actualAudioDuration > 0 && (bgmTrimStart + bgmTrimDuration > actualAudioDuration)) {
+                          let safeDuration = actualAudioDuration - bgmTrimStart;
+                          if (safeDuration > 0) ffCommand = ffCommand.setDuration(safeDuration);
+                      } else {
+                          ffCommand = ffCommand.setDuration(bgmTrimDuration);
+                      }
+                  }
 
-    ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
-        .save(tempOutput).on('end', resolve).on('error', reject);
-});
+                  // 🔥 MAGIC FIX: Added '-vn' to ignore album cover art in BGM GCP flow
+                  ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
+                      .save(tempOutput).on('end', resolve).on('error', reject);
+              });
 
                const trimmedFileName = `background_music/trimmed_${userId}_${Date.now()}.m4a`;
                const trimmedBuffer = fs.readFileSync(tempOutput);
@@ -374,7 +378,8 @@ await new Promise((resolve, reject) => {
               if (audioTrimStart > 0) ffCommand = ffCommand.setStartTime(audioTrimStart);
               if (audioTrimDuration > 0) ffCommand = ffCommand.setDuration(audioTrimDuration);
 
-              ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
+              // 🔥 MAGIC FIX: Added '-vn' to ignore album cover art in fallback flow
+              ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
                 .save(processedAudioPath).on('end', resolve).on('error', reject);
             });
             uploadBuffer = fs.readFileSync(processedAudioPath); 
@@ -532,6 +537,7 @@ await new Promise((resolve, reject) => {
     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
   }
 };
+
 export const getArchivedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
