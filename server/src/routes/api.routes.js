@@ -2,7 +2,7 @@ import express from "express";
 import { protect } from "../middlewares/auth.middleware.js";
 import upload from "../middlewares/upload.js";
 import * as postController from '../controllers/post.controller.js';
-// import { getUserProfile, sendDoodleRequest, acceptDoodleRequest,getDoodleRequests, updateMyProfile, getMyProfile, rejectDoodleRequest } from "../controllers/api/profile.controller.js";
+
 import {
   addComment,
   getPostComments,
@@ -13,8 +13,7 @@ import { googleLogin } from "../controllers/user.controller.js";
 import { getPostsByHashtag } from "../controllers/api/hashtag.controller.js";
 
 import { createReport } from "../controllers/api/report.controller.js";
-import { toggleLikePost , getPostLikes } from "../controllers/api/postLike.controller.js";
-
+import { toggleLikePost, getPostLikes } from "../controllers/api/postLike.controller.js";
 
 import {
   signup,
@@ -36,24 +35,24 @@ import {
   deleteFcmToken
 } from "../controllers/api/user.controller.js";
 
-import { createPost, deletePost, getUserPosts,togglePinPost  ,generateResumableUploadUrl } 
-from "../controllers/api/post.controller.js";
+// ✅ 1. IMPORT IS PERFECT HERE (NO ARCHIVE FUNCTIONS)
+import { 
+  createPost, 
+  deletePost, 
+  getUserPosts,
+  togglePinPost,
+  generateResumableUploadUrl 
+} from "../controllers/api/post.controller.js";
 
-import { sharePost , handleSharedLink } from "../controllers/api/share.controller.js";
-
-
-
+import { sharePost, handleSharedLink } from "../controllers/api/share.controller.js";
 import userAuth from "../middlewares/userAuth.js";
 import messageRoutes from './message.route.js'; 
 
 const router = express.Router();
 
-
-
 router.post("/google-login", googleLogin);
 
 /* ================= AUTH APIs ================= */
-
 router.post("/signup", signup);
 router.post("/send-verification-otp", sendVerificationOtp);
 router.post("/verify-otp", verifyOtp);
@@ -71,18 +70,12 @@ router.post("/requests/:id/accept", protect, acceptFollowRequest);
 router.post("/requests/:id/reject", protect, rejectFollowRequest);
 router.get('/connections/:id/count', getUniqueConnectionsCount);
 
-
-
 /* ================= PRIVACY ================= */
-
 router.patch("/users/privacy", userAuth, togglePrivacy);
-
 router.post("/save-fcm-token", protect, saveFcmToken);
 router.delete("/delete-fcm-token", protect, deleteFcmToken);
 
-
 /* ================= POST APIs ================= */
-
 router.post(
   "/posts", 
   protect, 
@@ -96,58 +89,44 @@ router.delete("/posts/:id", protect, deletePost);
 router.get("/users/:id/posts", getUserPosts);
 router.post("/posts/resumable-url", protect, generateResumableUploadUrl);
 
-// router.get("/posts/archive", protect, getArchivedPosts);
-// router.post("/posts/:id/archive", protect, archivePost);
-// router.post("/posts/:id/restore", protect, restoreArchivedPost);
-router.post("/posts/:id/pin", protect, togglePinPost);
+// ✅ 2. ROUTE MATCHES FRONTEND REPORT EXACTLY
+router.post("/posts/:id/toggle-pin", protect, togglePinPost);
 
-
-// router.get("/posts",protect, postController.getFeedPosts);
+// Feed & Hashtags Routing
 router.get("/posts", protect, (req, res, next) => {
-    // Agar frontend ne query me ?hashtag= bheja hai
     if (req.query.hashtag) {
         console.log(`🔀 [API GATEWAY] Hashtag detected: #${req.query.hashtag} -> Routing to Hashtag Controller`);
-        return getPostsByHashtag(req, res); // Tumhara bulletproof hashtag logic chalega
+        return getPostsByHashtag(req, res);
     }
-    
-    // Agar hashtag nahi hai, toh normal feed dikhao
     console.log("➡️ [API GATEWAY] Normal feed requested -> Routing to Feed Controller");
     return postController.getFeedPosts(req, res, next);
 });
-router.get("/posts/:id",protect, postController.getPostById);
+
+router.get("/posts/:id", protect, postController.getPostById);
+
+// Comments
 router.post("/posts/:postId/comments", protect, upload.single("media"), addComment);
 router.get("/posts/:postId/comments", getPostComments);
-router.post("/comments/:commentId/like",protect, likeComment);
-router.delete(
-  "/comments/:commentId",
-  protect,
-  deleteOwnComment
-);
-// 🔥 FE Dev ki requested NEW route
+router.post("/comments/:commentId/like", protect, likeComment);
+router.delete("/comments/:commentId", protect, deleteOwnComment);
+// FE Dev ki requested NEW route
 router.delete("/posts/:postId/comments/:commentId", protect, deleteOwnComment);
 
+// Likes & Shares
 router.post("/posts/:id/like", protect, toggleLikePost);
 router.get("/posts/:id/likes", getPostLikes);
 router.post("/posts/:id/share", protect, sharePost);
 router.get("/share/p/:id", handleSharedLink);
 
-
-
-
 /* ================= REPORT ================= */
-
 router.post("/reports", userAuth, createReport);
 
 /* ================= MESSAGES ================= */
 router.use("/messages", messageRoutes);
 
-
 /* ================= TEST ================= */
-
 router.get("/", (req, res) => {
   res.json({ success: true, message: "API routes working" });
 });
-
-
 
 export default router;
