@@ -31,12 +31,10 @@ const Post = sequelize.define("Post", {
         type: DataTypes.TEXT,
         allowNull: true
     },
-
     location: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     status: {
         type: DataTypes.ENUM("active", "archived", "deleted", "hidden", "sensitive"),
         defaultValue: "active"
@@ -61,6 +59,7 @@ const Post = sequelize.define("Post", {
         type: DataTypes.BOOLEAN,
         defaultValue: true
     },
+    // Treated logically as 'isPinned'
     isSaved: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
@@ -69,29 +68,38 @@ const Post = sequelize.define("Post", {
         type: DataTypes.DATE,
         allowNull: true
     },
-    thumbnail: {
-    type: DataTypes.TEXT, 
-    allowNull: true
-  },
-   duration: {
-   type: DataTypes.INTEGER,
-   defaultValue: 0,
-   allowNull: true
- },
-  backgroundAudios: {
-    type: DataTypes.JSON,
-    allowNull: true,
-  },
-  backgroundMusicUrl: {
-    type: DataTypes.VIRTUAL,
-    get() {
-      const audios = this.getDataValue('backgroundAudios');
-      return audios || [];
+    // 🔥 NEW: Tracker flags to avoid sending repeat push notifications
+    notified12h: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     },
-    set(val) {
-      this.setDataValue('backgroundAudios', val);
-    }
-  },
+    notified23h: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    thumbnail: {
+        type: DataTypes.TEXT, 
+        allowNull: true
+    },
+    duration: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        allowNull: true
+    },
+    backgroundAudios: {
+        type: DataTypes.JSON,
+        allowNull: true,
+    },
+    backgroundMusicUrl: {
+        type: DataTypes.VIRTUAL,
+        get() {
+            const audios = this.getDataValue('backgroundAudios');
+            return audios || [];
+        },
+        set(val) {
+            this.setDataValue('backgroundAudios', val);
+        }
+    },
 }, {
     tableName: "posts",
     timestamps: true

@@ -538,44 +538,44 @@ export const createPost = async (req, res) => {
   }
 };
 
-export const getArchivedPosts = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const cacheKey = `archivedPosts:${userId}`;
+// export const getArchivedPosts = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const cacheKey = `archivedPosts:${userId}`;
 
-    await markExpiredPosts(userId);
+//     await markExpiredPosts(userId);
 
-    if (redisClient?.isReady) {
-      const cachedData = await redisClient.get(cacheKey);
-      if (cachedData) {
-        const parsedData = JSON.parse(cachedData);
-        const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
-        return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
-      }
-    }
+//     if (redisClient?.isReady) {
+//       const cachedData = await redisClient.get(cacheKey);
+//       if (cachedData) {
+//         const parsedData = JSON.parse(cachedData);
+//         const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
+//         return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
+//       }
+//     }
 
-    const posts = await Post.findAll({
-      where: { userId, status: "archived" },
-      order: [["createdAt", "DESC"]]
-    });
+//     const posts = await Post.findAll({
+//       where: { userId, status: "archived" },
+//       order: [["createdAt", "DESC"]]
+//     });
 
-    if (redisClient?.isReady) {
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
-    }
+//     if (redisClient?.isReady) {
+//       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
+//     }
 
-    const finalizedPosts = await injectIsLikedFlag(posts, userId);
+//     const finalizedPosts = await injectIsLikedFlag(posts, userId);
 
-    return res.json({
-      success: true,
-      count: finalizedPosts.length,
-      posts: finalizedPosts
-    });
+//     return res.json({
+//       success: true,
+//       count: finalizedPosts.length,
+//       posts: finalizedPosts
+//     });
 
-  } catch (error) {
-    console.error("ARCHIVE FETCH ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
-  }
-};
+//   } catch (error) {
+//     console.error("ARCHIVE FETCH ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
+//   }
+// };
 
 export const markExpiredPosts = async (specificUserId = null) => {
   try {
@@ -642,65 +642,65 @@ export const getExpiredPosts = async (req, res) => {
   }
 };
 
-export const restoreArchivedPost = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const postId = req.params.id;
+// export const restoreArchivedPost = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const postId = req.params.id;
 
-    const post = await Post.findByPk(postId);
+//     const post = await Post.findByPk(postId);
 
-    if (!post || post.userId !== userId) {
-      return res.status(404).json({ success: false, message: "Post not found" });
-    }
+//     if (!post || post.userId !== userId) {
+//       return res.status(404).json({ success: false, message: "Post not found" });
+//     }
 
-    if (post.status !== "archived") {
-      return res.status(400).json({ success: false, message: "Post is not archived" });
-    }
+//     if (post.status !== "archived") {
+//       return res.status(400).json({ success: false, message: "Post is not archived" });
+//     }
 
-    await post.update({ status: "active", isSaved: true, expiresAt: null });
+//     await post.update({ status: "active", isSaved: true, expiresAt: null });
 
-    if (redisClient?.isReady) {
-      await redisClient.del(`userPosts:${userId}`);
-      await redisClient.del(`archivedPosts:${userId}`);
-    }
+//     if (redisClient?.isReady) {
+//       await redisClient.del(`userPosts:${userId}`);
+//       await redisClient.del(`archivedPosts:${userId}`);
+//     }
 
-    return res.json({ success: true, message: "Post restored and made permanent" });
+//     return res.json({ success: true, message: "Post restored and made permanent" });
 
-  } catch (error) {
-    console.error("RESTORE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Restore failed" });
-  }
-};
+//   } catch (error) {
+//     console.error("RESTORE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Restore failed" });
+//   }
+// };
 
-export const archivePost = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const postId = req.params.id;
+// export const archivePost = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const postId = req.params.id;
 
-    const post = await Post.findByPk(postId);
+//     const post = await Post.findByPk(postId);
 
-    if (!post || post.userId !== userId) {
-      return res.status(404).json({ success: false, message: "Post not found" });
-    }
+//     if (!post || post.userId !== userId) {
+//       return res.status(404).json({ success: false, message: "Post not found" });
+//     }
 
-    if (post.status === "archived") {
-      return res.status(400).json({ success: false, message: "Post already archived" });
-    }
+//     if (post.status === "archived") {
+//       return res.status(400).json({ success: false, message: "Post already archived" });
+//     }
 
-    await post.update({ status: "archived", expiresAt: null });
+//     await post.update({ status: "archived", expiresAt: null });
 
-    if (redisClient?.isReady) {
-      await redisClient.del(`userPosts:${userId}`);
-      await redisClient.del(`archivedPosts:${userId}`);
-    }
+//     if (redisClient?.isReady) {
+//       await redisClient.del(`userPosts:${userId}`);
+//       await redisClient.del(`archivedPosts:${userId}`);
+//     }
 
-    return res.json({ success: true, message: "Post moved to archive" });
+//     return res.json({ success: true, message: "Post moved to archive" });
 
-  } catch (error) {
-    console.error("ARCHIVE ERROR:", error);
-    return res.status(500).json({ success: false, message: "Archive failed" });
-  }
-};
+//   } catch (error) {
+//     console.error("ARCHIVE ERROR:", error);
+//     return res.status(500).json({ success: false, message: "Archive failed" });
+//   }
+// };
 
 export const deletePost = async (req, res) => {
   try {
@@ -824,14 +824,17 @@ export const getUserPosts = async (req, res) => {
       }
     }
 
+    // ==========================================
+    // 🔥 PRO-LEVEL: PIN/UNPIN FETCH LOGIC
+    // ==========================================
     const posts = await Post.findAll({
       where: {
         userId: id,
-        status: "active",
+        status: "active", // Sirf active posts dikhengi
         [Op.or]: [
-          { isSaved: true },
+          { isSaved: true }, // 📌 Treated as PINNED: Ye lifetime profile par rahengi
           {
-            isSaved: false,
+            isSaved: false,  // 🔓 Treated as UNPINNED: Ye sirf tab dikhengi jab 24h timer bacha ho
             expiresAt: { [Op.gt]: new Date() } 
           }
         ]
@@ -839,12 +842,12 @@ export const getUserPosts = async (req, res) => {
       attributes: {
         include: [
           [
-           Sequelize.literal(`(
-  SELECT COUNT(*)::int
-  FROM "comments" AS c
-  WHERE c."postId" = "Post"."id" 
-  AND c."status" = 'active'
-)`),
+            Sequelize.literal(`(
+              SELECT COUNT(*)::int
+              FROM "comments" AS c
+              WHERE c."postId" = "Post"."id" 
+              AND c."status" = 'active'
+            )`),
             "commentsCount"
           ]
         ]
@@ -856,7 +859,8 @@ export const getUserPosts = async (req, res) => {
           attributes: ["id", "username", "profilePhoto"]
         }
       ],
-      order: [["createdAt", "DESC"]]
+      // 🔥 Client requirement: "most recently uploaded posts should appear at the top"
+      order: [["createdAt", "DESC"]] 
     });
 
     if (redisClient?.isReady && posts.length > 0) {
@@ -919,5 +923,65 @@ export const generateResumableUploadUrl = async (req, res) => {
   } catch (error) {
     console.error("⚠️ Resumable URL Error:", error);
     res.status(500).json({ success: false, message: "Could not generate resumable upload URL" });
+  }
+};
+
+// ==========================================
+// 🚀 NEW: SMART PIN/UNPIN LOGIC (No DB Change)
+// ==========================================
+export const togglePinPost = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const postId = req.params.id;
+
+    const post = await Post.findByPk(postId);
+
+    if (!post || post.userId !== userId) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    if (post.status === "deleted") {
+      return res.status(400).json({ success: false, message: "Cannot modify a deleted post" });
+    }
+
+    // Backend 'isSaved' is treated as 'isPinned' conceptually
+    if (post.isSaved) {
+      // 🔓 UNPIN ACTION
+      // Client rule: Agar unpin kiya, toh naya 24 ghante ka timer shuru hoga.
+      const newExpiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await post.update({ 
+          isSaved: false, // isSaved = false means Unpinned
+          status: "active", // Make sure it's active
+          expiresAt: newExpiryDate 
+      });
+
+      if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+      
+      return res.json({ 
+          success: true, 
+          message: "Post unpinned. It will be deleted in 24 hours.",
+          expiresAt: newExpiryDate 
+      });
+
+    } else {
+      // 📌 PIN ACTION
+      // Client rule: Lifetime profile par rahega. Timer cancel.
+      await post.update({ 
+          isSaved: true, // isSaved = true means Pinned
+          status: "active",
+          expiresAt: null 
+      });
+
+      if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
+
+      return res.json({ 
+          success: true, 
+          message: "Post pinned to profile successfully." 
+      });
+    }
+
+  } catch (error) {
+    console.error("TOGGLE PIN ERROR:", error);
+    return res.status(500).json({ success: false, message: "Failed to toggle pin status" });
   }
 };
