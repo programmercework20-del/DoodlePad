@@ -1,64 +1,3 @@
-// import { DataTypes } from 'sequelize';
-// import sequelize from '../config/db.js';
-
-// const Message = sequelize.define("Message", {
-//   id: {
-//     type: DataTypes.UUID,
-//     defaultValue: DataTypes.UUIDV4,
-//     primaryKey: true
-//   },
-
-//   conversationId: {
-//     type: DataTypes.UUID,
-//     allowNull: false
-//   },
-
-//   senderId: {
-//     type: DataTypes.UUID,
-//     allowNull: false
-//   },
-
-//   content: {
-//     type: DataTypes.TEXT
-//   },
-
-//   mediaUrl: {
-//     type: DataTypes.STRING
-//   },
-
-//   type: {
-//     type: DataTypes.ENUM("text", "image", "video", "audio", "doodle", "shared_post"),
-//     defaultValue: "text"
-//   },
-
-// thumbnail: {
-//     type: DataTypes.STRING
-//   },
-
-// duration: {
-//     type:     DataTypes.INTEGER
-//   },
-
-
-//   status: {
-//     type: DataTypes.ENUM("sent", "delivered", "seen"),
-//     defaultValue: "sent"
-//   },
-//   receiverId: {
-//   type: DataTypes.UUID,
-//   allowNull: false
-// },
-// postId: {         
-//   type: DataTypes.UUID,
-//   allowNull: true
-// }
-
-// }, {
-//   tableName: "messages",
-//   timestamps: true
-// });
-// export default Message;
-
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/db.js';
 
@@ -94,14 +33,14 @@ const Message = sequelize.define("Message", {
     type: DataTypes.INTEGER
   },
   status: {
-    type: DataTypes.ENUM("sent", "delivered", "seen"),
+    type: DataTypes.ENUM("sent", "delivered", "seen", "deleted"),
     defaultValue: "sent"
   },
   receiverId: {
     type: DataTypes.UUID,
     allowNull: false
   },
-  postId: {         
+  postId: {          
     type: DataTypes.UUID,
     allowNull: true
   },
@@ -110,6 +49,17 @@ const Message = sequelize.define("Message", {
     type: DataTypes.JSONB,
     allowNull: true,
     defaultValue: null
+  },
+  // 🔥 PHASE 3: Reply-to-Message Reference
+  replyToId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    defaultValue: null,
+    references: {
+      model: "messages",
+      key: "id"
+    },
+    onDelete: "SET NULL"
   }
 }, {
   tableName: "messages",
