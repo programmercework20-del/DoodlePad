@@ -86,6 +86,11 @@ const Post = sequelize.define("Post", {
         defaultValue: 0,
         allowNull: true
     },
+    viewsCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    allowNull: false
+},
     backgroundAudios: {
         type: DataTypes.JSON,
         allowNull: true,

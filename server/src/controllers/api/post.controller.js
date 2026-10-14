@@ -537,46 +537,6 @@ export const createPost = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
   }
 };
-
-// export const getArchivedPosts = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const cacheKey = `archivedPosts:${userId}`;
-
-//     await markExpiredPosts(userId);
-
-//     if (redisClient?.isReady) {
-//       const cachedData = await redisClient.get(cacheKey);
-//       if (cachedData) {
-//         const parsedData = JSON.parse(cachedData);
-//         const finalizedPosts = await injectIsLikedFlag(parsedData, userId);
-//         return res.json({ success: true, count: finalizedPosts.length, posts: finalizedPosts });
-//       }
-//     }
-
-//     const posts = await Post.findAll({
-//       where: { userId, status: "archived" },
-//       order: [["createdAt", "DESC"]]
-//     });
-
-//     if (redisClient?.isReady) {
-//       await redisClient.setEx(cacheKey, 3600, JSON.stringify(posts));
-//     }
-
-//     const finalizedPosts = await injectIsLikedFlag(posts, userId);
-
-//     return res.json({
-//       success: true,
-//       count: finalizedPosts.length,
-//       posts: finalizedPosts
-//     });
-
-//   } catch (error) {
-//     console.error("ARCHIVE FETCH ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Failed to fetch archived posts" });
-//   }
-// };
-
 export const markExpiredPosts = async (specificUserId = null) => {
   try {
     const now = new Date();
@@ -641,66 +601,6 @@ export const getExpiredPosts = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch expired posts" });
   }
 };
-
-// export const restoreArchivedPost = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const postId = req.params.id;
-
-//     const post = await Post.findByPk(postId);
-
-//     if (!post || post.userId !== userId) {
-//       return res.status(404).json({ success: false, message: "Post not found" });
-//     }
-
-//     if (post.status !== "archived") {
-//       return res.status(400).json({ success: false, message: "Post is not archived" });
-//     }
-
-//     await post.update({ status: "active", isSaved: true, expiresAt: null });
-
-//     if (redisClient?.isReady) {
-//       await redisClient.del(`userPosts:${userId}`);
-//       await redisClient.del(`archivedPosts:${userId}`);
-//     }
-
-//     return res.json({ success: true, message: "Post restored and made permanent" });
-
-//   } catch (error) {
-//     console.error("RESTORE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Restore failed" });
-//   }
-// };
-
-// export const archivePost = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const postId = req.params.id;
-
-//     const post = await Post.findByPk(postId);
-
-//     if (!post || post.userId !== userId) {
-//       return res.status(404).json({ success: false, message: "Post not found" });
-//     }
-
-//     if (post.status === "archived") {
-//       return res.status(400).json({ success: false, message: "Post already archived" });
-//     }
-
-//     await post.update({ status: "archived", expiresAt: null });
-
-//     if (redisClient?.isReady) {
-//       await redisClient.del(`userPosts:${userId}`);
-//       await redisClient.del(`archivedPosts:${userId}`);
-//     }
-
-//     return res.json({ success: true, message: "Post moved to archive" });
-
-//   } catch (error) {
-//     console.error("ARCHIVE ERROR:", error);
-//     return res.status(500).json({ success: false, message: "Archive failed" });
-//   }
-// };
 
 export const deletePost = async (req, res) => {
   try {
@@ -983,5 +883,36 @@ export const togglePinPost = async (req, res) => {
   } catch (error) {
     console.error("TOGGLE PIN ERROR:", error);
     return res.status(500).json({ success: false, message: "Failed to toggle pin status" });
+  }
+};
+// ==========================================
+// 👁️ INCREMENT VIDEO VIEW COUNT
+// ==========================================
+export const incrementViewCount = async (req, res) => {
+  try {
+    const { id } = req.params; // postId
+
+    // 1. Database me View increment karo
+    const post = await Post.findByPk(id);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    // 2. Sirf video/audio posts ke views count hone chahiye
+    if (post.type === 'video' || post.type === 'audio') {
+      await post.increment("viewsCount");
+
+      // 3. Clear cache taaki feed refresh hone par naye views dikhein
+      if (redisClient?.isReady) {
+        await redisClient.del(`userPosts:${post.userId}`);
+        // Agar single post cache hai toh wo bhi delete kar dena
+      }
+    }
+
+    return res.status(200).json({ success: true, message: "View counted" });
+  } catch (error) {
+    console.error("🔥 View Increment Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to count view" });
   }
 };
