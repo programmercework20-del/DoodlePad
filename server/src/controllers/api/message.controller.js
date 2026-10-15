@@ -132,6 +132,7 @@ const resolveConversationFromParam = async (rawParamId, currentUserId, transacti
 };
 
 // 🔥 HELPER 4: Bulletproof Target Resolution for sendMessage & sendCardMessage
+// 🔥 HELPER 4: Bulletproof Target Resolution for sendMessage & sendCardMessage
 const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}, cleanReplyToId, transaction = null }) => {
   let receiverId =
     cleanUuidInput(body.receiverId) ||
@@ -153,7 +154,7 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
     cleanUuidInput(query.conversationId) ||
     null;
 
-  // Guard: If FE accidentally sent sender's own ID as receiverId, clear it so we resolve the real peer
+  // 🛡️ Guard: If FE accidentally sent sender's own ID as receiverId, clear it out immediately
   if (receiverId && receiverId === senderId) {
     receiverId = null;
   }
@@ -171,12 +172,12 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
     }
   }
 
-  // Layer B: Inspect conversationId if provided
+  // Layer B: Inspect conversationId if provided (Also auto-heals receiverId if it was cleared above)
   if (conversationId) {
     const convExists = await Conversation.findByPk(conversationId, { transaction });
 
     if (convExists) {
-      // It is a real Conversation ID -> find the other participant if receiverId is missing
+      // It is a real Conversation ID -> find the other participant if receiverId is missing/cleared
       if (!receiverId) {
         const otherParticipant = await ConversationParticipant.findOne({
           where: {
