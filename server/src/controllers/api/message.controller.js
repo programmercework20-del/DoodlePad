@@ -14,19 +14,38 @@ import Block from "../../models/Block.js";
 // 🔥 Doodle image rasterization
 import { generateDoodleImage } from "../../utils/doodleRenderer.js"; 
 
-// ✅ Universal UUID validator (accepts all standard 8-4-4-4-12 hex UUIDs)
+// ✅ Universal UUID validator
 const validateUUID = (uuid) => {
   if (!uuid || typeof uuid !== "string") return false;
   const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\$/i;
   return re.test(uuid.trim());
 };
 
-// 🔥 HELPER 1: Normalize replyToId from JSON or multipart/form-data
-const normalizeReplyToId = (rawReplyToId) => {
-  if (!rawReplyToId) return null;
-  const str = String(rawReplyToId).trim();
-  if (!str || str === "null" || str === "undefined") return null;
-  return str;
+// ✅ Clean UUID input (filters out "undefined", "null", empty strings, objects)
+const cleanUuidInput = (rawVal) => {
+  if (!rawVal) return null;
+  if (typeof rawVal === "object" && rawVal.id) {
+    return cleanUuidInput(rawVal.id);
+  }
+  const str = String(rawVal).trim();
+  if (!str || str === "null" || str === "undefined" || str === "[object Object]") return null;
+  return validateUUID(str) ? str : null;
+};
+
+// 🔥 HELPER 1: Clear Redis Conversation Cache (both v1 and v2 keys)
+const clearConversationCache = async (senderId, receiverId) => {
+  if (!redisClient?.isReady) return;
+  try {
+    const keys = [
+      `conversations:${senderId}`,
+      `conversations:${receiverId}`,
+      `conversations:v2:${senderId}`,
+      `conversations:v2:${receiverId}`
+    ];
+    await Promise.all(keys.map(k => redisClient.del(k)));
+  } catch (e) {
+    console.error("❌ Redis Cache clear error:", e.message);
+  }
 };
 
 // 🔥 HELPER 2: Find existing 1-on-1 conversation between two users
@@ -55,33 +74,37 @@ const findSharedConversation = async (userA, userB, transaction = null) => {
 };
 
 // 🔥 HELPER 3: Smart Resolver for GET /messages/:id & POST /messages/seen/:id
-// Handles both real conversationId AND accidental userId (receiverId) from FE!
 const resolveConversationFromParam = async (rawParamId, currentUserId, transaction = null) => {
-  const paramId = typeof rawParamId === "string" ? rawParamId.trim() : "";
-  if (!validateUUID(paramId)) {
-    return { isValidFormat: false, conversation: null, isParticipant: false, resolvedViaUserId: false };
+  const paramId = cleanUuidInput(rawParamId);
+  if (!paramId) {
+    return { isValidFormat: false, conversation: null, isParticipant: false, peerUserId: null };
   }
 
   // Case 1: Check if paramId is an actual Conversation ID
   const existingConv = await Conversation.findByPk(paramId, { transaction });
   if (existingConv) {
     let isParticipant = true;
+    let peerUserId = null;
+
     if (currentUserId) {
-      const part = await ConversationParticipant.findOne({
-        where: { conversationId: existingConv.id, userId: currentUserId },
+      const participants = await ConversationParticipant.findAll({
+        where: { conversationId: existingConv.id },
         transaction
       });
-      isParticipant = Boolean(part);
+      isParticipant = participants.some(p => p.userId === currentUserId);
+      const other = participants.find(p => p.userId !== currentUserId);
+      peerUserId = other ? other.userId : null;
     }
+
     return {
       isValidFormat: true,
       conversation: existingConv,
       isParticipant,
-      resolvedViaUserId: false
+      peerUserId
     };
   }
 
-  // Case 2: paramId is NOT in Conversations -> Check if FE accidentally sent a User UUID!
+  // Case 2: paramId is NOT in Conversations -> FE passed a User UUID (e.g., 5a03977b-...)!
   if (currentUserId) {
     const sharedConv = await findSharedConversation(currentUserId, paramId, transaction);
     if (sharedConv) {
@@ -89,67 +112,72 @@ const resolveConversationFromParam = async (rawParamId, currentUserId, transacti
         isValidFormat: true,
         conversation: sharedConv,
         isParticipant: true,
-        resolvedViaUserId: true
+        peerUserId: paramId
       };
     }
 
-    // Even if no shared conversation exists yet, check if it's a valid User in DB (new chat screen)
+    // Check if paramId is a valid User in DB (brand new chat with 0 messages)
     const targetUser = await User.findByPk(paramId, { attributes: ["id"], transaction });
     if (targetUser) {
       return {
         isValidFormat: true,
-        conversation: null, // Brand new chat, no messages yet
+        conversation: null,
         isParticipant: true,
-        resolvedViaUserId: true
+        peerUserId: paramId
       };
     }
   }
 
-  return { isValidFormat: true, conversation: null, isParticipant: false, resolvedViaUserId: false };
+  return { isValidFormat: true, conversation: null, isParticipant: false, peerUserId: null };
 };
 
-// 🔥 HELPER 4: Smart Target Resolution for sendMessage & sendCardMessage
+// 🔥 HELPER 4: Bulletproof Target Resolution for sendMessage & sendCardMessage
 const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}, cleanReplyToId, transaction = null }) => {
   let receiverId =
-    body.receiverId ||
-    body.recipientId ||
-    body.toUserId ||
-    body.targetUserId ||
-    params.receiverId ||
-    query.receiverId ||
+    cleanUuidInput(body.receiverId) ||
+    cleanUuidInput(body.recipientId) ||
+    cleanUuidInput(body.toUserId) ||
+    cleanUuidInput(body.targetUserId) ||
+    cleanUuidInput(body.peerId) ||
+    cleanUuidInput(body.userId) ||
+    cleanUuidInput(body.user) ||
+    cleanUuidInput(params.receiverId) ||
+    cleanUuidInput(query.receiverId) ||
     null;
 
   let conversationId =
-    body.conversationId ||
-    body.chatId ||
-    body.roomId ||
-    params.conversationId ||
-    query.conversationId ||
+    cleanUuidInput(body.conversationId) ||
+    cleanUuidInput(body.chatId) ||
+    cleanUuidInput(body.roomId) ||
+    cleanUuidInput(params.conversationId) ||
+    cleanUuidInput(query.conversationId) ||
     null;
 
-  if (receiverId && typeof receiverId === "string") receiverId = receiverId.trim();
-  if (conversationId && typeof conversationId === "string") conversationId = conversationId.trim();
+  // Guard: If FE accidentally sent sender's own ID as receiverId, clear it so we resolve the real peer
+  if (receiverId && receiverId === senderId) {
+    receiverId = null;
+  }
 
   // Layer A: Fallback via replyToId
-  if (cleanReplyToId && validateUUID(cleanReplyToId) && (!validateUUID(receiverId) || !validateUUID(conversationId))) {
+  if (cleanReplyToId && (!receiverId || !conversationId)) {
     const repliedMsg = await Message.findByPk(cleanReplyToId, { transaction });
     if (repliedMsg) {
-      if (!validateUUID(conversationId)) {
+      if (!conversationId) {
         conversationId = repliedMsg.conversationId;
       }
-      if (!validateUUID(receiverId)) {
+      if (!receiverId) {
         receiverId = repliedMsg.senderId === senderId ? repliedMsg.receiverId : repliedMsg.senderId;
       }
     }
   }
 
   // Layer B: Inspect conversationId if provided
-  if (validateUUID(conversationId)) {
+  if (conversationId) {
     const convExists = await Conversation.findByPk(conversationId, { transaction });
 
     if (convExists) {
-      // conversationId is a REAL conversation -> find receiverId if missing
-      if (!validateUUID(receiverId)) {
+      // It is a real Conversation ID -> find the other participant if receiverId is missing
+      if (!receiverId) {
         const otherParticipant = await ConversationParticipant.findOne({
           where: {
             conversationId,
@@ -172,17 +200,36 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
         }
       }
     } else {
-      // 🚨 FE BUG AUTO-HEAL: conversationId does NOT exist in conversations table!
+      // 🚨 FE AUTO-HEAL: conversationId is NOT in conversations table!
       // Check if FE passed the receiver's User UUID inside conversationId!
       const userExists = await User.findByPk(conversationId, { attributes: ["id"], transaction });
-      if (userExists) {
-        if (!validateUUID(receiverId)) {
-          receiverId = conversationId; // Swap User UUID into receiverId!
+      if (userExists && conversationId !== senderId) {
+        if (!receiverId) {
+          receiverId = conversationId;
         }
         const sharedConv = await findSharedConversation(senderId, receiverId, transaction);
         conversationId = sharedConv ? sharedConv.id : null;
       } else {
         conversationId = null;
+      }
+    }
+  }
+
+  // Layer C: If receiverId is actually a Conversation ID (swapped fields)
+  if (receiverId) {
+    const isActuallyUser = await User.findByPk(receiverId, { attributes: ["id"], transaction });
+    if (!isActuallyUser) {
+      const isActuallyConv = await Conversation.findByPk(receiverId, { transaction });
+      if (isActuallyConv) {
+        conversationId = isActuallyConv.id;
+        const otherParticipant = await ConversationParticipant.findOne({
+          where: {
+            conversationId: isActuallyConv.id,
+            userId: { [Op.ne]: senderId }
+          },
+          transaction
+        });
+        receiverId = otherParticipant ? otherParticipant.userId : null;
       }
     }
   }
@@ -287,9 +334,11 @@ export const sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
     const { content, type = "text", postId, replyToId } = req.body;
-    const cleanReplyToId = normalizeReplyToId(replyToId || req.body?.replyTo?.id);
+    const cleanReplyToId = cleanUuidInput(replyToId || req.body?.replyTo?.id);
 
-    // 🔥 SMART TARGET RESOLUTION (Auto-heals if FE sends userId in conversationId)
+    console.log("📨 [sendMessage] Incoming body:", JSON.stringify(req.body));
+
+    // 🔥 SMART TARGET RESOLUTION
     const { receiverId, conversationId } = await resolveChatTargets({
       senderId,
       body: req.body,
@@ -302,13 +351,14 @@ export const sendMessage = async (req, res) => {
     // 1. VALIDATION
     if (!receiverId) {
       await transaction.rollback();
+      console.warn("⚠️ [sendMessage] Could not resolve receiverId from payload:", req.body);
       return res.status(400).json({
         success: false,
         message: "Valid receiverId is required"
       });
     }
 
-    if (cleanReplyToId && !validateUUID(cleanReplyToId)) {
+    if ((req.body.replyToId || req.body?.replyTo?.id) && !cleanReplyToId) {
       await transaction.rollback();
       return res.status(400).json({ success: false, message: "Invalid replyToId format" });
     }
@@ -469,7 +519,7 @@ export const sendMessage = async (req, res) => {
       thumbnail,
       duration,
       type: finalType,
-      postId: postId || null,
+      postId: cleanUuidInput(postId),
       replyToId: cleanReplyToId,
       status: "sent"
     }, { transaction });
@@ -491,24 +541,28 @@ export const sendMessage = async (req, res) => {
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
 
-    if (redisClient?.isReady) {
-      Promise.all([
-        redisClient.del(`conversations:${senderId}`),
-        redisClient.del(`conversations:${receiverId}`)
-      ]).catch(e => console.error("❌ Redis Cache clear error:", e));
-    }
+    await clearConversationCache(senderId, receiverId);
 
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
       const receiverSocketId = onlineUsers.get(receiverId);
+      const senderSocketId = onlineUsers.get(senderId);
 
-      io.to(conversation.id).emit("receive_message", messageData);
-      io.to(`user_${receiverId}`).emit("receive_message", messageData);
+      // Make sure both sockets are joined to the real conversation.id room
+      if (receiverSocketId) io.sockets.sockets.get(receiverSocketId)?.join(conversation.id);
+      if (senderSocketId) io.sockets.sockets.get(senderSocketId)?.join(conversation.id);
+
+      // 🔥 Chained Socket.IO emission: delivers to real conversation room, user_ room, AND peer userId room without duplicates!
+      io.to(conversation.id)
+        .to(`user_${receiverId}`)
+        .to(receiverId)
+        .to(senderId)
+        .emit("receive_message", messageData);
 
       if (receiverSocketId) {
         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
-        io.to(`user_${senderId}`).emit("message_status_update", {
+        io.to(`user_${senderId}`).to(senderId).emit("message_status_update", {
           messageId: message.id,
           status: "delivered",
           conversationId: conversation.id
@@ -552,7 +606,9 @@ export const sendCardMessage = async (req, res) => {
       replyToId
     } = req.body;
 
-    const cleanReplyToId = normalizeReplyToId(replyToId || req.body?.replyTo?.id);
+    const cleanReplyToId = cleanUuidInput(replyToId || req.body?.replyTo?.id);
+
+    console.log("📨 [sendCardMessage] Incoming body:", JSON.stringify(req.body));
 
     // 🔥 SMART TARGET RESOLUTION
     let { receiverId, conversationId } = await resolveChatTargets({
@@ -570,7 +626,7 @@ export const sendCardMessage = async (req, res) => {
       });
     }
 
-    if (cleanReplyToId && !validateUUID(cleanReplyToId)) {
+    if ((req.body.replyToId || req.body?.replyTo?.id) && !cleanReplyToId) {
       return res.status(400).json({ success: false, message: "Invalid replyToId format" });
     }
 
@@ -588,7 +644,7 @@ export const sendCardMessage = async (req, res) => {
       return res.status(403).json({ success: false, message: "Message cannot be sent due to block status." });
     }
 
-    // Ensure conversation exists (auto-create if new chat)
+    // Ensure conversation exists
     let conversation = conversationId ? await Conversation.findByPk(conversationId) : null;
     if (!conversation) {
       conversation = await findSharedConversation(senderId, receiverId);
@@ -732,24 +788,26 @@ export const sendCardMessage = async (req, res) => {
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
 
-    if (redisClient?.isReady) {
-      Promise.all([
-        redisClient.del(`conversations:${senderId}`),
-        redisClient.del(`conversations:${receiverId}`)
-      ]).catch(e => console.error("❌ Redis Cache clear error:", e));
-    }
+    await clearConversationCache(senderId, receiverId);
 
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
       const receiverSocketId = onlineUsers.get(receiverId);
+      const senderSocketId = onlineUsers.get(senderId);
 
-      io.to(conversationId).emit("receive_message", messageData);
-      io.to(`user_${receiverId}`).emit("receive_message", messageData);
+      if (receiverSocketId) io.sockets.sockets.get(receiverSocketId)?.join(conversationId);
+      if (senderSocketId) io.sockets.sockets.get(senderSocketId)?.join(conversationId);
+
+      io.to(conversationId)
+        .to(`user_${receiverId}`)
+        .to(receiverId)
+        .to(senderId)
+        .emit("receive_message", messageData);
 
       if (receiverSocketId) {
         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
-        io.to(`user_${senderId}`).emit("message_status_update", {
+        io.to(`user_${senderId}`).to(senderId).emit("message_status_update", {
           messageId: message.id,
           status: "delivered",
           conversationId
@@ -785,20 +843,18 @@ export const markSeen = async (req, res) => {
     const rawParamId = req.params.conversationId;
     const userId = req.user.id;
 
-    const { isValidFormat, conversation } = await resolveConversationFromParam(rawParamId, userId);
+    const { isValidFormat, conversation, peerUserId } = await resolveConversationFromParam(rawParamId, userId);
 
     if (!isValidFormat) {
       return res.status(400).json({ success: false, message: "Invalid conversationId format" });
     }
 
-    // If it's a brand new chat (no conversation record yet), return success gracefully
     if (!conversation) {
-      return res.json({ success: true, conversationId: null });
+      return res.json({ success: true, conversationId: null, receiverId: peerUserId });
     }
 
     const realConversationId = conversation.id;
 
-    // 1. Update messages status in DB
     const [updatedCount] = await Message.update(
       { status: "seen" },
       {
@@ -810,22 +866,22 @@ export const markSeen = async (req, res) => {
       }
     );
 
-    // 🚀 2. Clear Redis Cache for real-time count sync on list page
-    if (updatedCount > 0 && redisClient?.isReady) {
-      await redisClient.del(`conversations:${userId}`);
+    if (updatedCount > 0) {
+      await clearConversationCache(userId, peerUserId);
     }
 
-    // 3. Socket broadcast for real-time blue ticks
     try {
       const io = getIO();
       if (io) {
-        io.to(realConversationId).emit("messages_seen", { conversationId: realConversationId, userId });
+        io.to(realConversationId)
+          .to(rawParamId)
+          .emit("messages_seen", { conversationId: realConversationId, userId });
       }
     } catch (socketErr) {
       console.error("⚠️ Socket emit failed in markSeen:", socketErr.message);
     }
 
-    return res.json({ success: true, conversationId: realConversationId });
+    return res.json({ success: true, conversationId: realConversationId, receiverId: peerUserId });
 
   } catch (err) {
     console.error("🔥 SEEN ERROR:", err);
@@ -842,17 +898,17 @@ export const getMessages = async (req, res) => {
     const rawParamId = req.params.conversationId;
     const userId = req.user?.id;
 
-    const { isValidFormat, conversation, isParticipant } = await resolveConversationFromParam(rawParamId, userId);
+    const { isValidFormat, conversation, isParticipant, peerUserId } = await resolveConversationFromParam(rawParamId, userId);
 
     if (!isValidFormat) {
       return res.status(400).json({ success: false, message: "Invalid conversationId format" });
     }
 
-    // If FE opened a brand-new chat using a User ID and no conversation exists yet, return empty history
     if (!conversation) {
       return res.json({
         success: true,
         conversationId: null,
+        receiverId: peerUserId,
         count: 0,
         messages: []
       });
@@ -866,6 +922,16 @@ export const getMessages = async (req, res) => {
     }
 
     const realConversationId = conversation.id;
+
+    // Auto-join user's active socket to the real conversation room
+    try {
+      const io = getIO();
+      const onlineUsers = getOnlineUsers();
+      const sockId = userId ? onlineUsers.get(userId) : null;
+      if (sockId) {
+        io.sockets.sockets.get(sockId)?.join(realConversationId);
+      }
+    } catch (_) {}
 
     const messages = await Message.findAll({
       where: { conversationId: realConversationId },
@@ -885,7 +951,6 @@ export const getMessages = async (req, res) => {
             }
           ]
         },
-        // 🔥 PHASE 3: Populate original message in replyTo
         getReplyIncludeConfig()
       ]
     });
@@ -895,6 +960,7 @@ export const getMessages = async (req, res) => {
     return res.json({
       success: true,
       conversationId: realConversationId,
+      receiverId: peerUserId,
       count: formattedMessages.length,
       messages: formattedMessages
     });
@@ -907,7 +973,7 @@ export const getMessages = async (req, res) => {
 
 
 // ============================================================
-// EDIT MESSAGE (Preserves replyTo in Response & Socket)
+// EDIT MESSAGE
 // ============================================================
 export const editMessage = async (req, res) => {
   try {
@@ -925,7 +991,11 @@ export const editMessage = async (req, res) => {
     const updatedPayload = formatMessagePayload(message);
 
     try {
-      getIO().to(message.conversationId).emit("message_updated", updatedPayload);
+      getIO()
+        .to(message.conversationId)
+        .to(`user_${message.receiverId}`)
+        .to(message.receiverId)
+        .emit("message_updated", updatedPayload);
     } catch (e) {
       console.error("Socket emit failed:", e.message);
     }
@@ -952,7 +1022,11 @@ export const deleteMessage = async (req, res) => {
     await message.update({ status: "deleted" });
 
     try {
-      getIO().to(message.conversationId).emit("message_deleted", messageId);
+      getIO()
+        .to(message.conversationId)
+        .to(`user_${message.receiverId}`)
+        .to(message.receiverId)
+        .emit("message_deleted", messageId);
     } catch (e) {
       console.error("Socket emit failed:", e.message);
     }

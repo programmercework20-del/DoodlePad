@@ -1,4 +1,6 @@
+
 // import { Server } from "socket.io";
+// import { ConversationParticipant } from "../models/index.js";
 
 // let io = null;
 // const onlineUsers = new Map();
@@ -6,67 +8,300 @@
 // export const initSocket = (server) => {
 //   io = new Server(server, {
 //     cors: {
-//       origin: "*", // Testing ke liye thik hai, production mein app ka domain daal sakte ho
+//       origin: "*",
 //       methods: ["GET", "POST"],
 //       credentials: true
 //     },
-//     // 🚀 MOBILE APP FIX: In settings ke bina Android/iOS mein connection errors aate hain
-//     transports: ["websocket", "polling"], 
-//     allowEIO3: true, // Legacy support ke liye
+//     transports: ["websocket", "polling"],
+//     allowEIO3: true,
 //     pingTimeout: 60000,
 //     pingInterval: 25000
 //   });
 
 //   io.on("connection", (socket) => {
+
+//   try {
+
 //     console.log("⚡ New Socket Connection:", socket.id);
 
-//     // ✅ Register user with validation
-//     socket.on("register", (userId) => {
-//       if (userId) {
+//     // =========================================
+//     // ✅ REGISTER USER
+//     // =========================================
+
+//     socket.on("register", async (userId) => {
+
+//       try {
+
+//         if (!userId) {
+//           console.log("❌ Invalid userId");
+//           return;
+//         }
+
+//         // Latest socket map
 //         onlineUsers.set(userId, socket.id);
-//         console.log(`👤 User Registered: ${userId} with Socket: ${socket.id}`);
-//         // Online users count check karne ke liye
-//         console.log(`📈 Online Users Count: ${onlineUsers.size}`);
+
+//         socket.userId = userId;
+
+//         // =========================================
+//         // ✅ AUTO JOIN CONVERSATIONS
+//         // =========================================
+
+//         try {
+
+//           const entries =
+//             await ConversationParticipant.findAll({
+
+//               where: { userId },
+
+//               attributes: ["conversationId"],
+
+//               raw: true
+//             });
+
+//           entries.forEach(({ conversationId }) => {
+
+//             socket.join(conversationId);
+//           });
+
+//         } catch (err) {
+
+//           console.error(
+//             "❌ Auto-join failed:",
+//             err.message
+//           );
+//         }
+
+//         // =========================================
+//         // ✅ PERSONAL ROOM
+//         // =========================================
+
+//         socket.join(`user_${userId}`);
+
+//         console.log(
+//           `✅ User registered: ${userId}`
+//         );
+
+//       } catch (err) {
+
+//         console.error(
+//           "❌ Register socket error:",
+//           err
+//         );
 //       }
 //     });
 
-//     // ✅ Error handling
-//     socket.on("connect_error", (err) => {
-//       console.error("❌ Socket Connect Error:", err.message);
-//     });
+//     // =========================================
+//     // ✅ JOIN CONVERSATION
+//     // =========================================
 
-//     // ✅ Disconnect cleanup (Optimized)
-//     socket.on("disconnect", (reason) => {
-//       console.log(`🔌 User Disconnected: ${socket.id} (Reason: ${reason})`);
-//       for (let [userId, sockId] of onlineUsers.entries()) {
-//         if (sockId === socket.id) {
-//           onlineUsers.delete(userId);
-//           break;
+//     socket.on(
+//       "join_conversation",
+//       (conversationId) => {
+
+//         try {
+
+//           if (!conversationId) return;
+
+//           socket.join(conversationId);
+
+//           console.log(
+//             `🏠 Joined room: ${conversationId}`
+//           );
+
+//         } catch (err) {
+
+//           console.error(
+//             "❌ Join room error:",
+//             err
+//           );
 //         }
 //       }
+//     );
+
+//     // =========================================
+//     // ✅ LEAVE CONVERSATION
+//     // =========================================
+
+//     socket.on(
+//       "leave_conversation",
+//       (conversationId) => {
+
+//         try {
+
+//           if (!conversationId) return;
+
+//           socket.leave(conversationId);
+
+//           console.log(
+//             `🚪 Left room: ${conversationId}`
+//           );
+
+//         } catch (err) {
+
+//           console.error(
+//             "❌ Leave room error:",
+//             err
+//           );
+//         }
+//       }
+//     );
+
+//     // =========================================
+//     // ✅ TYPING
+//     // =========================================
+
+//     socket.on(
+//       "typing",
+//       ({ conversationId, userId }) => {
+
+//         try {
+
+//           socket
+//             .to(conversationId)
+//             .emit("typing", { userId });
+
+//         } catch (err) {
+
+//           console.error(
+//             "❌ Typing event error:",
+//             err
+//           );
+//         }
+//       }
+//     );
+
+//     // =========================================
+//     // ✅ STOP TYPING
+//     // =========================================
+
+//     socket.on(
+//       "stop_typing",
+//       ({ conversationId, userId }) => {
+
+//         try {
+
+//           socket
+//             .to(conversationId)
+//             .emit("stop_typing", { userId });
+
+//         } catch (err) {
+
+//           console.error(
+//             "❌ Stop typing error:",
+//             err
+//           );
+//         }
+//       }
+//     );
+
+//     // =========================================
+//     // ✅ SOCKET CONNECT ERROR
+//     // =========================================
+
+//     socket.on("connect_error", (err) => {
+
+//       console.error(
+//         "❌ Socket Connect Error:",
+//         err.message
+//       );
 //     });
-//   });
 
-//   return io;
-// };
+//     // =========================================
+//     // ✅ DISCONNECT
+//     // =========================================
 
-// // Helper to get IO instance
-// export const getIO = () => {
-//   if (!io) {
-//     throw new Error("Socket.io not initialized!");
+//     socket.on("disconnect", (reason) => {
+
+//       try {
+
+//         console.log(
+//           `🔌 User Disconnected: ${socket.id}`
+//         );
+
+//         console.log(`Reason: ${reason}`);
+
+//         for (
+//           let [userId, sockId]
+//           of onlineUsers.entries()
+//         ) {
+
+//           if (sockId === socket.id) {
+
+//             onlineUsers.delete(userId);
+
+//             break;
+//           }
+//         }
+
+//       } catch (err) {
+
+//         console.error(
+//           "❌ Disconnect cleanup error:",
+//           err
+//         );
+//       }
+//     });
+
+//   } catch (err) {
+
+//     console.error(
+//       "🔥 SOCKET CONNECTION ERROR:",
+//       err
+//     );
 //   }
+// });
+
 //   return io;
 // };
 
-// // Helper to get online users map
+// export const getIO = () => {
+//   if (!io) throw new Error("Socket.io not initialized!");
+//   return io;
+// };
+
 // export const getOnlineUsers = () => onlineUsers;
-
-
 import { Server } from "socket.io";
+import { Op } from "sequelize";
 import { ConversationParticipant } from "../models/index.js";
 
 let io = null;
 const onlineUsers = new Map();
+
+// 🔥 Helper: Resolve real conversationId if FE passes a peer userId to socket events
+const resolveSocketConversationRoom = async (currentUserId, rawRoomId) => {
+  if (!currentUserId || !rawRoomId) return null;
+  try {
+    // Check if rawRoomId is already a conversation the user belongs to
+    const direct = await ConversationParticipant.findOne({
+      where: { conversationId: rawRoomId, userId: currentUserId },
+      attributes: ["conversationId"],
+      raw: true
+    });
+    if (direct) return direct.conversationId;
+
+    // Otherwise check if rawRoomId is another User's ID and find shared conversation
+    const myConvs = await ConversationParticipant.findAll({
+      where: { userId: currentUserId },
+      attributes: ["conversationId"],
+      raw: true
+    });
+    const convIds = myConvs.map(c => c.conversationId);
+    if (convIds.length === 0) return null;
+
+    const shared = await ConversationParticipant.findOne({
+      where: {
+        conversationId: { [Op.in]: convIds },
+        userId: rawRoomId
+      },
+      attributes: ["conversationId"],
+      raw: true
+    });
+
+    return shared ? shared.conversationId : null;
+  } catch (e) {
+    return null;
+  }
+};
 
 export const initSocket = (server) => {
   io = new Server(server, {
@@ -82,237 +317,147 @@ export const initSocket = (server) => {
   });
 
   io.on("connection", (socket) => {
+    try {
+      console.log("⚡ New Socket Connection:", socket.id);
 
-  try {
-
-    console.log("⚡ New Socket Connection:", socket.id);
-
-    // =========================================
-    // ✅ REGISTER USER
-    // =========================================
-
-    socket.on("register", async (userId) => {
-
-      try {
-
-        if (!userId) {
-          console.log("❌ Invalid userId");
-          return;
-        }
-
-        // Latest socket map
-        onlineUsers.set(userId, socket.id);
-
-        socket.userId = userId;
-
-        // =========================================
-        // ✅ AUTO JOIN CONVERSATIONS
-        // =========================================
-
+      // =========================================
+      // ✅ REGISTER USER
+      // =========================================
+      socket.on("register", async (userId) => {
         try {
+          if (!userId) {
+            console.log("❌ Invalid userId");
+            return;
+          }
 
-          const entries =
-            await ConversationParticipant.findAll({
+          onlineUsers.set(userId, socket.id);
+          socket.userId = userId;
 
+          // Auto-join all existing conversations
+          try {
+            const entries = await ConversationParticipant.findAll({
               where: { userId },
-
               attributes: ["conversationId"],
-
               raw: true
             });
 
-          entries.forEach(({ conversationId }) => {
+            entries.forEach(({ conversationId }) => {
+              socket.join(conversationId);
+            });
+          } catch (err) {
+            console.error("❌ Auto-join failed:", err.message);
+          }
 
-            socket.join(conversationId);
-          });
+          // Join both user_<id> and raw <id> rooms for maximum compatibility
+          socket.join(`user_${userId}`);
+          socket.join(userId);
 
+          console.log(`✅ User registered: ${userId}`);
         } catch (err) {
-
-          console.error(
-            "❌ Auto-join failed:",
-            err.message
-          );
+          console.error("❌ Register socket error:", err);
         }
+      });
 
-        // =========================================
-        // ✅ PERSONAL ROOM
-        // =========================================
-
-        socket.join(`user_${userId}`);
-
-        console.log(
-          `✅ User registered: ${userId}`
-        );
-
-      } catch (err) {
-
-        console.error(
-          "❌ Register socket error:",
-          err
-        );
-      }
-    });
-
-    // =========================================
-    // ✅ JOIN CONVERSATION
-    // =========================================
-
-    socket.on(
-      "join_conversation",
-      (conversationId) => {
-
+      // =========================================
+      // ✅ JOIN CONVERSATION (With Auto-Heal for User ID)
+      // =========================================
+      socket.on("join_conversation", async (conversationId) => {
         try {
-
           if (!conversationId) return;
 
           socket.join(conversationId);
+          console.log(`🏠 Joined room: ${conversationId}`);
 
-          console.log(
-            `🏠 Joined room: ${conversationId}`
-          );
-
-        } catch (err) {
-
-          console.error(
-            "❌ Join room error:",
-            err
-          );
-        }
-      }
-    );
-
-    // =========================================
-    // ✅ LEAVE CONVERSATION
-    // =========================================
-
-    socket.on(
-      "leave_conversation",
-      (conversationId) => {
-
-        try {
-
-          if (!conversationId) return;
-
-          socket.leave(conversationId);
-
-          console.log(
-            `🚪 Left room: ${conversationId}`
-          );
-
-        } catch (err) {
-
-          console.error(
-            "❌ Leave room error:",
-            err
-          );
-        }
-      }
-    );
-
-    // =========================================
-    // ✅ TYPING
-    // =========================================
-
-    socket.on(
-      "typing",
-      ({ conversationId, userId }) => {
-
-        try {
-
-          socket
-            .to(conversationId)
-            .emit("typing", { userId });
-
-        } catch (err) {
-
-          console.error(
-            "❌ Typing event error:",
-            err
-          );
-        }
-      }
-    );
-
-    // =========================================
-    // ✅ STOP TYPING
-    // =========================================
-
-    socket.on(
-      "stop_typing",
-      ({ conversationId, userId }) => {
-
-        try {
-
-          socket
-            .to(conversationId)
-            .emit("stop_typing", { userId });
-
-        } catch (err) {
-
-          console.error(
-            "❌ Stop typing error:",
-            err
-          );
-        }
-      }
-    );
-
-    // =========================================
-    // ✅ SOCKET CONNECT ERROR
-    // =========================================
-
-    socket.on("connect_error", (err) => {
-
-      console.error(
-        "❌ Socket Connect Error:",
-        err.message
-      );
-    });
-
-    // =========================================
-    // ✅ DISCONNECT
-    // =========================================
-
-    socket.on("disconnect", (reason) => {
-
-      try {
-
-        console.log(
-          `🔌 User Disconnected: ${socket.id}`
-        );
-
-        console.log(`Reason: ${reason}`);
-
-        for (
-          let [userId, sockId]
-          of onlineUsers.entries()
-        ) {
-
-          if (sockId === socket.id) {
-
-            onlineUsers.delete(userId);
-
-            break;
+          // 🔥 If FE sent peer's userId instead of conversationId, also join real conversationId!
+          if (socket.userId) {
+            const realConvId = await resolveSocketConversationRoom(socket.userId, conversationId);
+            if (realConvId && realConvId !== conversationId) {
+              socket.join(realConvId);
+              console.log(`🔗 Auto-joined mapped conversation room: ${realConvId}`);
+            }
           }
+        } catch (err) {
+          console.error("❌ Join room error:", err);
         }
+      });
 
-      } catch (err) {
+      // =========================================
+      // ✅ LEAVE CONVERSATION
+      // =========================================
+      socket.on("leave_conversation", (conversationId) => {
+        try {
+          if (!conversationId) return;
+          socket.leave(conversationId);
+          console.log(`🚪 Left room: ${conversationId}`);
+        } catch (err) {
+          console.error("❌ Leave room error:", err);
+        }
+      });
 
-        console.error(
-          "❌ Disconnect cleanup error:",
-          err
-        );
-      }
-    });
+      // =========================================
+      // ✅ TYPING
+      // =========================================
+      socket.on("typing", async ({ conversationId, userId }) => {
+        try {
+          if (!conversationId) return;
+          socket.to(conversationId).emit("typing", { userId });
 
-  } catch (err) {
+          const realConvId = await resolveSocketConversationRoom(userId || socket.userId, conversationId);
+          if (realConvId && realConvId !== conversationId) {
+            socket.to(realConvId).emit("typing", { userId });
+          }
+        } catch (err) {
+          console.error("❌ Typing event error:", err);
+        }
+      });
 
-    console.error(
-      "🔥 SOCKET CONNECTION ERROR:",
-      err
-    );
-  }
-});
+      // =========================================
+      // ✅ STOP TYPING
+      // =========================================
+      socket.on("stop_typing", async ({ conversationId, userId }) => {
+        try {
+          if (!conversationId) return;
+          socket.to(conversationId).emit("stop_typing", { userId });
+
+          const realConvId = await resolveSocketConversationRoom(userId || socket.userId, conversationId);
+          if (realConvId && realConvId !== conversationId) {
+            socket.to(realConvId).emit("stop_typing", { userId });
+          }
+        } catch (err) {
+          console.error("❌ Stop typing error:", err);
+        }
+      });
+
+      // =========================================
+      // ✅ SOCKET CONNECT ERROR
+      // =========================================
+      socket.on("connect_error", (err) => {
+        console.error("❌ Socket Connect Error:", err.message);
+      });
+
+      // =========================================
+      // ✅ DISCONNECT
+      // =========================================
+      socket.on("disconnect", (reason) => {
+        try {
+          console.log(`🔌 User Disconnected: ${socket.id}`);
+          console.log(`Reason: ${reason}`);
+
+          for (let [userId, sockId] of onlineUsers.entries()) {
+            if (sockId === socket.id) {
+              onlineUsers.delete(userId);
+              break;
+            }
+          }
+        } catch (err) {
+          console.error("❌ Disconnect cleanup error:", err);
+        }
+      });
+
+    } catch (err) {
+      console.error("🔥 SOCKET CONNECTION ERROR:", err);
+    }
+  });
 
   return io;
 };
