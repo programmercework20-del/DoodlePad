@@ -12,7 +12,7 @@ import path from "path";
 import os from "os";
 import Block from "../../models/Block.js";
 
-// 🔥 NAYA IMPORT: Doodle image rasterization
+// 🔥 Doodle image rasterization
 import { generateDoodleImage } from "../../utils/doodleRenderer.js"; 
 
 const validateUUID = (uuid) => {
@@ -29,7 +29,73 @@ const normalizeReplyToId = (rawReplyToId) => {
   return str;
 };
 
-// 🔥 HELPER 2: Reusable Sequelize Include for Populated Reply Object
+// 🔥 HELPER 2: 3-Layer Smart Fallback for receiverId & conversationId
+const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}, cleanReplyToId, transaction = null }) => {
+  let receiverId =
+    body.receiverId ||
+    body.recipientId ||
+    body.toUserId ||
+    body.targetUserId ||
+    params.receiverId ||
+    query.receiverId ||
+    null;
+
+  let conversationId =
+    body.conversationId ||
+    body.chatId ||
+    body.roomId ||
+    params.conversationId ||
+    query.conversationId ||
+    null;
+
+  if (receiverId && typeof receiverId === "string") receiverId = receiverId.trim();
+  if (conversationId && typeof conversationId === "string") conversationId = conversationId.trim();
+
+  // Layer A: Fallback via replyToId (if original message ID is known)
+  if (cleanReplyToId && validateUUID(cleanReplyToId) && (!validateUUID(receiverId) || !validateUUID(conversationId))) {
+    const repliedMsg = await Message.findByPk(cleanReplyToId, { transaction });
+    if (repliedMsg) {
+      if (!validateUUID(conversationId)) {
+        conversationId = repliedMsg.conversationId;
+      }
+      if (!validateUUID(receiverId)) {
+        receiverId = repliedMsg.senderId === senderId ? repliedMsg.receiverId : repliedMsg.senderId;
+      }
+    }
+  }
+
+  // Layer B: Fallback via conversationId (look up the other participant in the chat)
+  if (!validateUUID(receiverId) && validateUUID(conversationId)) {
+    const otherParticipant = await ConversationParticipant.findOne({
+      where: {
+        conversationId,
+        userId: { [Op.ne]: senderId }
+      },
+      transaction
+    });
+
+    if (otherParticipant) {
+      receiverId = otherParticipant.userId;
+    } else {
+      // Secondary fallback: inspect the latest message in this conversation
+      const lastMsg = await Message.findOne({
+        where: { conversationId },
+        order: [["createdAt", "DESC"]],
+        transaction
+      });
+      if (lastMsg) {
+        receiverId = lastMsg.senderId === senderId ? lastMsg.receiverId : lastMsg.senderId;
+      }
+    }
+  }
+
+  return {
+    receiverId: validateUUID(receiverId) ? receiverId : null,
+    conversationId: validateUUID(conversationId) ? conversationId : null
+  };
+};
+
+// 🔥 HELPER 3: Reusable Sequelize Include for Populated Reply Object
 const getReplyIncludeConfig = () => ({
   model: Message,
   as: "replyTo",
@@ -73,7 +139,7 @@ const getReplyIncludeConfig = () => ({
   ]
 });
 
-// 🔥 HELPER 3: Gracefully sanitize deleted original messages
+// 🔥 HELPER 4: Gracefully sanitize deleted original messages
 const sanitizeReplyObject = (replyMsg) => {
   if (!replyMsg) return null;
   const plain = typeof replyMsg.get === "function" ? replyMsg.get({ plain: true }) : { ...replyMsg };
@@ -102,7 +168,7 @@ const sanitizeReplyObject = (replyMsg) => {
   return plain;
 };
 
-// 🔥 HELPER 4: Format message record consistently for API & Socket
+// 🔥 HELPER 5: Format message record consistently for API & Socket
 const formatMessagePayload = (msgInstanceOrPlain) => {
   const plain = typeof msgInstanceOrPlain.get === "function"
     ? msgInstanceOrPlain.get({ plain: true })
@@ -122,13 +188,27 @@ export const sendMessage = async (req, res) => {
 
   try {
     const senderId = req.user.id;
-    const { receiverId, content, type = "text", postId, conversationId, replyToId } = req.body;
-    const cleanReplyToId = normalizeReplyToId(replyToId);
+    const { content, type = "text", postId, replyToId } = req.body;
+    const cleanReplyToId = normalizeReplyToId(replyToId || req.body?.replyTo?.id);
+
+    // 🔥 SMART TARGET RESOLUTION
+    const { receiverId, conversationId } = await resolveChatTargets({
+      senderId,
+      body: req.body,
+      params: req.params,
+      query: req.query,
+      cleanReplyToId,
+      transaction
+    });
 
     // 1. VALIDATION
-    if (!receiverId || !validateUUID(receiverId)) {
+    if (!receiverId) {
       await transaction.rollback();
-      return res.status(400).json({ success: false, message: "Valid receiverId is required" });
+      console.warn("⚠️ [sendMessage] Missing receiverId & conversationId. Received body keys:", Object.keys(req.body || {}));
+      return res.status(400).json({
+        success: false,
+        message: "Valid receiverId (or existing conversationId) is required"
+      });
     }
 
     if (cleanReplyToId && !validateUUID(cleanReplyToId)) {
@@ -238,7 +318,7 @@ export const sendMessage = async (req, res) => {
     // 3. FIND OR CREATE CONVERSATION
     let conversation = null;
 
-    if (conversationId && validateUUID(conversationId)) {
+    if (conversationId) {
       conversation = await Conversation.findByPk(conversationId, { transaction });
     }
 
@@ -380,14 +460,12 @@ export const sendMessage = async (req, res) => {
 
 
 // ============================================================
-// 🔥 SEND CARD MESSAGE (With Reply-to-Message Support)
+// 🔥 SEND CARD MESSAGE (With Smart Fallback & Reply-to-Message)
 // ============================================================
 export const sendCardMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
     const {
-      receiverId,
-      conversationId,
       cardType,
       caption,
       doodleData,
@@ -396,14 +474,22 @@ export const sendCardMessage = async (req, res) => {
       replyToId
     } = req.body;
 
-    const cleanReplyToId = normalizeReplyToId(replyToId);
+    const cleanReplyToId = normalizeReplyToId(replyToId || req.body?.replyTo?.id);
+
+    // 🔥 SMART TARGET RESOLUTION
+    const { receiverId, conversationId } = await resolveChatTargets({
+      senderId,
+      body: req.body,
+      params: req.params,
+      query: req.query,
+      cleanReplyToId
+    });
 
     if (!receiverId || !conversationId || !cardType) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
-
-    if (!validateUUID(receiverId) || !validateUUID(conversationId)) {
-      return res.status(400).json({ success: false, message: "Invalid receiverId or conversationId format" });
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields (receiverId/conversationId or cardType)"
+      });
     }
 
     if (cleanReplyToId && !validateUUID(cleanReplyToId)) {
