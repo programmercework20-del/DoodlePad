@@ -17,7 +17,10 @@ import { generateDoodleImage } from "../../utils/doodleRenderer.js";
 // ✅ Universal UUID validator
 const validateUUID = (uuid) => {
   if (!uuid || typeof uuid !== "string") return false;
-  const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\$/i;
+  // const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\$/i;
+  
+const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   return re.test(uuid.trim());
 };
 
