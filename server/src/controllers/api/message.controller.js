@@ -131,8 +131,7 @@ const resolveConversationFromParam = async (rawParamId, currentUserId, transacti
   return { isValidFormat: true, conversation: null, isParticipant: false, peerUserId: null };
 };
 
-// 🔥 HELPER 4: Bulletproof Target Resolution for sendMessage & sendCardMessage
-// 🔥 HELPER 4: Bulletproof Target Resolution for sendMessage & sendCardMessage
+// 🔥 HELPER 4: Bulletproof Target Resolution (Auto-Finds or Auto-Creates Conversation)
 const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}, cleanReplyToId, transaction = null }) => {
   let receiverId =
     cleanUuidInput(body.receiverId) ||
@@ -154,7 +153,7 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
     cleanUuidInput(query.conversationId) ||
     null;
 
-  // 🛡️ Guard: If FE accidentally sent sender's own ID as receiverId, clear it out immediately
+  // Guard: If receiverId is same as senderId, reset it
   if (receiverId && receiverId === senderId) {
     receiverId = null;
   }
@@ -163,75 +162,53 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
   if (cleanReplyToId && (!receiverId || !conversationId)) {
     const repliedMsg = await Message.findByPk(cleanReplyToId, { transaction });
     if (repliedMsg) {
-      if (!conversationId) {
-        conversationId = repliedMsg.conversationId;
-      }
-      if (!receiverId) {
-        receiverId = repliedMsg.senderId === senderId ? repliedMsg.receiverId : repliedMsg.senderId;
-      }
+      if (!conversationId) conversationId = repliedMsg.conversationId;
+      if (!receiverId) receiverId = repliedMsg.senderId === senderId ? repliedMsg.receiverId : repliedMsg.senderId;
     }
   }
 
-  // Layer B: Inspect conversationId if provided (Also auto-heals receiverId if it was cleared above)
-  if (conversationId) {
-    const convExists = await Conversation.findByPk(conversationId, { transaction });
+  // Layer B: Check if conversationId is a REAL conversation in DB
+  let realConv = conversationId ? await Conversation.findByPk(conversationId, { transaction }) : null;
 
-    if (convExists) {
-      // It is a real Conversation ID -> find the other participant if receiverId is missing/cleared
-      if (!receiverId) {
-        const otherParticipant = await ConversationParticipant.findOne({
-          where: {
-            conversationId,
-            userId: { [Op.ne]: senderId }
-          },
+  if (realConv) {
+    // Real conversation found -> ensure receiverId is populated
+    if (!receiverId) {
+      const otherParticipant = await ConversationParticipant.findOne({
+        where: { conversationId: realConv.id, userId: { [Op.ne]: senderId } },
+        transaction
+      });
+      receiverId = otherParticipant ? otherParticipant.userId : null;
+    }
+  } else {
+    // 🚨 conversationId passed by FE is either fake or a User ID!
+    // Let's treat conversationId or receiverId as the peer's userId if valid.
+    let peerId = receiverId;
+    if (!peerId && conversationId && conversationId !== senderId) {
+      const userCheck = await User.findByPk(conversationId, { attributes: ["id"], transaction });
+      if (userCheck) {
+        peerId = conversationId;
+      }
+    }
+
+    if (peerId && peerId !== senderId) {
+      receiverId = peerId;
+      // Find or create the actual shared conversation between sender and peer
+      let sharedConv = await findSharedConversation(senderId, receiverId, transaction);
+      if (!sharedConv) {
+        const follow = await Follower.findOne({
+          where: { followerId: receiverId, followingId: senderId, status: "accepted" },
           transaction
         });
-
-        if (otherParticipant) {
-          receiverId = otherParticipant.userId;
-        } else {
-          const lastMsg = await Message.findOne({
-            where: { conversationId },
-            order: [["createdAt", "DESC"]],
-            transaction
-          });
-          if (lastMsg) {
-            receiverId = lastMsg.senderId === senderId ? lastMsg.receiverId : lastMsg.senderId;
-          }
-        }
+        sharedConv = await Conversation.create({ isRequest: !follow }, { transaction });
+        await ConversationParticipant.bulkCreate([
+          { conversationId: sharedConv.id, userId: senderId },
+          { conversationId: sharedConv.id, userId: receiverId }
+        ], { transaction });
       }
+      conversationId = sharedConv.id;
     } else {
-      // 🚨 FE AUTO-HEAL: conversationId is NOT in conversations table!
-      // Check if FE passed the receiver's User UUID inside conversationId!
-      const userExists = await User.findByPk(conversationId, { attributes: ["id"], transaction });
-      if (userExists && conversationId !== senderId) {
-        if (!receiverId) {
-          receiverId = conversationId;
-        }
-        const sharedConv = await findSharedConversation(senderId, receiverId, transaction);
-        conversationId = sharedConv ? sharedConv.id : null;
-      } else {
-        conversationId = null;
-      }
-    }
-  }
-
-  // Layer C: If receiverId is actually a Conversation ID (swapped fields)
-  if (receiverId) {
-    const isActuallyUser = await User.findByPk(receiverId, { attributes: ["id"], transaction });
-    if (!isActuallyUser) {
-      const isActuallyConv = await Conversation.findByPk(receiverId, { transaction });
-      if (isActuallyConv) {
-        conversationId = isActuallyConv.id;
-        const otherParticipant = await ConversationParticipant.findOne({
-          where: {
-            conversationId: isActuallyConv.id,
-            userId: { [Op.ne]: senderId }
-          },
-          transaction
-        });
-        receiverId = otherParticipant ? otherParticipant.userId : null;
-      }
+      conversationId = null;
+      receiverId = null;
     }
   }
 
