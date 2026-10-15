@@ -1087,3 +1087,63 @@ export const rejectRequest = async (req, res) => {
     res.status(500).json({ success: false });
   }
 };
+// ============================================================
+// 🔥 REACT TO MESSAGE (Add / Update / Remove Emoji)
+// ============================================================
+export const reactToMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { emoji } = req.body; // e.g., "❤️", "😂", or null (to remove)
+    const userId = String(req.user.id);
+
+    // 1. Validation
+    if (!validateUUID(messageId)) {
+      return res.status(400).json({ success: false, message: "Invalid messageId format" });
+    }
+
+    const message = await Message.findByPk(messageId);
+    if (!message) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    // Security Check: Only sender or receiver can react to this message
+    if (String(message.senderId) !== userId && String(message.receiverId) !== userId) {
+      return res.status(403).json({ success: false, message: "Not authorized to react to this message" });
+    }
+
+    // 2. Update Reaction Data (JSON map of userId -> emoji)
+    // Structured as: { "user-uuid": "❤️" }
+    const currentReactions = message.reactions || {};
+
+    if (emoji) {
+      currentReactions[userId] = emoji; // Add or Update
+    } else {
+      delete currentReactions[userId];  // Remove reaction if emoji is null/empty
+    }
+
+    // Save back to DB (Sequelize specific way for JSON objects)
+    message.reactions = currentReactions;
+    message.changed('reactions', true); // Force update JSON field
+    await message.save();
+
+    // 3. Fire Real-time Socket Event
+    try {
+      getIO()
+        .to(message.conversationId)
+        .to(`user_${message.receiverId}`)
+        .to(message.senderId) // Send to both parties
+        .emit("message_reaction", {
+          messageId,
+          conversationId: message.conversationId,
+          reactions: currentReactions
+        });
+    } catch (e) {
+      console.error("Socket emit failed for reaction:", e.message);
+    }
+
+    return res.json({ success: true, messageId, reactions: currentReactions });
+  } catch (err) {
+    console.error("🔥 React to Message Error:", err);
+    return res.status(500).json({ success: false, message: "Failed to save reaction" });
+  }
+};

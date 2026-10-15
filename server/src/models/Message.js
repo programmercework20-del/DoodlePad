@@ -50,6 +50,11 @@ const Message = sequelize.define("Message", {
     allowNull: true,
     defaultValue: null
   },
+  reactions: {
+  type: DataTypes.JSON, 
+  defaultValue: {},
+  allowNull: false
+},
   // 🔥 PHASE 3: Reply-to-Message Reference
   replyToId: {
     type: DataTypes.UUID,

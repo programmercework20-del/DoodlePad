@@ -4,6 +4,7 @@ import {
   sendCardMessage,
   editMessage,
   deleteMessage,
+  reactToMessage,
   markSeen,
   getMessages,
   acceptRequest,
@@ -21,6 +22,7 @@ router.post("/card", protect, upload.fields([{ name: "image", maxCount: 1 }, { n
 router.get("/:conversationId", protect, getMessages);
 router.put("/:messageId", protect, editMessage);
 router.delete("/:messageId", protect, deleteMessage);
+router.post("/react/:messageId", protect, reactToMessage);
 router.post("/seen/:conversationId", protect, markSeen);
 
 // request
