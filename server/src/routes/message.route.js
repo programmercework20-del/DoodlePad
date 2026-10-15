@@ -8,7 +8,7 @@ import {
   getMessages,
   acceptRequest,
   rejectRequest,
-  reactToMessage
+  reactToMessage //react
 } from "../controllers/api/message.controller.js";
 
 import { protect } from "../middlewares/auth.middleware.js";
@@ -19,7 +19,8 @@ const router = express.Router();
 router.post("/send", protect, upload.single("file"), sendMessage);
 router.post("/card", protect, upload.fields([{ name: "image", maxCount: 1 }, { name: "audio", maxCount: 1 }]),
  sendCardMessage);
- router.post("/react/:messageId", protect, reactToMessage);
+//  router.post("/react/:messageId", protect, reactToMessage);
+router.post("/:messageId/react", protect, reactToMessage);
 router.get("/:conversationId", protect, getMessages);
 router.put("/:messageId", protect, editMessage);
 router.delete("/:messageId", protect, deleteMessage);
