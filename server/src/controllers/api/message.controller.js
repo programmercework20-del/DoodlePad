@@ -305,10 +305,6 @@ const formatMessagePayload = (msgInstanceOrPlain) => {
   return plain;
 };
 
-
-// ============================================================
-// SEND MESSAGE (Text, Image, Video, Audio, Doodle, Shared Post)
-// ============================================================
 export const sendMessage = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -989,32 +985,73 @@ export const editMessage = async (req, res) => {
 
 
 // ============================================================
-// DELETE MESSAGE
+// 🔥 DELETE (UNSEND) MESSAGE - Pro Level
 // ============================================================
 export const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
-    const message = await Message.findByPk(messageId);
 
-    if (!message || message.senderId !== req.user.id) {
-      return res.status(403).json({ message: "Not allowed" });
+    // 1. Validation
+    if (!validateUUID(messageId)) {
+      return res.status(400).json({ success: false, message: "Invalid messageId format" });
     }
 
-    await message.update({ status: "deleted" });
+    const message = await Message.findByPk(messageId);
 
+    if (!message) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    // 2. Security: Only sender can unsend their own message
+    if (String(message.senderId) !== String(req.user.id)) {
+      return res.status(403).json({ success: false, message: "Not allowed to delete this message" });
+    }
+
+    // 3. True Unsend: Wipe data for privacy & update status
+    await message.update({ 
+      status: "deleted",
+      content: "🚫 This message was deleted",
+      mediaUrl: null,
+      thumbnail: null,
+      cardSlides: null,
+      duration: null,
+      type: "text" // Reset type to text to avoid media rendering errors on FE
+    });
+
+    // 4. Update Conversation's Last Message Preview (If this was the latest message)
+    const conversation = await Conversation.findByPk(message.conversationId);
+    if (conversation) {
+      const lastMsg = await Message.findOne({
+        where: { conversationId: message.conversationId },
+        order: [["createdAt", "DESC"]],
+        raw: true
+      });
+      
+      // If the deleted message is still structurally the latest record
+      if (lastMsg && String(lastMsg.id) === String(messageId)) {
+        await conversation.update({ lastMessage: "🚫 This message was deleted" });
+        await clearConversationCache(req.user.id, message.receiverId);
+      }
+    }
+
+    // 5. Fire Real-time Socket Event
     try {
       getIO()
         .to(message.conversationId)
         .to(`user_${message.receiverId}`)
         .to(message.receiverId)
-        .emit("message_deleted", messageId);
+        .emit("message_deleted", { 
+          messageId, 
+          conversationId: message.conversationId 
+        });
     } catch (e) {
       console.error("Socket emit failed:", e.message);
     }
 
-    res.json({ success: true });
+    res.json({ success: true, messageId });
   } catch (err) {
-    res.status(500).json({ message: "Delete failed" });
+    console.error("🔥 Delete Message Error:", err);
+    res.status(500).json({ success: false, message: "Delete failed" });
   }
 };
 
