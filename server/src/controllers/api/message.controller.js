@@ -735,14 +735,18 @@ export const sendCardMessage = async (req, res) => {
       await blob.save(uploadBuffer, { metadata: { contentType: audioFile.mimetype } });
       finalAudioUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
-
+    let parsedDoodleData = null;
+    if (cardType === "doodle" && doodleData) {
+      parsedDoodleData = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
+    }
     // 🛠️ 3. BUILD JSONB PAYLOAD & SAVE MESSAGE
     const cardPayload = [{
       type: cardType,
       mediaUrl: mainMediaUrl,
       caption: caption || "",
       audioUrl: finalAudioUrl,
-      audioDuration: finalAudioDuration
+      audioDuration: finalAudioDuration,
+      doodleData: parsedDoodleData
     }];
 
     const message = await Message.create({
