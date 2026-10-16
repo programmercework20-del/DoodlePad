@@ -92,8 +92,7 @@ router.post("/posts/resumable-url", protect, generateResumableUploadUrl);
 
 // ✅ 2. ROUTE MATCHES FRONTEND REPORT EXACTLY
 router.post("/posts/:id/toggle-pin", protect, togglePinPost);
-router.post("/posts/:id/views", protect, incrementViewCount);
-
+router.post("/posts/:id/view", protect, incrementViewCount);
 // Feed & Hashtags Routing
 router.get("/posts", protect, (req, res, next) => {
     if (req.query.hashtag) {
