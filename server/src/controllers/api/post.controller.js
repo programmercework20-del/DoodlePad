@@ -54,7 +54,7 @@ export const createPost = async (req, res) => {
     const tStart = performance.now();
     const timeLog = {};
 
-    console.log("🕵️‍♂ [DEBUG] Create Post Frontend Payload:", req.body);
+    console.log("🕵️‍♂️ [DEBUG] Create Post Frontend Payload:", req.body);
 
     const { type, content, caption, isSaved, duration, location } = req.body;
     const userId = req.user.id;
@@ -108,7 +108,7 @@ export const createPost = async (req, res) => {
           }
         }
       } catch (e) {
-        console.error("⚠ Doodle paths parse error:", e);
+        console.error("⚠️ Doodle paths parse error:", e);
       }
     }
     timeLog['Sharp_Doodle'] = (performance.now() - tDoodleStart).toFixed(2) + "ms";
@@ -259,7 +259,53 @@ export const createPost = async (req, res) => {
            }
         }
 
-        if (isVideo) uploadedVideoFileName = fileName;
+        // 🔥 MAGIC FIX: GENERATE THUMBNAIL FOR VIDEO IN DIRECT UPLOAD FLOW
+        if (isVideo) {
+          uploadedVideoFileName = fileName;
+          
+          const tempVideoDlPath = path.join(os.tmpdir(), `dl_vid_${Date.now()}.mp4`);
+          const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}.jpg`);
+          
+          try {
+            console.log(`📸 [THUMBNAIL] Generating thumbnail for direct uploaded video: ${fileName}`);
+            
+            // 1. Download video from bucket to temp folder
+            await bucket.file(fileName).download({ destination: tempVideoDlPath });
+            
+            // 2. Generate screenshot using FFmpeg
+            await new Promise((resolve, reject) => {
+              ffmpeg(tempVideoDlPath)
+                .inputOptions('-threads 2')
+                .screenshots({ 
+                  count: 1, 
+                  timemarks: ['00:00:01'], 
+                  filename: path.basename(tempThumbPath), 
+                  folder: os.tmpdir(), 
+                  size: '640x?' 
+                })
+                .on('end', resolve)
+                .on('error', reject);
+            });
+            
+            // 3. Upload thumbnail to GCP bucket
+            const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}.jpg`;
+            await bucket.file(thumbFileName).save(fs.readFileSync(tempThumbPath), { 
+              metadata: { contentType: 'image/jpeg' } 
+            });
+            
+            // 4. Set thumbnail URL for database mapping
+            thumbnail = `${CDN_BASE_URL}/${thumbFileName}`;
+            console.log(`✅ [THUMBNAIL SUCCESS] Thumbnail generated & saved: ${thumbnail}`);
+            
+          } catch (e) {
+             console.error("⚠️ [THUMBNAIL ERROR] Failed to generate thumbnail for direct upload:", e.message);
+          } finally {
+             // Cleanup temp files
+             if (fs.existsSync(tempVideoDlPath)) fs.unlinkSync(tempVideoDlPath);
+             if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
+          }
+        }
+
         if (isAudio) uploadedAudioFileName = fileName; 
         mediaUrls.push(fileUrl);
       }
@@ -290,7 +336,7 @@ export const createPost = async (req, res) => {
                   throw new Error("Uploaded BGM file is corrupt or 0 bytes.");
               }
 
-              // 🛡️️ SAFETY CHECK 2: Duration validation with NaN (Not a Number) Protection
+              // 🛡️ SAFETY CHECK 2: Duration validation with NaN (Not a Number) Protection
               let actualAudioDuration = 0;
               try {
                   let durationRaw = await getVideoDuration(tempInput);
@@ -886,7 +932,7 @@ export const togglePinPost = async (req, res) => {
   }
 };
 // ==========================================
-// 👁️ INCREMENT VIDEO VIEW COUNT
+//  INCREMENT VIDEO VIEW COUNT
 // ==========================================
 export const incrementViewCount = async (req, res) => {
   try {
