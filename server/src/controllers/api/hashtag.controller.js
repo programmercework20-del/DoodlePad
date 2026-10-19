@@ -96,7 +96,10 @@ export const getPostsByHashtag = async (req, res) => {
         where: { hashtagId: hashtag.id },
         limit,      // MNC Level: Sirf 15 posts layega
         offset,     // MNC Level: Next page ke liye skip karega
-        order: [["createdAt", "DESC"]], // Sorted by newest
+
+        // order: [["createdAt", "DESC"]], // Sorted by newest
+        subQuery: false, // 🚨 Prevents Sequelize crash when using limit/offset with includes
+        order: [["post", "createdAt", "DESC"]],
         include: [
           {
             model: Post,
