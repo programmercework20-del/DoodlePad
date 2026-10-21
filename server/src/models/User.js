@@ -143,6 +143,15 @@ provider: {
   type: DataTypes.ENUM("local", "google"),
   defaultValue: "local"
 },
+// userModel.js ke andar
+isOnline: { 
+    type: Boolean, 
+    default: false 
+},
+lastSeen: { 
+    type: Date, 
+    default: Date.now 
+},
 
 googleId: {
   type: DataTypes.STRING,

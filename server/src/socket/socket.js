@@ -1,268 +1,6 @@
-
-// import { Server } from "socket.io";
-// import { ConversationParticipant } from "../models/index.js";
-
-// let io = null;
-// const onlineUsers = new Map();
-
-// export const initSocket = (server) => {
-//   io = new Server(server, {
-//     cors: {
-//       origin: "*",
-//       methods: ["GET", "POST"],
-//       credentials: true
-//     },
-//     transports: ["websocket", "polling"],
-//     allowEIO3: true,
-//     pingTimeout: 60000,
-//     pingInterval: 25000
-//   });
-
-//   io.on("connection", (socket) => {
-
-//   try {
-
-//     console.log("⚡ New Socket Connection:", socket.id);
-
-//     // =========================================
-//     // ✅ REGISTER USER
-//     // =========================================
-
-//     socket.on("register", async (userId) => {
-
-//       try {
-
-//         if (!userId) {
-//           console.log("❌ Invalid userId");
-//           return;
-//         }
-
-//         // Latest socket map
-//         onlineUsers.set(userId, socket.id);
-
-//         socket.userId = userId;
-
-//         // =========================================
-//         // ✅ AUTO JOIN CONVERSATIONS
-//         // =========================================
-
-//         try {
-
-//           const entries =
-//             await ConversationParticipant.findAll({
-
-//               where: { userId },
-
-//               attributes: ["conversationId"],
-
-//               raw: true
-//             });
-
-//           entries.forEach(({ conversationId }) => {
-
-//             socket.join(conversationId);
-//           });
-
-//         } catch (err) {
-
-//           console.error(
-//             "❌ Auto-join failed:",
-//             err.message
-//           );
-//         }
-
-//         // =========================================
-//         // ✅ PERSONAL ROOM
-//         // =========================================
-
-//         socket.join(`user_${userId}`);
-
-//         console.log(
-//           `✅ User registered: ${userId}`
-//         );
-
-//       } catch (err) {
-
-//         console.error(
-//           "❌ Register socket error:",
-//           err
-//         );
-//       }
-//     });
-
-//     // =========================================
-//     // ✅ JOIN CONVERSATION
-//     // =========================================
-
-//     socket.on(
-//       "join_conversation",
-//       (conversationId) => {
-
-//         try {
-
-//           if (!conversationId) return;
-
-//           socket.join(conversationId);
-
-//           console.log(
-//             `🏠 Joined room: ${conversationId}`
-//           );
-
-//         } catch (err) {
-
-//           console.error(
-//             "❌ Join room error:",
-//             err
-//           );
-//         }
-//       }
-//     );
-
-//     // =========================================
-//     // ✅ LEAVE CONVERSATION
-//     // =========================================
-
-//     socket.on(
-//       "leave_conversation",
-//       (conversationId) => {
-
-//         try {
-
-//           if (!conversationId) return;
-
-//           socket.leave(conversationId);
-
-//           console.log(
-//             `🚪 Left room: ${conversationId}`
-//           );
-
-//         } catch (err) {
-
-//           console.error(
-//             "❌ Leave room error:",
-//             err
-//           );
-//         }
-//       }
-//     );
-
-//     // =========================================
-//     // ✅ TYPING
-//     // =========================================
-
-//     socket.on(
-//       "typing",
-//       ({ conversationId, userId }) => {
-
-//         try {
-
-//           socket
-//             .to(conversationId)
-//             .emit("typing", { userId });
-
-//         } catch (err) {
-
-//           console.error(
-//             "❌ Typing event error:",
-//             err
-//           );
-//         }
-//       }
-//     );
-
-//     // =========================================
-//     // ✅ STOP TYPING
-//     // =========================================
-
-//     socket.on(
-//       "stop_typing",
-//       ({ conversationId, userId }) => {
-
-//         try {
-
-//           socket
-//             .to(conversationId)
-//             .emit("stop_typing", { userId });
-
-//         } catch (err) {
-
-//           console.error(
-//             "❌ Stop typing error:",
-//             err
-//           );
-//         }
-//       }
-//     );
-
-//     // =========================================
-//     // ✅ SOCKET CONNECT ERROR
-//     // =========================================
-
-//     socket.on("connect_error", (err) => {
-
-//       console.error(
-//         "❌ Socket Connect Error:",
-//         err.message
-//       );
-//     });
-
-//     // =========================================
-//     // ✅ DISCONNECT
-//     // =========================================
-
-//     socket.on("disconnect", (reason) => {
-
-//       try {
-
-//         console.log(
-//           `🔌 User Disconnected: ${socket.id}`
-//         );
-
-//         console.log(`Reason: ${reason}`);
-
-//         for (
-//           let [userId, sockId]
-//           of onlineUsers.entries()
-//         ) {
-
-//           if (sockId === socket.id) {
-
-//             onlineUsers.delete(userId);
-
-//             break;
-//           }
-//         }
-
-//       } catch (err) {
-
-//         console.error(
-//           "❌ Disconnect cleanup error:",
-//           err
-//         );
-//       }
-//     });
-
-//   } catch (err) {
-
-//     console.error(
-//       "🔥 SOCKET CONNECTION ERROR:",
-//       err
-//     );
-//   }
-// });
-
-//   return io;
-// };
-
-// export const getIO = () => {
-//   if (!io) throw new Error("Socket.io not initialized!");
-//   return io;
-// };
-
-// export const getOnlineUsers = () => onlineUsers;
 import { Server } from "socket.io";
 import { Op } from "sequelize";
-import { ConversationParticipant } from "../models/index.js";
+import { ConversationParticipant, User } from "../models/index.js";
 
 let io = null;
 const onlineUsers = new Map();
@@ -321,7 +59,7 @@ export const initSocket = (server) => {
       console.log("⚡ New Socket Connection:", socket.id);
 
       // =========================================
-      // ✅ REGISTER USER
+      // ✅ REGISTER USER (PRO Multi-Device Logic)
       // =========================================
       socket.on("register", async (userId) => {
         try {
@@ -330,8 +68,23 @@ export const initSocket = (server) => {
             return;
           }
 
-          onlineUsers.set(userId, socket.id);
           socket.userId = userId;
+
+          // 🔥 Multi-device handling
+          if (!onlineUsers.has(userId)) {
+            onlineUsers.set(userId, new Set([socket.id]));
+            
+            // Database me user ko online karo (Sequelize)
+            if (User) {
+              await User.update({ isOnline: true }, { where: { id: userId } });
+            }
+            
+            // Sabko batao user online aa gaya
+            io.emit("update_user_status", { userId, isOnline: true });
+          } else {
+            // Agar user kisi aur device par hai, bas naya socket id add karo
+            onlineUsers.get(userId).add(socket.id);
+          }
 
           // Auto-join all existing conversations
           try {
@@ -352,7 +105,7 @@ export const initSocket = (server) => {
           socket.join(`user_${userId}`);
           socket.join(userId);
 
-          console.log(`✅ User registered: ${userId}`);
+          console.log(`✅ User registered: ${userId} on Socket: ${socket.id}`);
         } catch (err) {
           console.error("❌ Register socket error:", err);
         }
@@ -436,17 +189,36 @@ export const initSocket = (server) => {
       });
 
       // =========================================
-      // ✅ DISCONNECT
+      // ✅ DISCONNECT (PRO Offline Logic)
       // =========================================
-      socket.on("disconnect", (reason) => {
+      socket.on("disconnect", async (reason) => {
         try {
-          console.log(`🔌 User Disconnected: ${socket.id}`);
-          console.log(`Reason: ${reason}`);
+          console.log(`🔌 User Disconnected: ${socket.id} | Reason: ${reason}`);
+          
+          const userId = socket.userId;
+          if (userId && onlineUsers.has(userId)) {
+            const userSockets = onlineUsers.get(userId);
+            userSockets.delete(socket.id); // Ye wala device delete karo
 
-          for (let [userId, sockId] of onlineUsers.entries()) {
-            if (sockId === socket.id) {
+            // Agar user ne saare devices band kar diye tabhi offline dikhao
+            if (userSockets.size === 0) {
               onlineUsers.delete(userId);
-              break;
+              const lastSeenTime = new Date();
+
+              // Database me offline karo aur last seen time dalo (Sequelize)
+              if (User) {
+                await User.update({ 
+                  isOnline: false, 
+                  lastSeen: lastSeenTime 
+                }, { where: { id: userId } });
+              }
+
+              // Sabko batao ki user offline gaya
+              io.emit("update_user_status", { 
+                userId, 
+                isOnline: false, 
+                lastSeen: lastSeenTime 
+              });
             }
           }
         } catch (err) {
