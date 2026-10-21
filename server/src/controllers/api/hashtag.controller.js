@@ -140,6 +140,7 @@ export const getPostsByHashtag = async (req, res) => {
           createdAt: post.createdAt,
           likesCount: post.likesCount || 0,
           commentsCount: post.commentsCount || 0,
+          viewsCount: post.viewsCount || 0,
           sharesCount: post.sharesCount || 0,
           user: post.author
         };
