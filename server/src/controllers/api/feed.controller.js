@@ -10,6 +10,7 @@ import redisClient from "../../config/redis.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
 
+
 export const getFeed = asyncHandler(async (req, res) => {
   // ⏱️ PERF: Start Timer
   const { performance } = await import('perf_hooks');
@@ -77,6 +78,7 @@ export const getFeed = asyncHandler(async (req, res) => {
         createdAt: post.createdAt,
         likesCount: post.likesCount || 0,        
         commentsCount: post.commentsCount || 0,   
+        viewsCount: post.viewsCount || 0,
         sharesCount: post.sharesCount || 0,
         user: post.author
       };
@@ -267,6 +269,7 @@ export const getFeed = asyncHandler(async (req, res) => {
       createdAt: post.createdAt,
       likesCount: post.likesCount || 0,
       commentsCount: post.commentsCount || 0,
+      viewsCount: post.viewsCount || 0,
       sharesCount: post.sharesCount || 0,
       user: post.author
     };
