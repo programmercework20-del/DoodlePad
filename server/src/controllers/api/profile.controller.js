@@ -72,7 +72,6 @@ export const getUserProfile = async (req, res) => {
     const likeCount = await ProfileLike.count({ where: { profileId: targetUserId } });
     
     let isLikedByMe = false;
-    // 🚨 Hata di gayi condition (!isOwnProfile). Ab hamesha check karega!
     if (currentUserId) {
       const likeCheck = await ProfileLike.findOne({
         where: { likerId: currentUserId, profileId: targetUserId }
@@ -81,6 +80,20 @@ export const getUserProfile = async (req, res) => {
     }
     // ==========================================
 
+    // 🔥 HELPER: Ensures viewsCount is safely injected for Profile Posts
+    const formatProfilePosts = (posts) => {
+      return posts.map(post => {
+        const p = typeof post.toJSON === 'function' ? post.toJSON() : post;
+        return {
+          ...p,
+          viewsCount: p.viewsCount || 0, // 👈 MAGIC FIX FOR PROFILE GRID
+          likesCount: p.likesCount || 0,
+          commentsCount: p.commentsCount || 0,
+          sharesCount: p.sharesCount || 0
+        };
+      });
+    };
+
     if (isOwnProfile) {
       const [followersCount, followingCount, postsCount] = await Promise.all([
         Follower.count({ where: { followingId: targetUserId, status: "accepted" } }),
@@ -88,7 +101,7 @@ export const getUserProfile = async (req, res) => {
         Post.count({ where: { userId: targetUserId, status: "active" } })
       ]);
 
-      const userPosts = await Post.findAll({
+      const rawUserPosts = await Post.findAll({
         where: {
           userId: targetUserId,
           status: "active"
@@ -96,6 +109,8 @@ export const getUserProfile = async (req, res) => {
         order: [['createdAt', 'DESC']],
         limit: 50
       });
+
+      const userPosts = formatProfilePosts(rawUserPosts); // 🔥 Formatting Applied
 
       // Ensure activeDoodles always include explicit owner fields so FE maps correctly
       const normalizeDoodles = (arr) => (Array.isArray(arr) ? arr.map(d => ({
@@ -127,8 +142,8 @@ export const getUserProfile = async (req, res) => {
               canViewProfile: true,
               isMutualFollow: false,
               followsYou: false,
-              likeCount: likeCount,       // 🔥 REAL DB COUNT
-              isLikedByMe: isLikedByMe    // 🔥 REAL DB STATE
+              likeCount: likeCount,      // 🔥 REAL DB COUNT
+              isLikedByMe: isLikedByMe   // 🔥 REAL DB STATE
             },
             stats: {
               followers: followersCount,
@@ -209,7 +224,7 @@ export const getUserProfile = async (req, res) => {
     const canViewProfile = !isTargetPrivate || isFollowing || isMutualFollow || !!targetFollowsCurrentUser;
 
     if (canViewProfile) {
-      userPosts = await Post.findAll({
+      const rawUserPosts = await Post.findAll({
         where: {
           userId: targetUserId,
           status: "active"
@@ -217,6 +232,7 @@ export const getUserProfile = async (req, res) => {
         order: [['createdAt', 'DESC']],
         limit: 50
       });
+      userPosts = formatProfilePosts(rawUserPosts); // 🔥 Formatting Applied
     }
 
     // activeDoodles (cover slider) should be visible to everyone regardless of privacy
@@ -251,8 +267,8 @@ export const getUserProfile = async (req, res) => {
             canViewProfile,
             isMutualFollow,
             followsYou: !!targetFollowsCurrentUser,
-            likeCount: likeCount,       // 🔥 REAL DB COUNT
-            isLikedByMe: isLikedByMe    // 🔥 REAL DB STATE
+            likeCount: likeCount,      // 🔥 REAL DB COUNT
+            isLikedByMe: isLikedByMe   // 🔥 REAL DB STATE
           },
           stats: {
             followers: followersCount,
