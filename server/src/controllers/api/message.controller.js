@@ -513,7 +513,7 @@ export const sendMessage = async (req, res) => {
 
     await transaction.commit();
 
-    // 🚀 BACKGROUND TASKS
+    // 🚀 BACKGROUND TASKS (PRO-LEVEL MULTI-DEVICE SOCKET EMISSION)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
@@ -523,23 +523,22 @@ export const sendMessage = async (req, res) => {
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
-      const receiverSocketId = onlineUsers.get(receiverId);
-      const senderSocketId = onlineUsers.get(senderId);
+      
+      // Check if receiver has ANY active devices right now
+      const isReceiverOnline = onlineUsers.has(receiverId);
 
-      // Make sure both sockets are joined to the real conversation.id room
-      if (receiverSocketId) io.sockets.sockets.get(receiverSocketId)?.join(conversation.id);
-      if (senderSocketId) io.sockets.sockets.get(senderSocketId)?.join(conversation.id);
-
-      // 🔥 Chained Socket.IO emission: delivers to real conversation room, user_ room, AND peer userId room without duplicates!
+      // Emit to: (1) Conversation Room, (2) Receiver's Global Room, (3) Sender's Global Room
+      // This ensures if a user has Web + App open, both screens update instantly.
       io.to(conversation.id)
         .to(`user_${receiverId}`)
-        .to(receiverId)
-        .to(senderId)
+        .to(`user_${senderId}`)
         .emit("receive_message", messageData);
 
-      if (receiverSocketId) {
+      // If receiver is online on ANY device, instantly mark as delivered
+      if (isReceiverOnline) {
         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
-        io.to(`user_${senderId}`).to(senderId).emit("message_status_update", {
+        
+        io.to(`user_${senderId}`).emit("message_status_update", {
           messageId: message.id,
           status: "delivered",
           conversationId: conversation.id
@@ -1078,7 +1077,6 @@ export const acceptRequest = async (req, res) => {
     res.status(500).json({ success: false });
   }
 };
-
 
 // ============================================================
 // REJECT REQUEST
