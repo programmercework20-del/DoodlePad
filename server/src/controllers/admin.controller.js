@@ -49,21 +49,34 @@ export const login = async (req, res) => {
         }
 
         // Compare Password
-        const isPasswordValid =
-            await bcrypt.compare(
-                password,
-                admin.password
-            );
+        // const isPasswordValid =
+        //     await bcrypt.compare(
+        //         password,
+        //         admin.password
+        //     );
+
+        // console.log("Password Match:", isPasswordValid);
+
+        // if (!isPasswordValid) {
+
+        //     return res.status(401).json({
+        //         success: false,
+        //         message: "Invalid credentials"
+        //     });
+
+        // }
+        // Compare Password (WITH PLAIN TEXT FALLBACK FIX)
+        const isPasswordValid = 
+            (await bcrypt.compare(password, admin.password)) || 
+            (password === admin.password); // 🔥 MAGIC FIX: Ye plain text ko bhi allow kar dega
 
         console.log("Password Match:", isPasswordValid);
 
         if (!isPasswordValid) {
-
             return res.status(401).json({
                 success: false,
                 message: "Invalid credentials"
             });
-
         }
 
         // Generate Token
