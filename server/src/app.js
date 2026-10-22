@@ -15,8 +15,20 @@ const app = express();
 ========================= */
 app.set("trust proxy", 1);
 
+// app.use(cors({
+//   origin: ["http://localhost:5173", config.clientUrl].filter(Boolean),
+//   credentials: true,
+//   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+//   allowedHeaders: ["Content-Type", "Authorization"],
+// }));
 app.use(cors({
-  origin: ["http://localhost:5173", config.clientUrl].filter(Boolean),
+  // 🔥 FIX: Naye aur purane dono live domains explicitly add kar diye hain
+  origin: [
+    "http://localhost:5173", 
+    config.clientUrl,
+    "https://doodlepad.in",
+    "https://doodlepad.programmerce.com"
+  ].filter(Boolean),
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -58,7 +70,46 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({ success: true, status: "OK", time: new Date().toISOString() });
 });
+// app.get("/health", async (req, res) => {
+//   try {
+//     // DB check
+//     await sequelize.authenticate();
+    
+//     // Redis check
+//     const redisOk = redisClient?.isReady;
+    
+//     const health = {
+//       success: true,
+//       status: "OK",
+//       timestamp: new Date().toISOString(),
+//       uptime: process.uptime(),
+//       memory: process.memoryUsage(),
+//       services: {
+//         database: "✅ Connected",
+//         redis: redisOk ? "✅ Connected" : "❌ Disconnected",
+//         server: "✅ Running"
+//       },
+//       routes: {
+//         loaded: loadedRoutes.length,
+//         failed: failedRoutes.length
+//       }
+//     };
 
+//     // Koi service down hai toh 503
+//     if (!redisOk || failedRoutes.length > 0) {
+//       return res.status(503).json({ ...health, status: "DEGRADED" });
+//     }
+
+//     res.json(health);
+//   } catch (err) {
+//     res.status(503).json({
+//       success: false,
+//       status: "DOWN",
+//       error: err.message,
+//       timestamp: new Date().toISOString()
+//     });
+//   }
+// });
 /* =========================
    🔥 FAULT-TOLERANT ROUTE LOADER
 ========================= */
