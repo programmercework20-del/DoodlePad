@@ -10,7 +10,8 @@ import './index.css'
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <Provider store={store}>
-            <BrowserRouter>
+            {/* 🔥 MAGIC FIX: basename="/admin" add kar diya */}
+            <BrowserRouter basename="/admin">
                 <App />
             </BrowserRouter>
         </Provider>
