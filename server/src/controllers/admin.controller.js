@@ -126,7 +126,13 @@ export const login = async (req, res) => {
 // Admin Logout
 export const logout = async (req, res) => {
     try {
-        res.clearCookie("token");
+        // 🔥 FIX 3: Options exactly match karne chahiye login cookie parameters se
+        res.clearCookie("token", {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict", 
+        });
+        
         res.json({
             success: true,
             message: "Logout successful"

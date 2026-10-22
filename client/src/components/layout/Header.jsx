@@ -1,16 +1,28 @@
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { User } from 'lucide-react';
+// Agar tumhara koi Redux logout action hai toh usko bhi import kar lena
+// import { clearCredentials } from '../../store/authSlice'; 
 
 export default function Header() {
     const { admin } = useSelector((state) => state.auth);
+    const dispatch = useDispatch();
 
     const handleLogout = async () => {
         try {
-            await fetch('/admin/logout', {
+            // 🔥 FIX 1: Full Backend API URL use karna hai
+            await fetch('https://doodlepad.programmerce.com/api/admin/logout', {
                 method: 'POST',
                 credentials: 'include',
             });
+        } catch (error) {
+            console.error("Logout failed at server:", error);
         } finally {
+            // 🔥 FIX 2: Redux aur LocalStorage ko strictly clear karo
+            // dispatch(clearCredentials()); // Agar action bana hai toh use uncomment karo
+            localStorage.clear(); 
+            sessionStorage.clear();
+            
+            // Redirect to login
             window.location.assign('/admin/login');
         }
     };
