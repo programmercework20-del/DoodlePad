@@ -18,21 +18,10 @@ export const getExploreFeed = async (req, res) => {
     const offset = (page - 1) * limit;
 
     // ========================================
-    // 🛡️ SAFE BLOCKED USERS & SELF EXCLUSION
+    // 🛡️ SAFE BLOCKED, SELF & FOLLOWINGS EXCLUSION
     // ========================================
-    // let blockedIds = [];
-    // if (userId) {
-    //   const blocked = await Block.findAll({
-    //     where: {
-    //       [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
-    //     }
-    //   });
-    //   blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
-      
-    //   // Pro-Tip: Users khud ki posts explore feed me nahi dekhna chahte
-    //   blockedIds.push(userId); 
-    // }
     let excludeUserIds = [];
+    
     if (userId) {
       // 1. Blocked Users
       const blocked = await Block.findAll({
@@ -40,7 +29,8 @@ export const getExploreFeed = async (req, res) => {
           [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
         }
       });
-      const blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+      // Isko sirf is block ke andar calculate kar rahe hain
+      const blockedIdsArray = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
       
       // 2. 🔥 EXCLUDE FRIENDS (Jo already follow kiye hain)
       const myFollowing = await Follower.findAll({
@@ -48,14 +38,14 @@ export const getExploreFeed = async (req, res) => {
         attributes: ["followingId"],
         raw: true
       });
-      const followingIds = myFollowing.map(f => f.followingId);
+      const followingIdsArray = myFollowing.map(f => f.followingId);
 
       // 3. Combine: Blocked + Friends + Khud (Self)
-      excludeUserIds = [...blockedIds, ...followingIds, userId]; 
+      excludeUserIds = [...blockedIdsArray, ...followingIdsArray, userId]; 
     }
-    // 🚀 FIX: Prevent Op.notIn crash if blockedIds is empty
-    const userExclusionCondition = blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : undefined;
 
+    // 🚀 FIX: Ab yahan globally excludeUserIds use ho raha hai, koi reference error nahi aayega
+    const userExclusionCondition = excludeUserIds.length > 0 ? { [Op.notIn]: excludeUserIds } : undefined;
     // ========================================
     // 🔥 TRENDING POSTS (The Main Infinite Grid)
     // ========================================
