@@ -124,38 +124,45 @@ export const addComment = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to add comment" });
   }
 };
-
 export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
     const currentUserId = req.user?.id; 
     
-    // 🔥 1. Add Pagination setup
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 15;
+    // 1. 🛡️ STRICT PAGINATION VALIDATION (As requested by FE)
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 15)); // Max cap 50
     const offset = (page - 1) * limit;
 
-    // 🔥 2. Cache Key mein 'page' include karo
-    const cacheKey = `comments:${postId}:page:${page}`;
+    // 2. ⚡ REDIS CACHE KEY (Including pagination params)
+    const cacheKey = `comments:${postId}:page:${page}:limit:${limit}`;
 
-    let rawComments = null;
+    let rawResponse = null;
 
     if (redisClient?.isReady) {
       const cached = await redisClient.get(cacheKey);
-      if (cached) rawComments = JSON.parse(cached);
+      if (cached) rawResponse = JSON.parse(cached);
     }
 
-    if (!rawComments) {
+    if (!rawResponse) {
+      // 3. 📊 AUTHORITATIVE TOTAL COUNT
+      const totalComments = await Comment.count({
+        where: { postId, parentId: null, status: "active" }
+      });
+
+      // 4. 🗄️ FETCH TARGET PAGE (With deterministic ordering)
       const topLevelComments = await Comment.findAll({
         where: { postId, parentId: null, status: "active" },
         include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }],
-        order: [["createdAt", "DESC"]],
-        limit: limit,   // <-- Added Limit
-        offset: offset  // <-- Added Offset
+        order: [["createdAt", "DESC"], ["id", "DESC"]], // Ensures stable sorting across pages
+        limit: limit,
+        offset: offset
       });
 
+      // 5. 💬 NESTED REPLIES (Max 2 per top-level comment)
       const commentsWithReplies = await Promise.all(topLevelComments.map(async (c) => {
         const commentJSON = c.get({ plain: true });
+        
         const repliesCount = await Comment.count({ where: { parentId: c.id, status: "active" } });
         
         const replies = await Comment.findAll({
@@ -170,16 +177,39 @@ export const getPostComments = async (req, res) => {
         return commentJSON;
       }));
 
-      rawComments = commentsWithReplies;
-      if (redisClient?.isReady) await redisClient.setEx(cacheKey, 120, JSON.stringify(rawComments));
+      // Calculate hasMore precisely
+      const hasMore = (offset + commentsWithReplies.length) < totalComments;
+
+      rawResponse = {
+        totalComments,
+        page,
+        limit,
+        hasMore,
+        comments: commentsWithReplies
+      };
+
+      // Cache the structure BEFORE injecting user-specific 'isLiked' flags
+      if (redisClient?.isReady) {
+        await redisClient.setEx(cacheKey, 120, JSON.stringify(rawResponse));
+      }
     }
 
-    const finalizedComments = await injectCommentIsLikedFlag(rawComments, currentUserId);
-    return res.json({ success: true, comments: finalizedComments });
+    // 6. 👤 INJECT DYNAMIC USER FLAGS (Runs outside cache)
+    const finalizedComments = await injectCommentIsLikedFlag(rawResponse.comments, currentUserId);
+
+    // 7. 🚀 FINAL FE-COMPLIANT CONTRACT RESPONSE
+    return res.json({
+      success: true,
+      totalComments: rawResponse.totalComments,
+      page: rawResponse.page,
+      limit: rawResponse.limit,
+      hasMore: rawResponse.hasMore,
+      comments: finalizedComments
+    });
 
   } catch (error) {
     console.error("🔥 GET COMMENTS ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch" });
+    return res.status(500).json({ success: false, message: "Failed to fetch comments" });
   }
 };
 
