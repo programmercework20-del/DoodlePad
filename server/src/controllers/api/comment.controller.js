@@ -51,6 +51,16 @@ export const addComment = async (req, res) => {
       await redisClient.del(`post:${postId}`);
       await redisClient.del(`userPosts:${post.userId}`);
       console.log(`🧹 Cache cleared for postId: ${postId}`);
+
+      // 🗑️ Clear ALL pagination cache for this post when a comment is added
+      try {
+        const keys = await redisClient.keys(`comments:${postId}:*`);
+        if (keys.length > 0) {
+          await redisClient.del(keys);
+        }
+      } catch (err) {
+        console.error("Redis cache clear error:", err);
+      }
     }
 
     // 🔔 NOTIFICATION LOGIC
@@ -285,9 +295,22 @@ export const deleteOwnComment = async (req, res) => {
     }
 
     // 5. Clear Redis Cache
+    // 🚀 PRODUCTION REDIS MANAGEMENT
     if (redisClient?.isReady) {
       await redisClient.del(`comments:${targetPostId}`);
       await redisClient.del(`post:${targetPostId}`);
+      await redisClient.del(`userPosts:${comment.userId}`);
+      console.log(`🧹 Cache cleared for postId: ${targetPostId}`);
+
+      // 🗑️ Clear ALL pagination cache for this post when a comment is deleted
+      try {
+        const keys = await redisClient.keys(`comments:${targetPostId}:*`);
+        if (keys.length > 0) {
+          await redisClient.del(keys);
+        }
+      } catch (err) {
+        console.error("Redis cache clear error:", err);
+      }
     }
 
     // 6. Success Response
