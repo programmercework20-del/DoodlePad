@@ -129,7 +129,14 @@ export const getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
     const currentUserId = req.user?.id; 
-    const cacheKey = `comments:${postId}`;
+    
+    // 🔥 1. Add Pagination setup
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 15;
+    const offset = (page - 1) * limit;
+
+    // 🔥 2. Cache Key mein 'page' include karo
+    const cacheKey = `comments:${postId}:page:${page}`;
 
     let rawComments = null;
 
@@ -139,23 +146,22 @@ export const getPostComments = async (req, res) => {
     }
 
     if (!rawComments) {
-      // 1. Sirf main comments nikaalo
       const topLevelComments = await Comment.findAll({
         where: { postId, parentId: null, status: "active" },
         include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }],
-        order: [["createdAt", "DESC"]]
+        order: [["createdAt", "DESC"]],
+        limit: limit,   // <-- Added Limit
+        offset: offset  // <-- Added Offset
       });
 
-      // 2. Har comment ke max 2 replies aur total count nikaalo (Pro-level Pagination)
       const commentsWithReplies = await Promise.all(topLevelComments.map(async (c) => {
         const commentJSON = c.get({ plain: true });
-        
         const repliesCount = await Comment.count({ where: { parentId: c.id, status: "active" } });
         
         const replies = await Comment.findAll({
           where: { parentId: c.id, status: "active" },
           include: [{ model: User, as: "user", attributes: ["id", "username", "profilePhoto"] }],
-          order: [["createdAt", "ASC"]], // Purane replies pehle
+          order: [["createdAt", "ASC"]], 
           limit: 2
         });
 
@@ -169,7 +175,6 @@ export const getPostComments = async (req, res) => {
     }
 
     const finalizedComments = await injectCommentIsLikedFlag(rawComments, currentUserId);
-
     return res.json({ success: true, comments: finalizedComments });
 
   } catch (error) {

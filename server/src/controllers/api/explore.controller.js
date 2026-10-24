@@ -5,6 +5,8 @@ import Hashtag from "../../models/Hashtag.js";
 import HashtagUsage from "../../models/HashtagUsage.js";
 import Block from "../../models/Block.js";
 import { injectIsLikedFlag } from "../../utils/postHelpers.js";
+import Follower from "../../models/Follower.js";
+
 
 export const getExploreFeed = async (req, res) => {
   try {
@@ -18,19 +20,39 @@ export const getExploreFeed = async (req, res) => {
     // ========================================
     // 🛡️ SAFE BLOCKED USERS & SELF EXCLUSION
     // ========================================
-    let blockedIds = [];
+    // let blockedIds = [];
+    // if (userId) {
+    //   const blocked = await Block.findAll({
+    //     where: {
+    //       [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
+    //     }
+    //   });
+    //   blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+      
+    //   // Pro-Tip: Users khud ki posts explore feed me nahi dekhna chahte
+    //   blockedIds.push(userId); 
+    // }
+    let excludeUserIds = [];
     if (userId) {
+      // 1. Blocked Users
       const blocked = await Block.findAll({
         where: {
           [Op.or]: [{ blockerId: userId }, { blockedId: userId }]
         }
       });
-      blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+      const blockedIds = blocked.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
       
-      // Pro-Tip: Users khud ki posts explore feed me nahi dekhna chahte
-      blockedIds.push(userId); 
-    }
+      // 2. 🔥 EXCLUDE FRIENDS (Jo already follow kiye hain)
+      const myFollowing = await Follower.findAll({
+        where: { followerId: userId, status: "accepted" },
+        attributes: ["followingId"],
+        raw: true
+      });
+      const followingIds = myFollowing.map(f => f.followingId);
 
+      // 3. Combine: Blocked + Friends + Khud (Self)
+      excludeUserIds = [...blockedIds, ...followingIds, userId]; 
+    }
     // 🚀 FIX: Prevent Op.notIn crash if blockedIds is empty
     const userExclusionCondition = blockedIds.length > 0 ? { [Op.notIn]: blockedIds } : undefined;
 
