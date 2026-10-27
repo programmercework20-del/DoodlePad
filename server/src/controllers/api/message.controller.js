@@ -683,61 +683,131 @@ export const sendCardMessage = async (req, res) => {
       }
     }
 
-    // 🎵 2. HANDLE CAPTION AUDIO (TRIM & UPLOAD)
+    // 🎵 2. HANDLE CAPTION AUDIO (PRO-LEVEL FRAME-ACCURATE TRIM & UPLOAD)
     if (req.files && req.files.audio && req.files.audio.length > 0) {
       const audioFile = req.files.audio[0];
-      const tempAudioPath = path.join(os.tmpdir(), `temp_card_a_${Date.now()}.mp4`);
-      const processedAudioPath = path.join(os.tmpdir(), `proc_card_a_${Date.now()}.mp4`);
-      let uploadBuffer = audioFile.buffer;
+      const originalExt = path.extname(audioFile.originalname || "").toLowerCase() || ".mp3";
+      const outExt = ".m4a";
 
-      let trimStart = audioTrimStart ? parseFloat(audioTrimStart) : 0;
-      let trimDuration = audioDuration ? parseFloat(audioDuration) : null;
+      const tempAudioPath = path.join(os.tmpdir(), `temp_card_a_${Date.now()}${originalExt}`);
+      const processedAudioPath = path.join(os.tmpdir(), `proc_card_a_${Date.now()}${outExt}`);
+      let uploadBuffer = audioFile.buffer;
+      let finalContentType = "audio/mp4";
+
+      // 🔥 Smart Trim Parameter Resolution (Handles all possible FE field names)
+      const rawStart =
+        audioTrimStart ??
+        req.body.trimStartSecs ??
+        req.body.trimStart ??
+        req.body.bgmTrimStart ??
+        req.body.startTime ??
+        0;
+
+      const rawDuration =
+        audioDuration ??
+        req.body.durationSecs ??
+        req.body.trimDuration ??
+        req.body.bgmDuration ??
+        req.body.duration ??
+        null;
+
+      const rawEnd =
+        req.body.audioTrimEnd ??
+        req.body.trimEndSecs ??
+        req.body.trimEnd ??
+        req.body.endTime ??
+        null;
+
+      let trimStart = parseFloat(rawStart);
+      if (isNaN(trimStart) || trimStart < 0) trimStart = 0;
+
+      let trimDuration = rawDuration !== null && rawDuration !== undefined ? parseFloat(rawDuration) : null;
+      if (trimDuration !== null && (isNaN(trimDuration) || trimDuration <= 0)) {
+        trimDuration = null;
+      }
+
+      // Agar FE ne duration ki jagah start aur end time bheja hai (e.g., start: 10, end: 25)
+      if (!trimDuration && rawEnd !== null && rawEnd !== undefined) {
+        const parsedEnd = parseFloat(rawEnd);
+        if (!isNaN(parsedEnd) && parsedEnd > trimStart) {
+          trimDuration = parsedEnd - trimStart;
+        }
+      }
+
+      console.log(`✂️ [CARD AUDIO TRIM] File: ${audioFile.originalname} | Start: ${trimStart}s | Duration: ${trimDuration}s`);
 
       try {
         fs.writeFileSync(tempAudioPath, audioFile.buffer);
 
+        // Probe actual source duration for safety guard
+        const sourceDuration = await new Promise((resolve) => {
+          ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
+            if (err || !metadata?.format?.duration) resolve(0);
+            else resolve(parseFloat(metadata.format.duration) || 0);
+          });
+        });
+
+        if (sourceDuration > 0 && trimStart >= sourceDuration) {
+          console.warn(`⚠️ [CARD AUDIO TRIM] trimStart (${trimStart}s) >= sourceDuration (${sourceDuration}s). Resetting to 0.`);
+          trimStart = 0;
+        }
+
+        if (sourceDuration > 0 && trimDuration && (trimStart + trimDuration > sourceDuration)) {
+          trimDuration = Math.max(0.5, sourceDuration - trimStart);
+        }
+
+        // Re-encode to AAC (.m4a) and strip cover art (-vn) for exact trimming across MP3/WAV/M4A
         await new Promise((resolve, reject) => {
           let ffCommand = ffmpeg(tempAudioPath);
           if (trimStart > 0) ffCommand = ffCommand.setStartTime(trimStart);
-          if (trimDuration > 0) ffCommand = ffCommand.setDuration(trimDuration);
+          if (trimDuration && trimDuration > 0) ffCommand = ffCommand.setDuration(trimDuration);
 
-          ffCommand.outputOptions(['-c', 'copy', '-movflags', '+faststart'])
+          ffCommand
+            .outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
             .save(processedAudioPath)
             .on('end', resolve)
             .on('error', reject);
         });
 
         uploadBuffer = fs.readFileSync(processedAudioPath);
-        
+
         finalAudioDuration = await new Promise((resolve) => {
           ffmpeg.ffprobe(processedAudioPath, (err, metadata) => {
-            if (err) resolve(0);
-            else resolve(metadata.format.duration ? Math.round(metadata.format.duration) : 0);
+            if (err || !metadata?.format?.duration) {
+              resolve(trimDuration ? Math.round(trimDuration) : 0);
+            } else {
+              resolve(Math.round(parseFloat(metadata.format.duration)));
+            }
           });
         });
 
+        console.log(`✅ [CARD AUDIO TRIM SUCCESS] Trimmed Duration: ${finalAudioDuration}s`);
+
       } catch (e) {
         console.error("⚠️ Backend Card Audio Trim Error:", e.message);
+        finalContentType = audioFile.mimetype || "audio/mp4";
         finalAudioDuration = await new Promise((resolve) => {
-           ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
-              if (err) resolve(0);
-              else resolve(metadata.format.duration ? Math.round(metadata.format.duration) : 0);
-           });
+          ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
+            if (err || !metadata?.format?.duration) resolve(0);
+            else resolve(Math.round(parseFloat(metadata.format.duration)));
+          });
         });
       } finally {
         if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
         if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
       }
 
-      const fileName = `message_audios/card_${senderId}_${Date.now()}_audio.mp4`;
+      const fileName = `message_audios/card_${senderId}_${Date.now()}_audio${outExt}`;
       const blob = bucket.file(fileName);
-      await blob.save(uploadBuffer, { metadata: { contentType: audioFile.mimetype } });
+      await blob.save(uploadBuffer, { metadata: { contentType: finalContentType } });
       finalAudioUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
+
     let parsedDoodleData = null;
     if (cardType === "doodle" && doodleData) {
       parsedDoodleData = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
     }
+
     // 🛠️ 3. BUILD JSONB PAYLOAD & SAVE MESSAGE
     const cardPayload = [{
       type: cardType,
@@ -763,7 +833,7 @@ export const sendCardMessage = async (req, res) => {
       lastMessageAt: new Date()
     }, { where: { id: conversationId } });
 
-    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS
+    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS (Multi-Device Compatible)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
@@ -773,21 +843,16 @@ export const sendCardMessage = async (req, res) => {
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
-      const receiverSocketId = onlineUsers.get(receiverId);
-      const senderSocketId = onlineUsers.get(senderId);
-
-      if (receiverSocketId) io.sockets.sockets.get(receiverSocketId)?.join(conversationId);
-      if (senderSocketId) io.sockets.sockets.get(senderSocketId)?.join(conversationId);
+      const isReceiverOnline = onlineUsers.has(receiverId);
 
       io.to(conversationId)
         .to(`user_${receiverId}`)
-        .to(receiverId)
-        .to(senderId)
+        .to(`user_${senderId}`)
         .emit("receive_message", messageData);
 
-      if (receiverSocketId) {
+      if (isReceiverOnline) {
         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
-        io.to(`user_${senderId}`).to(senderId).emit("message_status_update", {
+        io.to(`user_${senderId}`).emit("message_status_update", {
           messageId: message.id,
           status: "delivered",
           conversationId
@@ -812,8 +877,7 @@ export const sendCardMessage = async (req, res) => {
     console.error("🔥 Send Card Message Error:", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
-};
-
+};s
 
 // ============================================================
 // MARK SEEN (Auto-heals if FE passes userId instead of conversationId)
