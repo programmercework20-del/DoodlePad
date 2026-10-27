@@ -877,7 +877,7 @@ export const sendCardMessage = async (req, res) => {
     console.error("🔥 Send Card Message Error:", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
-};s
+};
 
 // ============================================================
 // MARK SEEN (Auto-heals if FE passes userId instead of conversationId)
