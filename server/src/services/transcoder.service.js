@@ -1,140 +1,3 @@
-// import { TranscoderServiceClient } from '@google-cloud/video-transcoder';
-
-// const transcoderClient = new TranscoderServiceClient();
-
-// // 🔥 Yahan se process.env poori tarah hata diya hai taaki galat ID na uthe
-// const RAW_BUCKET_NAME = 'doodlepad-media-staging';
-// const HLS_BUCKET_NAME = 'doodlepad-media-staging';
-// const projectId = 'project-7531567b-e7c3-4c4e-8fe'; // 👈 STRICTLY BINA '4' KE
-// const location = 'asia-south1';
-// const HLS_BASE_URL = 'http://34.160.65.14';
-// const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// function validateInputs(rawFileName, postUniqueId, orientation) {
-//   if (!rawFileName || typeof rawFileName !== 'string' || rawFileName.trim() === '') {
-//     throw new Error('Invalid rawFileName');
-//   }
-//   if (!postUniqueId || !/^[a-zA-Z0-9_-]{10,}$/.test(postUniqueId)) {
-//     throw new Error('Invalid postUniqueId');
-//   }
-//   if (!['portrait', 'landscape'].includes(orientation)) {
-//     throw new Error('Invalid orientation');
-//   }
-// }
-
-// export async function startHlsConversion(rawFileName, postUniqueId, orientation = 'portrait', retries = 3) {
-//   try {
-//     validateInputs(rawFileName, postUniqueId, orientation);
-//   } catch (error) {
-//     console.error('❌ Validation Error:', error.message);
-//     return null;
-//   }
-
-//   for (let attempt = 1; attempt <= retries; attempt++) {
-//     try {
-//       const parent = transcoderClient.locationPath(projectId, location);
-      
-//       const inputUri = `gs://${RAW_BUCKET_NAME}/${rawFileName}`;
-//       const outputUri = `gs://${HLS_BUCKET_NAME}/post_videos_hls/${postUniqueId}/`;
-
-//       const isPortrait = orientation === 'portrait';
-//       const videoWidth = isPortrait ? 720 : 1280;
-//       const videoHeight = isPortrait ? 1280 : 720;
-
-//       const job = {
-//         inputUri,
-//         outputUri,
-//         config: {
-//           inputs: [{ key: 'input0', uri: inputUri }],
-//           editList: [{ key: 'atom0', inputs: ['input0'], startTimeOffset: { seconds: 0, nanos: 0 } }],
-//           elementaryStreams: [
-//             {
-//               key: 'video-stream0',
-//               videoStream: {
-//                 h264: {
-//                   heightPixels: videoHeight,
-//                   widthPixels: videoWidth,
-//                   bitrateBps: 2500000,
-//                   frameRate: 30,
-//                   allowOpenGop: false,
-//                   gopDuration: { seconds: 1, nanos: 0 },
-//                   vbvSizeBits: 2500000,
-//                   vbvFullnessBits: 2250000,
-//                   entropyCoder: 'cabac',
-//                   bPyramid: false,
-//                   bFrameCount: 3,
-//                   aqStrength: 1,
-//                   profile: 'high',
-//                 }
-//               }
-//             },
-//             {
-//               key: 'audio-stream0',
-//               audioStream: {
-//                 codec: 'aac',
-//                 bitrateBps: 128000,
-//                 channelCount: 2,
-//                 sampleRateHertz: 44100
-//               }
-//             }
-//           ],
-//           muxStreams: [
-//             // 🔥 FIX 1: Sirf Video Mux Stream
-//             {
-//               key: 'hls-video',
-//               container: 'fmp4',
-//               elementaryStreams: ['video-stream0'], // ONLY VIDEO
-//               segmentSettings: {
-//                 segmentDuration: { seconds: 2, nanos: 0 }
-//               }
-//             },
-//             // 🔥 FIX 2: Sirf Audio Mux Stream (fMP4 me alag rakhna zaruri hai)
-//             {
-//               key: 'hls-audio',
-//               container: 'fmp4',
-//               elementaryStreams: ['audio-stream0'], // ONLY AUDIO
-//               segmentSettings: {
-//                 segmentDuration: { seconds: 2, nanos: 0 }
-//               }
-//             }
-//           ],
-//           manifests: [
-//             {
-//               fileName: 'master.m3u8',
-//               type: 'HLS',
-//               // 🔥 FIX 3: Manifest ko dono stream (audio aur video) link karni hongi
-//               muxStreams: ['hls-video', 'hls-audio']
-//             }
-//           ]
-//         }
-//       };
-
-//       console.log(`🚀 [Attempt ${attempt}/${retries}] Transcoding ${rawFileName} (${orientation}) → 2-sec fMP4 HLS segments...`);
-      
-//       const [response] = await transcoderClient.createJob({ parent, job });
-      
-//       console.log(`✅ GCP Transcoder Job Queued`);
-//       console.log(`📊 Output Format: fMP4-based HLS (Video & Audio Chunked Separately)`);
-      
-//       const finalHlsUrl = `${HLS_BASE_URL}/post_videos_hls/${postUniqueId}/master.m3u8`;
-//       console.log(`📹 Stream URL: ${finalHlsUrl}`);
-      
-//       return finalHlsUrl;
-
-//     } catch (error) {
-//       console.error(`❌ Attempt ${attempt}/${retries} Failed: ${error.message}`);
-      
-//       if (attempt < retries) {
-//         const delay = attempt * 2000;
-//         console.log(`⏳ Retrying in ${delay / 1000}s...`);
-//         await sleep(delay);
-//       } else {
-//         console.error('❌ All retry attempts exhausted');
-//         return null;
-//       }
-//     }
-//   }
-// }
 import { TranscoderServiceClient } from '@google-cloud/video-transcoder';
 
 const transcoderClient = new TranscoderServiceClient();
@@ -154,14 +17,23 @@ function validateInputs(rawFileName, postUniqueId, orientation, fileType) {
     throw new Error('Invalid postUniqueId');
   }
   if (fileType === 'video' && !['portrait', 'landscape'].includes(orientation)) {
-    throw new Error('Invalid orientation for video');
+    throw new Error(`Invalid orientation for video: ${orientation}`);
   }
 }
 
-// 🔥 NAYA PARAMETER: fileType (default 'video' rakha hai taaki purana code break na ho)
-export async function startHlsConversion(rawFileName, postUniqueId, orientation = 'portrait', retries = 3, fileType = 'video') {
+// 🔥 Added `dimensions` parameter for exact aspect-ratio preservation from ffprobe
+export async function startHlsConversion(
+  rawFileName,
+  postUniqueId,
+  orientation = 'portrait',
+  retries = 3,
+  fileType = 'video',
+  dimensions = null
+) {
+  const normalizedOrientation = typeof orientation === 'string' ? orientation.toLowerCase().trim() : 'portrait';
+
   try {
-    validateInputs(rawFileName, postUniqueId, orientation, fileType);
+    validateInputs(rawFileName, postUniqueId, normalizedOrientation, fileType);
   } catch (error) {
     console.error('❌ Validation Error:', error.message);
     return null;
@@ -170,22 +42,16 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const parent = transcoderClient.locationPath(projectId, location);
-      
       const inputUri = `gs://${RAW_BUCKET_NAME}/${rawFileName}`;
       
-      // 🔥 FIX 1: Audio aur Video ke HLS folders alag rakhe hain clean storage ke liye
       const folderPrefix = fileType === 'audio' ? 'post_audios_hls' : 'post_videos_hls';
       const outputUri = `gs://${HLS_BUCKET_NAME}/${folderPrefix}/${postUniqueId}/`;
 
-      const isPortrait = orientation === 'portrait';
-      const videoWidth = isPortrait ? 720 : 1280;
-      const videoHeight = isPortrait ? 1280 : 720;
+      const isPortrait = normalizedOrientation === 'portrait';
 
       // =====================================
       // 🛠️ JOB CONFIGURATION LOGIC
       // =====================================
-      
-      // Audio stream dono me common hai
       const audioStreamConfig = {
         key: 'audio-stream0',
         audioStream: { codec: 'aac', bitrateBps: 128000, channelCount: 2, sampleRateHertz: 44100 }
@@ -202,16 +68,34 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
       let muxStreams = [audioMuxStream];
       let manifestMuxStreams = ['hls-audio'];
 
-      // Agar video hai, tabhi video configuration add karo
       if (fileType === 'video') {
+        // 🔥 Use exact ffprobe-calculated even dimensions if available; otherwise auto-scale by single axis
+        let dimensionConfig;
+        if (dimensions && dimensions.widthPixels && dimensions.heightPixels) {
+          dimensionConfig = {
+            widthPixels: dimensions.widthPixels,
+            heightPixels: dimensions.heightPixels
+          };
+        } else {
+          dimensionConfig = isPortrait ? { widthPixels: 720 } : { heightPixels: 720 };
+        }
+
         const videoStreamConfig = {
           key: 'video-stream0',
           videoStream: {
             h264: {
-              heightPixels: videoHeight, widthPixels: videoWidth, bitrateBps: 2500000,
-              frameRate: 30, allowOpenGop: false, gopDuration: { seconds: 1, nanos: 0 },
-              vbvSizeBits: 2500000, vbvFullnessBits: 2250000, entropyCoder: 'cabac',
-              bPyramid: false, bFrameCount: 3, aqStrength: 1, profile: 'high',
+              ...dimensionConfig,
+              bitrateBps: 2500000,
+              frameRate: 30,
+              allowOpenGop: false,
+              gopDuration: { seconds: 1, nanos: 0 },
+              vbvSizeBits: 2500000,
+              vbvFullnessBits: 2250000,
+              entropyCoder: 'cabac',
+              bPyramid: false,
+              bFrameCount: 3,
+              aqStrength: 1,
+              profile: 'high',
             }
           }
         };
@@ -228,7 +112,6 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
         manifestMuxStreams.push('hls-video');
       }
 
-      // Final Job Object
       const job = {
         inputUri,
         outputUri,
@@ -243,11 +126,14 @@ export async function startHlsConversion(rawFileName, postUniqueId, orientation 
         }
       };
 
-      console.log(`🚀 [Attempt ${attempt}/${retries}] Transcoding ${fileType.toUpperCase()} ${rawFileName} → 2-sec fMP4 HLS segments...`);
+      console.log(
+        `🚀 [Attempt ${attempt}/${retries}] Transcoding ${fileType.toUpperCase()} (${normalizedOrientation.toUpperCase()}) ` +
+        `${dimensions ? `[${dimensions.widthPixels}x${dimensions.heightPixels}]` : '[Auto-AR]'} ${rawFileName} → 2-sec fMP4 HLS...`
+      );
       
       const [response] = await transcoderClient.createJob({ parent, job });
       
-      console.log(`✅ GCP Transcoder Job Queued for ${fileType.toUpperCase()}`);
+      console.log(`✅ GCP Transcoder Job Queued for ${fileType.toUpperCase()} [${normalizedOrientation}]`);
       
       const finalHlsUrl = `${HLS_BASE_URL}/${folderPrefix}/${postUniqueId}/master.m3u8`;
       console.log(`🎵 Stream URL: ${finalHlsUrl}`);

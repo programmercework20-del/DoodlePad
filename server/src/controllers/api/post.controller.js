@@ -14,14 +14,86 @@ import { getVideoDuration } from "../../utils/getVideoDuration.js";
 import Follower from "../../models/Follower.js";
 import sharp from "sharp"; // 🔥 PRO-LEVEL: For generating WebP from Doodle SVGs
 
-
-
 // 🚨 YAHAN HLS CONVERTER IMPORT KIYA HAI
 import { startHlsConversion } from "../../services/transcoder.service.js";
 
-
 // 🔥 PRO-LEVEL CDN BASE URL (From GCP Load Balancer)
 const CDN_BASE_URL = "http://34.160.65.14";
+
+// ==========================================
+// 📐 HELPER: Probe Video Orientation, Rotation, SAR & Target HLS Dimensions
+// ==========================================
+function probeVideoDimensions(filePath) {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err || !metadata || !Array.isArray(metadata.streams)) {
+        console.warn("⚠️ [FFPROBE WARNING] Could not read video metadata:", err?.message);
+        return resolve(null);
+      }
+
+      const videoStream = metadata.streams.find((s) => s.codec_type === "video");
+      if (!videoStream) return resolve(null);
+
+      let rawWidth = parseInt(videoStream.width, 10) || 0;
+      let rawHeight = parseInt(videoStream.height, 10) || 0;
+      if (!rawWidth || !rawHeight) return resolve(null);
+
+      // 1. Account for Sample Aspect Ratio (SAR) if non-square pixels are used
+      if (
+        videoStream.sample_aspect_ratio &&
+        videoStream.sample_aspect_ratio !== "0:1" &&
+        videoStream.sample_aspect_ratio !== "1:1"
+      ) {
+        const [sarW, sarH] = videoStream.sample_aspect_ratio.split(":").map(Number);
+        if (sarW > 0 && sarH > 0) {
+          rawWidth = Math.round((rawWidth * sarW) / sarH);
+        }
+      }
+
+      // 2. Account for Rotation metadata (stream tags or display matrix in side_data_list)
+      let rotation = 0;
+      if (videoStream.tags && videoStream.tags.rotate !== undefined) {
+        rotation = parseInt(videoStream.tags.rotate, 10) || 0;
+      } else if (Array.isArray(videoStream.side_data_list)) {
+        const rotationSideData = videoStream.side_data_list.find((d) => d.rotation !== undefined);
+        if (rotationSideData) {
+          rotation = parseInt(rotationSideData.rotation, 10) || 0;
+        }
+      }
+
+      const absRotation = Math.abs(rotation) % 360;
+      const isRotated90or270 = absRotation === 90 || absRotation === 270;
+
+      // Effective decoded frame dimensions after rotation is applied
+      const effectiveWidth = isRotated90or270 ? rawHeight : rawWidth;
+      const effectiveHeight = isRotated90or270 ? rawWidth : rawHeight;
+
+      const isLandscape = effectiveWidth > effectiveHeight;
+      const orientation = isLandscape ? "landscape" : "portrait";
+
+      // 3. Scale within max bounding box (1280x720 for landscape, 720x1280 for portrait)
+      // Preserves exact aspect ratio (16:9 -> 1280x720, 4:3 -> 960x720, 9:16 -> 720x1280)
+      const maxW = isLandscape ? 1280 : 720;
+      const maxH = isLandscape ? 720 : 1280;
+      const scale = Math.min(maxW / effectiveWidth, maxH / effectiveHeight, 1);
+
+      // Ensure encoder-compatible even dimensions
+      const widthPixels = Math.max(2, Math.round((effectiveWidth * scale) / 2) * 2);
+      const heightPixels = Math.max(2, Math.round((effectiveHeight * scale) / 2) * 2);
+
+      resolve({
+        rawWidth,
+        rawHeight,
+        rotation,
+        effectiveWidth,
+        effectiveHeight,
+        orientation,
+        widthPixels,
+        heightPixels
+      });
+    });
+  });
+}
 
 // ==========================================
 // 🎨 HELPER: Convert SVG Paths to WebP Image
@@ -66,9 +138,11 @@ export const createPost = async (req, res) => {
     let backgroundAudios = [];
     let parsedDoodlePaths = [];
     
-    // 🔥 Variable Audio/Video filename track karne ke liye
+    // 🔥 Variable Audio/Video filename & orientation track karne ke liye
     let uploadedVideoFileName = null;
     let uploadedAudioFileName = null; 
+    let detectedVideoOrientation = req.body.orientation?.toLowerCase() === 'landscape' ? 'landscape' : 'portrait';
+    let detectedVideoDimensions = null;
 
     timeLog['Multipart_Parsing'] = (performance.now() - tStart).toFixed(2) + "ms";
 
@@ -259,7 +333,7 @@ export const createPost = async (req, res) => {
            }
         }
 
-        // 🔥 MAGIC FIX: GENERATE THUMBNAIL FOR VIDEO IN DIRECT UPLOAD FLOW
+        // 🔥 MAGIC FIX: GENERATE THUMBNAIL & PROBE ORIENTATION FOR VIDEO IN DIRECT UPLOAD FLOW
         if (isVideo) {
           uploadedVideoFileName = fileName;
           
@@ -267,12 +341,27 @@ export const createPost = async (req, res) => {
           const tempThumbPath = path.join(os.tmpdir(), `thumb_${Date.now()}.jpg`);
           
           try {
-            console.log(`📸 [THUMBNAIL] Generating thumbnail for direct uploaded video: ${fileName}`);
+            console.log(`📸 [THUMBNAIL & PROBE] Inspecting direct uploaded video: ${fileName}`);
             
             // 1. Download video from bucket to temp folder
             await bucket.file(fileName).download({ destination: tempVideoDlPath });
+
+            // 2. 🔥 PROBE ACTUAL VIDEO STREAM ORIENTATION & DIMENSIONS
+            const probedMeta = await probeVideoDimensions(tempVideoDlPath);
+            if (probedMeta) {
+              detectedVideoOrientation = probedMeta.orientation;
+              detectedVideoDimensions = {
+                widthPixels: probedMeta.widthPixels,
+                heightPixels: probedMeta.heightPixels
+              };
+              console.log(
+                `📐 [VIDEO PROBE] Raw: ${probedMeta.rawWidth}x${probedMeta.rawHeight} (rot: ${probedMeta.rotation}°) ` +
+                `→ Effective: ${probedMeta.effectiveWidth}x${probedMeta.effectiveHeight} (${probedMeta.orientation}) ` +
+                `→ Target HLS: ${probedMeta.widthPixels}x${probedMeta.heightPixels}`
+              );
+            }
             
-            // 2. Generate screenshot using FFmpeg
+            // 3. Generate screenshot using FFmpeg
             await new Promise((resolve, reject) => {
               ffmpeg(tempVideoDlPath)
                 .inputOptions('-threads 2')
@@ -287,18 +376,18 @@ export const createPost = async (req, res) => {
                 .on('error', reject);
             });
             
-            // 3. Upload thumbnail to GCP bucket
+            // 4. Upload thumbnail to GCP bucket
             const thumbFileName = `post_thumbnails/thumb_${userId}_${Date.now()}.jpg`;
             await bucket.file(thumbFileName).save(fs.readFileSync(tempThumbPath), { 
               metadata: { contentType: 'image/jpeg' } 
             });
             
-            // 4. Set thumbnail URL for database mapping
+            // 5. Set thumbnail URL for database mapping
             thumbnail = `${CDN_BASE_URL}/${thumbFileName}`;
             console.log(`✅ [THUMBNAIL SUCCESS] Thumbnail generated & saved: ${thumbnail}`);
             
           } catch (e) {
-             console.error("⚠️ [THUMBNAIL ERROR] Failed to generate thumbnail for direct upload:", e.message);
+             console.error("⚠️ [THUMBNAIL/PROBE ERROR] Failed on direct upload video:", e.message);
           } finally {
              // Cleanup temp files
              if (fs.existsSync(tempVideoDlPath)) fs.unlinkSync(tempVideoDlPath);
@@ -341,7 +430,7 @@ export const createPost = async (req, res) => {
               try {
                   let durationRaw = await getVideoDuration(tempInput);
                   actualAudioDuration = parseFloat(durationRaw);
-                  if (isNaN(actualAudioDuration)) actualAudioDuration = 0; // Agar read nahi hua toh 0 maan lo
+                  if (isNaN(actualAudioDuration)) actualAudioDuration = 0;
               } catch (e) {
                   console.log("⚠️ Could not read audio duration via probe, using fallback.");
               }
@@ -448,6 +537,21 @@ export const createPost = async (req, res) => {
           try {
             fs.writeFileSync(tempVideoPath, file.buffer);
 
+            // 🔥 PROBE ACTUAL VIDEO ORIENTATION & DIMENSIONS IN FALLBACK FLOW
+            const probedMeta = await probeVideoDimensions(tempVideoPath);
+            if (probedMeta) {
+              detectedVideoOrientation = probedMeta.orientation;
+              detectedVideoDimensions = {
+                widthPixels: probedMeta.widthPixels,
+                heightPixels: probedMeta.heightPixels
+              };
+              console.log(
+                `📐 [VIDEO PROBE FALLBACK] Raw: ${probedMeta.rawWidth}x${probedMeta.rawHeight} (rot: ${probedMeta.rotation}°) ` +
+                `→ Effective: ${probedMeta.effectiveWidth}x${probedMeta.effectiveHeight} (${probedMeta.orientation}) ` +
+                `→ Target HLS: ${probedMeta.widthPixels}x${probedMeta.heightPixels}`
+              );
+            }
+
             if (!thumbnail) {
                 await new Promise((resolve, reject) => {
                   ffmpeg(tempVideoPath).inputOptions('-threads 2')
@@ -520,16 +624,23 @@ export const createPost = async (req, res) => {
     // 🚨 3.5. MEDIA PROCESSING (HLS FOR VIDEO, DIRECT M4A FOR AUDIO)
     // ==========================================
     
-    // 🎥 1. ONLY VIDEO POSTS get HLS conversion
+    // 🎥 1. ONLY VIDEO POSTS get HLS conversion (Now Orientation & Aspect-Ratio Aware!)
     if (cleanType === 'video' && uploadedVideoFileName) {
         const attemptHlsWithRetry = async (retries = 3) => {
             for (let i = 1; i <= retries; i++) {
                 try {
-                    const hlsUrl = await startHlsConversion(uploadedVideoFileName, post.id, 'portrait', 3, 'video');
+                    const hlsUrl = await startHlsConversion(
+                        uploadedVideoFileName,
+                        post.id,
+                        detectedVideoOrientation,
+                        3,
+                        'video',
+                        detectedVideoDimensions
+                    );
                     
                     if (hlsUrl) {
                         await post.update({ mediaUrls: [hlsUrl] });
-                        console.log(`✅ [HLS SUCCESS] Post ${post.id} updated with VIDEO HLS URL!`);
+                        console.log(`✅ [HLS SUCCESS] Post ${post.id} updated with ${detectedVideoOrientation.toUpperCase()} VIDEO HLS URL!`);
                         if (redisClient?.isReady) await redisClient.del(`userPosts:${userId}`);
                         return;
                     }
@@ -548,10 +659,8 @@ export const createPost = async (req, res) => {
     // 🎵 2. AUDIO POSTS BYPASS HLS -> Update directly with pure .m4a link
     else if (cleanType === 'audio' && uploadedAudioFileName) {
         try {
-            // Priority: Calculate safe duration
             const correctDuration = post.duration || (post.backgroundAudios && post.backgroundAudios.length > 0 ? post.backgroundAudios[0].duration : 15);
             
-            // Priority: Agar mediaUrls me trimmed URL pehle se hai toh wo le lo, warna construct kar lo
             const directAudioUrl = (post.mediaUrls && post.mediaUrls.length > 0) 
                 ? post.mediaUrls[0] 
                 : `${CDN_BASE_URL}/${uploadedAudioFileName}`;
@@ -583,6 +692,7 @@ export const createPost = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
   }
 };
+
 export const markExpiredPosts = async (specificUserId = null) => {
   try {
     const now = new Date();
@@ -830,40 +940,36 @@ export const getUserPosts = async (req, res) => {
     });
   }
 };
+
 // ==========================================
 // 🚀 NEW: GENERATE RESUMABLE UPLOAD URL (CHUNKED)
 // ==========================================
 export const generateResumableUploadUrl = async (req, res) => {
   try {
     const userId = req.user.id;
-    // Frontend hume batayega ki file audio hai ya video, aur uska extension kya hai
     const { fileType, ext, contentType } = req.body; 
 
-    // Folder decide karo
     let folderName = 'post_images';
     if (fileType === 'video') folderName = 'post_videos';
     else if (fileType === 'audio') folderName = 'post_audios';
 
-    // Ek unique file name banao
     const rawFileName = `user_${userId}_${Date.now()}${ext || '.mp4'}`;
     const fileName = `${folderName}/${rawFileName}`;
 
     const file = bucket.file(fileName);
 
-    // 🔥 GCP se ek "Resumable Session" initiate karo
     const [uploadUrl] = await file.createResumableUpload({
       metadata: {
-        contentType: contentType, // e.g., 'video/mp4'
+        contentType: contentType,
       },
-      origin: '*', // Mobile app se direct access allow karne ke liye
+      origin: '*',
     });
 
-    // Frontend ko wo direct URL aur File ka naam de do
     return res.status(200).json({
       success: true,
-      uploadUrl, // Mobile app is URL par seedha chunks (tukde) bhejegi
-      fileName,  // Mobile app ye naam hume wapas degi post create karte time
-      mediaUrl: `${process.env.CDN_BASE_URL}/${fileName}` // Final CDN link (optional reference ke liye)
+      uploadUrl,
+      fileName,
+      mediaUrl: `${process.env.CDN_BASE_URL}/${fileName}`
     });
 
   } catch (error) {
@@ -890,14 +996,11 @@ export const togglePinPost = async (req, res) => {
       return res.status(400).json({ success: false, message: "Cannot modify a deleted post" });
     }
 
-    // Backend 'isSaved' is treated as 'isPinned' conceptually
     if (post.isSaved) {
-      // 🔓 UNPIN ACTION
-      // Client rule: Agar unpin kiya, toh naya 24 ghante ka timer shuru hoga.
       const newExpiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
       await post.update({ 
-          isSaved: false, // isSaved = false means Unpinned
-          status: "active", // Make sure it's active
+          isSaved: false,
+          status: "active",
           expiresAt: newExpiryDate 
       });
 
@@ -910,10 +1013,8 @@ export const togglePinPost = async (req, res) => {
       });
 
     } else {
-      // 📌 PIN ACTION
-      // Client rule: Lifetime profile par rahega. Timer cancel.
       await post.update({ 
-          isSaved: true, // isSaved = true means Pinned
+          isSaved: true,
           status: "active",
           expiresAt: null 
       });
@@ -931,28 +1032,25 @@ export const togglePinPost = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to toggle pin status" });
   }
 };
+
 // ==========================================
 //  INCREMENT VIDEO VIEW COUNT
 // ==========================================
 export const incrementViewCount = async (req, res) => {
   try {
-    const { id } = req.params; // postId
+    const { id } = req.params;
 
-    // 1. Database me View increment karo
     const post = await Post.findByPk(id);
     
     if (!post) {
       return res.status(404).json({ success: false, message: "Post not found" });
     }
 
-    // 2. Sirf video/audio posts ke views count hone chahiye
     if (post.type === 'video' || post.type === 'audio') {
       await post.increment("viewsCount");
 
-      // 3. Clear cache taaki feed refresh hone par naye views dikhein
       if (redisClient?.isReady) {
         await redisClient.del(`userPosts:${post.userId}`);
-        // Agar single post cache hai toh wo bhi delete kar dena
       }
     }
 
