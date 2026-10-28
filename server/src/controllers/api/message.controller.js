@@ -17,10 +17,7 @@ import { generateDoodleImage } from "../../utils/doodleRenderer.js";
 // ✅ Universal UUID validator
 const validateUUID = (uuid) => {
   if (!uuid || typeof uuid !== "string") return false;
-  // const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\$/i;
-  
-const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
+  const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return re.test(uuid.trim());
 };
 
@@ -33,6 +30,21 @@ const cleanUuidInput = (rawVal) => {
   const str = String(rawVal).trim();
   if (!str || str === "null" || str === "undefined" || str === "[object Object]") return null;
   return validateUUID(str) ? str : null;
+};
+
+// ✅ Extract client-generated correlation ID for Optimistic UI reconciliation (Zero-Harm Pass-Through)
+const extractClientMessageId = (body = {}) => {
+  const raw =
+    body.clientMessageId ??
+    body.tempId ??
+    body.localId ??
+    body.optimisticId ??
+    body.clientTempId ??
+    null;
+  if (raw === null || raw === undefined) return null;
+  const str = String(raw).trim();
+  if (!str || str === "null" || str === "undefined" || str === "[object Object]") return null;
+  return str;
 };
 
 // 🔥 HELPER 1: Clear Redis Conversation Cache (both v1 and v2 keys)
@@ -312,6 +324,7 @@ export const sendMessage = async (req, res) => {
     const senderId = req.user.id;
     const { content, type = "text", postId, replyToId } = req.body;
     const cleanReplyToId = cleanUuidInput(replyToId || req.body?.replyTo?.id);
+    const clientMessageId = extractClientMessageId(req.body);
 
     console.log("📨 [sendMessage] Incoming body:", JSON.stringify(req.body));
 
@@ -513,33 +526,40 @@ export const sendMessage = async (req, res) => {
 
     await transaction.commit();
 
-    // 🚀 BACKGROUND TASKS (PRO-LEVEL MULTI-DEVICE SOCKET EMISSION)
+    // 🚀 BACKGROUND TASKS (PRO-LEVEL MULTI-DEVICE SOCKET EMISSION + CORRELATION ID)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
+
+    if (clientMessageId) {
+      messageData.clientMessageId = clientMessageId;
+      messageData.tempId = clientMessageId;
+    }
 
     await clearConversationCache(senderId, receiverId);
 
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
-      
-      // Check if receiver has ANY active devices right now
       const isReceiverOnline = onlineUsers.has(receiverId);
 
+      // Update status BEFORE emitting receive_message and returning HTTP response to prevent status race
+      if (isReceiverOnline) {
+        messageData.status = "delivered";
+        await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
+      }
+
       // Emit to: (1) Conversation Room, (2) Receiver's Global Room, (3) Sender's Global Room
-      // This ensures if a user has Web + App open, both screens update instantly.
       io.to(conversation.id)
         .to(`user_${receiverId}`)
         .to(`user_${senderId}`)
         .emit("receive_message", messageData);
 
-      // If receiver is online on ANY device, instantly mark as delivered
       if (isReceiverOnline) {
-        await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
-        
         io.to(`user_${senderId}`).emit("message_status_update", {
           messageId: message.id,
+          clientMessageId: clientMessageId || undefined,
+          tempId: clientMessageId || undefined,
           status: "delivered",
           conversationId: conversation.id
         });
@@ -557,7 +577,13 @@ export const sendMessage = async (req, res) => {
       messageType: finalType
     }).catch(() => {});
 
-    return res.json({ success: true, conversationId: conversation.id, message: messageData });
+    return res.json({
+      success: true,
+      conversationId: conversation.id,
+      clientMessageId: clientMessageId || undefined,
+      tempId: clientMessageId || undefined,
+      message: messageData
+    });
 
   } catch (err) {
     await transaction.rollback();
@@ -565,7 +591,6 @@ export const sendMessage = async (req, res) => {
     return res.status(500).json({ success: false, message: "Send message failed", error: err.message });
   }
 };
-
 
 // ============================================================
 // 🔥 SEND CARD MESSAGE (With Smart Fallback & Reply-to-Message)
@@ -583,6 +608,7 @@ export const sendCardMessage = async (req, res) => {
     } = req.body;
 
     const cleanReplyToId = cleanUuidInput(replyToId || req.body?.replyTo?.id);
+    const clientMessageId = extractClientMessageId(req.body);
 
     console.log("📨 [sendCardMessage] Incoming body:", JSON.stringify(req.body));
 
@@ -833,10 +859,15 @@ export const sendCardMessage = async (req, res) => {
       lastMessageAt: new Date()
     }, { where: { id: conversationId } });
 
-    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS (Multi-Device Compatible)
+    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS (Multi-Device Compatible + Correlation ID)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
+
+    if (clientMessageId) {
+      messageData.clientMessageId = clientMessageId;
+      messageData.tempId = clientMessageId;
+    }
 
     await clearConversationCache(senderId, receiverId);
 
@@ -845,15 +876,21 @@ export const sendCardMessage = async (req, res) => {
       const onlineUsers = getOnlineUsers();
       const isReceiverOnline = onlineUsers.has(receiverId);
 
+      if (isReceiverOnline) {
+        messageData.status = "delivered";
+        await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
+      }
+
       io.to(conversationId)
         .to(`user_${receiverId}`)
         .to(`user_${senderId}`)
         .emit("receive_message", messageData);
 
       if (isReceiverOnline) {
-        await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
         io.to(`user_${senderId}`).emit("message_status_update", {
           messageId: message.id,
+          clientMessageId: clientMessageId || undefined,
+          tempId: clientMessageId || undefined,
           status: "delivered",
           conversationId
         });
@@ -871,7 +908,13 @@ export const sendCardMessage = async (req, res) => {
       messageType: "card"
     }).catch(() => {});
 
-    return res.status(201).json({ success: true, conversationId, message: messageData });
+    return res.status(201).json({
+      success: true,
+      conversationId,
+      clientMessageId: clientMessageId || undefined,
+      tempId: clientMessageId || undefined,
+      message: messageData
+    });
 
   } catch (error) {
     console.error("🔥 Send Card Message Error:", error);
@@ -967,19 +1010,21 @@ export const getMessages = async (req, res) => {
 
     const realConversationId = conversation.id;
 
-    // Auto-join user's active socket to the real conversation room
+    // Auto-join user's active socket(s) to the real conversation room (Multi-Device Set Safe)
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
-      const sockId = userId ? onlineUsers.get(userId) : null;
-      if (sockId) {
-        io.sockets.sockets.get(sockId)?.join(realConversationId);
+      const userSocketSet = userId ? onlineUsers.get(userId) : null;
+      if (userSocketSet && typeof userSocketSet.forEach === "function") {
+        userSocketSet.forEach((sid) => {
+          io.sockets.sockets.get(sid)?.join(realConversationId);
+        });
       }
     } catch (_) {}
 
     const messages = await Message.findAll({
       where: { conversationId: realConversationId },
-      order: [["createdAt", "ASC"]],
+      order: [["createdAt", "ASC"], ["id", "ASC"]],
       include: [
         {
           model: Post,
@@ -1153,6 +1198,7 @@ export const rejectRequest = async (req, res) => {
     res.status(500).json({ success: false });
   }
 };
+
 // ============================================================
 // 🔥 REACT TO MESSAGE (Add / Update / Remove Emoji)
 // ============================================================
