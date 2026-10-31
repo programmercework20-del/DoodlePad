@@ -593,7 +593,7 @@ export const sendMessage = async (req, res) => {
 };
 
 // ============================================================
-// 🔥 SEND CARD MESSAGE (With Smart Fallback & Reply-to-Message)
+// 🔥 SEND CARD MESSAGE (With Parallel Processing, CDN & Reply-to)
 // ============================================================
 export const sendCardMessage = async (req, res) => {
   try {
@@ -612,7 +612,6 @@ export const sendCardMessage = async (req, res) => {
 
     console.log("📨 [sendCardMessage] Incoming body:", JSON.stringify(req.body));
 
-    // 🔥 SMART TARGET RESOLUTION
     let { receiverId, conversationId } = await resolveChatTargets({
       senderId,
       body: req.body,
@@ -632,7 +631,6 @@ export const sendCardMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid replyToId format" });
     }
 
-    // 🛡️ SECURITY GUARD: Check block status
     const blockCheck = await Block.findOne({
       where: {
         [Op.or]: [
@@ -646,7 +644,6 @@ export const sendCardMessage = async (req, res) => {
       return res.status(403).json({ success: false, message: "Message cannot be sent due to block status." });
     }
 
-    // Ensure conversation exists
     let conversation = conversationId ? await Conversation.findByPk(conversationId) : null;
     if (!conversation) {
       conversation = await findSharedConversation(senderId, receiverId);
@@ -663,7 +660,6 @@ export const sendCardMessage = async (req, res) => {
     }
     conversationId = conversation.id;
 
-    // 🔥 VALIDATE & FETCH ORIGINAL REPLY MESSAGE (SECURITY GUARD)
     let populatedReplyTo = null;
     if (cleanReplyToId) {
       const originalMessage = await Message.findOne({
@@ -684,157 +680,143 @@ export const sendCardMessage = async (req, res) => {
       populatedReplyTo = sanitizeReplyObject(originalMessage);
     }
 
-    let mainMediaUrl = null;
-    let finalAudioUrl = null;
-    let finalAudioDuration = 0;
+    // 🔥 CDN Base URL (Should ideally be imported, but defined here for safety)
+    const CDN_BASE_URL = "http://34.160.65.14";
 
-    // 🖼️ 1. HANDLE MAIN MEDIA (IMAGE / DOODLE)
-    if (cardType === "image" && req.files?.image) {
-      const imageFile = req.files.image[0];
-      const fileName = `message_images/card_${senderId}_${Date.now()}.jpg`;
-      const blob = bucket.file(fileName);
-      await blob.save(imageFile.buffer, { metadata: { contentType: imageFile.mimetype } });
-      mainMediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    } 
-    else if (cardType === "doodle" && doodleData) {
-      const parsedDoodlePaths = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
-      if (Array.isArray(parsedDoodlePaths) && parsedDoodlePaths.length > 0) {
-        const imageBuffer = await generateDoodleImage(parsedDoodlePaths); 
-        if (imageBuffer) {
-          const fileName = `message_doodles/card_${senderId}_${Date.now()}.webp`;
-          const blob = bucket.file(fileName);
-          await blob.save(imageBuffer, { metadata: { contentType: 'image/webp' } });
-          mainMediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    // 🚀 PRO-LEVEL: PARALLEL MEDIA & AUDIO PROCESSING
+    const processMainMedia = async () => {
+      if (cardType === "image" && req.files?.image) {
+        const imageFile = req.files.image[0];
+        const fileName = `message_images/card_${senderId}_${Date.now()}.jpg`;
+        const blob = bucket.file(fileName);
+        await blob.save(imageFile.buffer, { metadata: { contentType: imageFile.mimetype } });
+        return `${CDN_BASE_URL}/${fileName}`;
+      } 
+      if (cardType === "doodle" && doodleData) {
+        const parsedDoodlePaths = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
+        if (Array.isArray(parsedDoodlePaths) && parsedDoodlePaths.length > 0) {
+          const imageBuffer = await generateDoodleImage(parsedDoodlePaths); 
+          if (imageBuffer) {
+            const fileName = `message_doodles/card_${senderId}_${Date.now()}.webp`;
+            const blob = bucket.file(fileName);
+            await blob.save(imageBuffer, { metadata: { contentType: 'image/webp' } });
+            return `${CDN_BASE_URL}/${fileName}`;
+          }
         }
       }
-    }
+      return null;
+    };
 
-    // 🎵 2. HANDLE CAPTION AUDIO (PRO-LEVEL FRAME-ACCURATE TRIM & UPLOAD)
-    if (req.files && req.files.audio && req.files.audio.length > 0) {
-      const audioFile = req.files.audio[0];
-      const originalExt = path.extname(audioFile.originalname || "").toLowerCase() || ".mp3";
-      const outExt = ".m4a";
+    const processAudio = async () => {
+      if (req.files && req.files.audio && req.files.audio.length > 0) {
+        const audioFile = req.files.audio[0];
+        const originalExt = path.extname(audioFile.originalname || "").toLowerCase() || ".mp3";
+        const outExt = ".m4a";
 
-      const tempAudioPath = path.join(os.tmpdir(), `temp_card_a_${Date.now()}${originalExt}`);
-      const processedAudioPath = path.join(os.tmpdir(), `proc_card_a_${Date.now()}${outExt}`);
-      let uploadBuffer = audioFile.buffer;
-      let finalContentType = "audio/mp4";
+        const tempAudioPath = path.join(os.tmpdir(), `temp_card_a_${Date.now()}${originalExt}`);
+        const processedAudioPath = path.join(os.tmpdir(), `proc_card_a_${Date.now()}${outExt}`);
+        let uploadBuffer = audioFile.buffer;
+        let finalContentType = "audio/mp4";
+        let localDuration = 0;
 
-      // 🔥 Smart Trim Parameter Resolution (Handles all possible FE field names)
-      const rawStart =
-        audioTrimStart ??
-        req.body.trimStartSecs ??
-        req.body.trimStart ??
-        req.body.bgmTrimStart ??
-        req.body.startTime ??
-        0;
+        const rawStart = audioTrimStart ?? req.body.trimStartSecs ?? req.body.trimStart ?? req.body.bgmTrimStart ?? req.body.startTime ?? 0;
+        const rawDuration = audioDuration ?? req.body.durationSecs ?? req.body.trimDuration ?? req.body.bgmDuration ?? req.body.duration ?? null;
+        const rawEnd = req.body.audioTrimEnd ?? req.body.trimEndSecs ?? req.body.trimEnd ?? req.body.endTime ?? null;
 
-      const rawDuration =
-        audioDuration ??
-        req.body.durationSecs ??
-        req.body.trimDuration ??
-        req.body.bgmDuration ??
-        req.body.duration ??
-        null;
+        let trimStart = parseFloat(rawStart);
+        if (isNaN(trimStart) || trimStart < 0) trimStart = 0;
 
-      const rawEnd =
-        req.body.audioTrimEnd ??
-        req.body.trimEndSecs ??
-        req.body.trimEnd ??
-        req.body.endTime ??
-        null;
-
-      let trimStart = parseFloat(rawStart);
-      if (isNaN(trimStart) || trimStart < 0) trimStart = 0;
-
-      let trimDuration = rawDuration !== null && rawDuration !== undefined ? parseFloat(rawDuration) : null;
-      if (trimDuration !== null && (isNaN(trimDuration) || trimDuration <= 0)) {
-        trimDuration = null;
-      }
-
-      // Agar FE ne duration ki jagah start aur end time bheja hai (e.g., start: 10, end: 25)
-      if (!trimDuration && rawEnd !== null && rawEnd !== undefined) {
-        const parsedEnd = parseFloat(rawEnd);
-        if (!isNaN(parsedEnd) && parsedEnd > trimStart) {
-          trimDuration = parsedEnd - trimStart;
+        let trimDuration = rawDuration !== null && rawDuration !== undefined ? parseFloat(rawDuration) : null;
+        if (trimDuration !== null && (isNaN(trimDuration) || trimDuration <= 0)) {
+          trimDuration = null;
         }
-      }
 
-      console.log(`✂️ [CARD AUDIO TRIM] File: ${audioFile.originalname} | Start: ${trimStart}s | Duration: ${trimDuration}s`);
+        if (!trimDuration && rawEnd !== null && rawEnd !== undefined) {
+          const parsedEnd = parseFloat(rawEnd);
+          if (!isNaN(parsedEnd) && parsedEnd > trimStart) {
+            trimDuration = parsedEnd - trimStart;
+          }
+        }
 
-      try {
-        fs.writeFileSync(tempAudioPath, audioFile.buffer);
+        try {
+          fs.writeFileSync(tempAudioPath, audioFile.buffer);
 
-        // Probe actual source duration for safety guard
-        const sourceDuration = await new Promise((resolve) => {
-          ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
-            if (err || !metadata?.format?.duration) resolve(0);
-            else resolve(parseFloat(metadata.format.duration) || 0);
+          const sourceDuration = await new Promise((resolve) => {
+            ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
+              if (err || !metadata?.format?.duration) resolve(0);
+              else resolve(parseFloat(metadata.format.duration) || 0);
+            });
           });
-        });
 
-        if (sourceDuration > 0 && trimStart >= sourceDuration) {
-          console.warn(`⚠️ [CARD AUDIO TRIM] trimStart (${trimStart}s) >= sourceDuration (${sourceDuration}s). Resetting to 0.`);
-          trimStart = 0;
+          if (sourceDuration > 0 && trimStart >= sourceDuration) {
+            console.warn(`⚠️ [CARD AUDIO TRIM] trimStart (${trimStart}s) >= sourceDuration (${sourceDuration}s). Resetting to 0.`);
+            trimStart = 0;
+          }
+
+          if (sourceDuration > 0 && trimDuration && (trimStart + trimDuration > sourceDuration)) {
+            trimDuration = Math.max(0.5, sourceDuration - trimStart);
+          }
+
+          await new Promise((resolve, reject) => {
+            let ffCommand = ffmpeg(tempAudioPath);
+            if (trimStart > 0) ffCommand = ffCommand.setStartTime(trimStart);
+            if (trimDuration && trimDuration > 0) ffCommand = ffCommand.setDuration(trimDuration);
+
+            ffCommand
+              .outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
+              .save(processedAudioPath)
+              .on('end', resolve)
+              .on('error', reject);
+          });
+
+          uploadBuffer = fs.readFileSync(processedAudioPath);
+
+          localDuration = await new Promise((resolve) => {
+            ffmpeg.ffprobe(processedAudioPath, (err, metadata) => {
+              if (err || !metadata?.format?.duration) resolve(trimDuration ? Math.round(trimDuration) : 0);
+              else resolve(Math.round(parseFloat(metadata.format.duration)));
+            });
+          });
+
+        } catch (e) {
+          console.error("⚠️ Backend Card Audio Trim Error:", e.message);
+          finalContentType = audioFile.mimetype || "audio/mp4";
+          localDuration = await new Promise((resolve) => {
+            ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
+              if (err || !metadata?.format?.duration) resolve(0);
+              else resolve(Math.round(parseFloat(metadata.format.duration)));
+            });
+          });
+        } finally {
+          if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
+          if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
         }
 
-        if (sourceDuration > 0 && trimDuration && (trimStart + trimDuration > sourceDuration)) {
-          trimDuration = Math.max(0.5, sourceDuration - trimStart);
-        }
-
-        // Re-encode to AAC (.m4a) and strip cover art (-vn) for exact trimming across MP3/WAV/M4A
-        await new Promise((resolve, reject) => {
-          let ffCommand = ffmpeg(tempAudioPath);
-          if (trimStart > 0) ffCommand = ffCommand.setStartTime(trimStart);
-          if (trimDuration && trimDuration > 0) ffCommand = ffCommand.setDuration(trimDuration);
-
-          ffCommand
-            .outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
-            .save(processedAudioPath)
-            .on('end', resolve)
-            .on('error', reject);
-        });
-
-        uploadBuffer = fs.readFileSync(processedAudioPath);
-
-        finalAudioDuration = await new Promise((resolve) => {
-          ffmpeg.ffprobe(processedAudioPath, (err, metadata) => {
-            if (err || !metadata?.format?.duration) {
-              resolve(trimDuration ? Math.round(trimDuration) : 0);
-            } else {
-              resolve(Math.round(parseFloat(metadata.format.duration)));
-            }
-          });
-        });
-
-        console.log(`✅ [CARD AUDIO TRIM SUCCESS] Trimmed Duration: ${finalAudioDuration}s`);
-
-      } catch (e) {
-        console.error("⚠️ Backend Card Audio Trim Error:", e.message);
-        finalContentType = audioFile.mimetype || "audio/mp4";
-        finalAudioDuration = await new Promise((resolve) => {
-          ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
-            if (err || !metadata?.format?.duration) resolve(0);
-            else resolve(Math.round(parseFloat(metadata.format.duration)));
-          });
-        });
-      } finally {
-        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
-        if (fs.existsSync(processedAudioPath)) fs.unlinkSync(processedAudioPath);
+        const fileName = `message_audios/card_${senderId}_${Date.now()}_audio${outExt}`;
+        const blob = bucket.file(fileName);
+        await blob.save(uploadBuffer, { metadata: { contentType: finalContentType } });
+        return { 
+          url: `${CDN_BASE_URL}/${fileName}`, 
+          duration: localDuration 
+        };
       }
+      return { url: null, duration: 0 };
+    };
 
-      const fileName = `message_audios/card_${senderId}_${Date.now()}_audio${outExt}`;
-      const blob = bucket.file(fileName);
-      await blob.save(uploadBuffer, { metadata: { contentType: finalContentType } });
-      finalAudioUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    }
+    // 🔥 EXECUTE BOTH UPLOADS IN PARALLEL (Cuts wait time in half)
+    const [mainMediaUrl, audioData] = await Promise.all([
+      processMainMedia(),
+      processAudio()
+    ]);
+
+    const finalAudioUrl = audioData.url;
+    const finalAudioDuration = audioData.duration;
 
     let parsedDoodleData = null;
     if (cardType === "doodle" && doodleData) {
       parsedDoodleData = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
     }
 
-    // 🛠️ 3. BUILD JSONB PAYLOAD & SAVE MESSAGE
     const cardPayload = [{
       type: cardType,
       mediaUrl: mainMediaUrl,
@@ -859,7 +841,6 @@ export const sendCardMessage = async (req, res) => {
       lastMessageAt: new Date()
     }, { where: { id: conversationId } });
 
-    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS (Multi-Device Compatible + Correlation ID)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
