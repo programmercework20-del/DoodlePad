@@ -591,9 +591,8 @@ export const sendMessage = async (req, res) => {
     return res.status(500).json({ success: false, message: "Send message failed", error: err.message });
   }
 };
-
 // ============================================================
-// 🔥 SEND CARD MESSAGE (With Parallel Processing, CDN & Reply-to)
+// 🔥 SEND CARD MESSAGE (With JSON Direct Upload, Fallback & Parallel Media)
 // ============================================================
 export const sendCardMessage = async (req, res) => {
   try {
@@ -680,11 +679,18 @@ export const sendCardMessage = async (req, res) => {
       populatedReplyTo = sanitizeReplyObject(originalMessage);
     }
 
-    // 🔥 CDN Base URL (Should ideally be imported, but defined here for safety)
+    // 🔥 CDN Base URL
     const CDN_BASE_URL = "http://34.160.65.14";
 
-    // 🚀 PRO-LEVEL: PARALLEL MEDIA & AUDIO PROCESSING
+    // 🚀 PRO-LEVEL: PARALLEL MEDIA & AUDIO PROCESSING (Supports JSON & Multipart)
     const processMainMedia = async () => {
+      // 1. Direct JSON check (Fast Path)
+      if (req.body.mainMediaUrl || req.body.uploadedImageName) {
+        const raw = req.body.mainMediaUrl || req.body.uploadedImageName;
+        return raw.startsWith('http') ? raw : `${CDN_BASE_URL}/${raw}`;
+      }
+
+      // 2. Fallback Multipart (Legacy Path)
       if (cardType === "image" && req.files?.image) {
         const imageFile = req.files.image[0];
         const fileName = `message_images/card_${senderId}_${Date.now()}.jpg`;
@@ -708,6 +714,16 @@ export const sendCardMessage = async (req, res) => {
     };
 
     const processAudio = async () => {
+      // 1. Direct JSON check (Fast Path)
+      if (req.body.audioUrl || req.body.uploadedAudioName) {
+        const raw = req.body.audioUrl || req.body.uploadedAudioName;
+        return {
+          url: raw.startsWith('http') ? raw : `${CDN_BASE_URL}/${raw}`,
+          duration: parseFloat(req.body.audioDuration || 0)
+        };
+      }
+
+      // 2. Fallback Multipart (Legacy Path)
       if (req.files && req.files.audio && req.files.audio.length > 0) {
         const audioFile = req.files.audio[0];
         const originalExt = path.extname(audioFile.originalname || "").toLowerCase() || ".mp3";
@@ -817,6 +833,7 @@ export const sendCardMessage = async (req, res) => {
       parsedDoodleData = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
     }
 
+    // 🛠️ 3. BUILD JSONB PAYLOAD & SAVE MESSAGE
     const cardPayload = [{
       type: cardType,
       mediaUrl: mainMediaUrl,
@@ -841,6 +858,7 @@ export const sendCardMessage = async (req, res) => {
       lastMessageAt: new Date()
     }, { where: { id: conversationId } });
 
+    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS (Multi-Device Compatible + Correlation ID)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
