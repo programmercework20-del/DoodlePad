@@ -14,14 +14,12 @@ import Block from "../../models/Block.js";
 // 🔥 Doodle image rasterization
 import { generateDoodleImage } from "../../utils/doodleRenderer.js"; 
 
-// ✅ Universal UUID validator
 const validateUUID = (uuid) => {
   if (!uuid || typeof uuid !== "string") return false;
   const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return re.test(uuid.trim());
 };
 
-// ✅ Clean UUID input (filters out "undefined", "null", empty strings, objects)
 const cleanUuidInput = (rawVal) => {
   if (!rawVal) return null;
   if (typeof rawVal === "object" && rawVal.id) {
@@ -32,7 +30,6 @@ const cleanUuidInput = (rawVal) => {
   return validateUUID(str) ? str : null;
 };
 
-// ✅ Extract client-generated correlation ID for Optimistic UI reconciliation (Zero-Harm Pass-Through)
 const extractClientMessageId = (body = {}) => {
   const raw =
     body.clientMessageId ??
@@ -47,7 +44,6 @@ const extractClientMessageId = (body = {}) => {
   return str;
 };
 
-// 🔥 HELPER 1: Clear Redis Conversation Cache (both v1 and v2 keys)
 const clearConversationCache = async (senderId, receiverId) => {
   if (!redisClient?.isReady) return;
   try {
@@ -63,7 +59,6 @@ const clearConversationCache = async (senderId, receiverId) => {
   }
 };
 
-// 🔥 HELPER 2: Find existing 1-on-1 conversation between two users
 const findSharedConversation = async (userA, userB, transaction = null) => {
   if (!validateUUID(userA) || !validateUUID(userB)) return null;
 
@@ -88,14 +83,12 @@ const findSharedConversation = async (userA, userB, transaction = null) => {
   return Conversation.findByPk(match.conversationId, { transaction });
 };
 
-// 🔥 HELPER 3: Smart Resolver for GET /messages/:id & POST /messages/seen/:id
 const resolveConversationFromParam = async (rawParamId, currentUserId, transaction = null) => {
   const paramId = cleanUuidInput(rawParamId);
   if (!paramId) {
     return { isValidFormat: false, conversation: null, isParticipant: false, peerUserId: null };
   }
 
-  // Case 1: Check if paramId is an actual Conversation ID
   const existingConv = await Conversation.findByPk(paramId, { transaction });
   if (existingConv) {
     let isParticipant = true;
@@ -119,7 +112,6 @@ const resolveConversationFromParam = async (rawParamId, currentUserId, transacti
     };
   }
 
-  // Case 2: paramId is NOT in Conversations -> FE passed a User UUID (e.g., 5a03977b-...)!
   if (currentUserId) {
     const sharedConv = await findSharedConversation(currentUserId, paramId, transaction);
     if (sharedConv) {
@@ -131,7 +123,6 @@ const resolveConversationFromParam = async (rawParamId, currentUserId, transacti
       };
     }
 
-    // Check if paramId is a valid User in DB (brand new chat with 0 messages)
     const targetUser = await User.findByPk(paramId, { attributes: ["id"], transaction });
     if (targetUser) {
       return {
@@ -146,7 +137,6 @@ const resolveConversationFromParam = async (rawParamId, currentUserId, transacti
   return { isValidFormat: true, conversation: null, isParticipant: false, peerUserId: null };
 };
 
-// 🔥 HELPER 4: Bulletproof Target Resolution (Auto-Finds or Auto-Creates Conversation)
 const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}, cleanReplyToId, transaction = null }) => {
   let receiverId =
     cleanUuidInput(body.receiverId) ||
@@ -168,12 +158,10 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
     cleanUuidInput(query.conversationId) ||
     null;
 
-  // Guard: If receiverId is same as senderId, reset it
   if (receiverId && receiverId === senderId) {
     receiverId = null;
   }
 
-  // Layer A: Fallback via replyToId
   if (cleanReplyToId && (!receiverId || !conversationId)) {
     const repliedMsg = await Message.findByPk(cleanReplyToId, { transaction });
     if (repliedMsg) {
@@ -182,11 +170,9 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
     }
   }
 
-  // Layer B: Check if conversationId is a REAL conversation in DB
   let realConv = conversationId ? await Conversation.findByPk(conversationId, { transaction }) : null;
 
   if (realConv) {
-    // Real conversation found -> ensure receiverId is populated
     if (!receiverId) {
       const otherParticipant = await ConversationParticipant.findOne({
         where: { conversationId: realConv.id, userId: { [Op.ne]: senderId } },
@@ -195,8 +181,6 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
       receiverId = otherParticipant ? otherParticipant.userId : null;
     }
   } else {
-    // 🚨 conversationId passed by FE is either fake or a User ID!
-    // Let's treat conversationId or receiverId as the peer's userId if valid.
     let peerId = receiverId;
     if (!peerId && conversationId && conversationId !== senderId) {
       const userCheck = await User.findByPk(conversationId, { attributes: ["id"], transaction });
@@ -207,7 +191,6 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
 
     if (peerId && peerId !== senderId) {
       receiverId = peerId;
-      // Find or create the actual shared conversation between sender and peer
       let sharedConv = await findSharedConversation(senderId, receiverId, transaction);
       if (!sharedConv) {
         const follow = await Follower.findOne({
@@ -233,7 +216,6 @@ const resolveChatTargets = async ({ senderId, body = {}, params = {}, query = {}
   };
 };
 
-// 🔥 HELPER 5: Reusable Sequelize Include for Populated Reply Object
 const getReplyIncludeConfig = () => ({
   model: Message,
   as: "replyTo",
@@ -277,7 +259,6 @@ const getReplyIncludeConfig = () => ({
   ]
 });
 
-// 🔥 HELPER 6: Gracefully sanitize deleted original messages
 const sanitizeReplyObject = (replyMsg) => {
   if (!replyMsg) return null;
   const plain = typeof replyMsg.get === "function" ? replyMsg.get({ plain: true }) : { ...replyMsg };
@@ -306,7 +287,6 @@ const sanitizeReplyObject = (replyMsg) => {
   return plain;
 };
 
-// 🔥 HELPER 7: Format message record consistently for API & Socket
 const formatMessagePayload = (msgInstanceOrPlain) => {
   const plain = typeof msgInstanceOrPlain.get === "function"
     ? msgInstanceOrPlain.get({ plain: true })
@@ -317,6 +297,10 @@ const formatMessagePayload = (msgInstanceOrPlain) => {
   return plain;
 };
 
+
+// ============================================================
+// 🔥 SEND MESSAGE (Supports Direct JSON & Legacy Multipart)
+// ============================================================
 export const sendMessage = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -325,10 +309,10 @@ export const sendMessage = async (req, res) => {
     const { content, type = "text", postId, replyToId } = req.body;
     const cleanReplyToId = cleanUuidInput(replyToId || req.body?.replyTo?.id);
     const clientMessageId = extractClientMessageId(req.body);
+    const CDN_BASE_URL = "http://34.160.65.14";
 
     console.log("📨 [sendMessage] Incoming body:", JSON.stringify(req.body));
 
-    // 🔥 SMART TARGET RESOLUTION
     const { receiverId, conversationId } = await resolveChatTargets({
       senderId,
       body: req.body,
@@ -338,14 +322,9 @@ export const sendMessage = async (req, res) => {
       transaction
     });
 
-    // 1. VALIDATION
     if (!receiverId) {
       await transaction.rollback();
-      console.warn("⚠️ [sendMessage] Could not resolve receiverId from payload:", req.body);
-      return res.status(400).json({
-        success: false,
-        message: "Valid receiverId is required"
-      });
+      return res.status(400).json({ success: false, message: "Valid receiverId is required" });
     }
 
     if ((req.body.replyToId || req.body?.replyTo?.id) && !cleanReplyToId) {
@@ -353,12 +332,12 @@ export const sendMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid replyToId format" });
     }
 
-    if (!content && !req.file && type !== "shared_post") {
+    // Require content OR a file OR a direct media URL OR a shared post
+    if (!content && !req.file && !req.body.mediaUrl && !req.body.uploadedFileName && type !== "shared_post") {
       await transaction.rollback();
-      return res.status(400).json({ success: false, message: "Message content or file is required" });
+      return res.status(400).json({ success: false, message: "Message content or media is required" });
     }
 
-    // 🔥 1.5 BLOCK STATUS CHECK (SECURITY GUARD)
     const blockCheck = await Block.findOne({
       where: {
         [Op.or]: [
@@ -371,10 +350,7 @@ export const sendMessage = async (req, res) => {
 
     if (blockCheck) {
       await transaction.rollback();
-      return res.status(403).json({ 
-        success: false, 
-        message: "Message cannot be sent due to block status." 
-      });
+      return res.status(403).json({ success: false, message: "Message cannot be sent due to block status." });
     }
 
     let mediaUrl = null;
@@ -382,13 +358,25 @@ export const sendMessage = async (req, res) => {
     let finalType = type;
     let duration = null;
 
-    // 2. FILE UPLOAD & MEDIA LOGIC
-    if (req.file) {
+    // 🔥 2. FILE UPLOAD & MEDIA LOGIC (UPGRADED FOR JSON MIGRATION)
+    // Route A: Direct JSON Upload (Fast)
+    if (req.body.mediaUrl || req.body.uploadedFileName) {
+      const rawUrl = req.body.mediaUrl || req.body.uploadedFileName;
+      mediaUrl = rawUrl.startsWith('http') ? rawUrl : `${CDN_BASE_URL}/${rawUrl}`;
+      finalType = type; // FE determines type
+      duration = req.body.duration ? parseFloat(req.body.duration) : null;
+      
+      if (req.body.thumbnailUrl || req.body.thumbnailFileName) {
+         const rawThumb = req.body.thumbnailUrl || req.body.thumbnailFileName;
+         thumbnail = rawThumb.startsWith('http') ? rawThumb : `${CDN_BASE_URL}/${rawThumb}`;
+      }
+    }
+    // Route B: Legacy Multipart Form Data (Fallback)
+    else if (req.file) {
       const fileName = `chat_media/chat_${Date.now()}_${req.file.originalname}`;
       const blob = bucket.file(fileName);
       await blob.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
-      mediaUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-
+      mediaUrl = `${CDN_BASE_URL}/${fileName}`;
       const mime = req.file.mimetype;
       
       if (mime.startsWith("image")) {
@@ -410,7 +398,6 @@ export const sendMessage = async (req, res) => {
               }
             });
           });
-
           if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
         } catch (e) {
           console.error("⚠️ Audio duration calculation failed:", e);
@@ -442,7 +429,7 @@ export const sendMessage = async (req, res) => {
           await thumbBlob.save(fs.readFileSync(tempThumbPath), {
             metadata: { contentType: 'image/jpeg' }
           });
-          thumbnail = `https://storage.googleapis.com/${bucket.name}/${thumbFileName}`;
+          thumbnail = `${CDN_BASE_URL}/${thumbFileName}`;
 
           if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
           if (fs.existsSync(tempThumbPath)) fs.unlinkSync(tempThumbPath);
@@ -476,24 +463,17 @@ export const sendMessage = async (req, res) => {
       ], { transaction });
     }
 
-    // 🔥 3.5 VALIDATE & FETCH ORIGINAL REPLY MESSAGE (SECURITY GUARD)
     let populatedReplyTo = null;
     if (cleanReplyToId) {
       const originalMessage = await Message.findOne({
-        where: {
-          id: cleanReplyToId,
-          conversationId: conversation.id
-        },
+        where: { id: cleanReplyToId, conversationId: conversation.id },
         include: getReplyIncludeConfig().include,
         transaction
       });
 
       if (!originalMessage) {
         await transaction.rollback();
-        return res.status(400).json({
-          success: false,
-          message: "Referenced reply message not found in this conversation"
-        });
+        return res.status(400).json({ success: false, message: "Referenced reply message not found in this conversation" });
       }
 
       populatedReplyTo = sanitizeReplyObject(originalMessage);
@@ -526,7 +506,6 @@ export const sendMessage = async (req, res) => {
 
     await transaction.commit();
 
-    // 🚀 BACKGROUND TASKS (PRO-LEVEL MULTI-DEVICE SOCKET EMISSION + CORRELATION ID)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
@@ -543,17 +522,12 @@ export const sendMessage = async (req, res) => {
       const onlineUsers = getOnlineUsers();
       const isReceiverOnline = onlineUsers.has(receiverId);
 
-      // Update status BEFORE emitting receive_message and returning HTTP response to prevent status race
       if (isReceiverOnline) {
         messageData.status = "delivered";
         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
       }
 
-      // Emit to: (1) Conversation Room, (2) Receiver's Global Room, (3) Sender's Global Room
-      io.to(conversation.id)
-        .to(`user_${receiverId}`)
-        .to(`user_${senderId}`)
-        .emit("receive_message", messageData);
+      io.to(conversation.id).to(`user_${receiverId}`).to(`user_${senderId}`).emit("receive_message", messageData);
 
       if (isReceiverOnline) {
         io.to(`user_${senderId}`).emit("message_status_update", {
@@ -565,7 +539,7 @@ export const sendMessage = async (req, res) => {
         });
       }
     } catch (socketErr) {
-      console.error("⚠️ Socket delivery module failure context:", socketErr.message);
+      console.error("⚠️ Socket delivery module failure:", socketErr.message);
     }
 
     createNotification({
@@ -591,8 +565,10 @@ export const sendMessage = async (req, res) => {
     return res.status(500).json({ success: false, message: "Send message failed", error: err.message });
   }
 };
+
+
 // ============================================================
-// 🔥 SEND CARD MESSAGE (With JSON Direct Upload, Fallback & Parallel Media)
+// 🔥 SEND CARD MESSAGE (Supports Direct JSON & Legacy Multipart)
 // ============================================================
 export const sendCardMessage = async (req, res) => {
   try {
@@ -608,6 +584,7 @@ export const sendCardMessage = async (req, res) => {
 
     const cleanReplyToId = cleanUuidInput(replyToId || req.body?.replyTo?.id);
     const clientMessageId = extractClientMessageId(req.body);
+    const CDN_BASE_URL = "http://34.160.65.14";
 
     console.log("📨 [sendCardMessage] Incoming body:", JSON.stringify(req.body));
 
@@ -620,10 +597,7 @@ export const sendCardMessage = async (req, res) => {
     });
 
     if (!receiverId || !cardType) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields (receiverId or cardType)"
-      });
+      return res.status(400).json({ success: false, message: "Missing required fields (receiverId or cardType)" });
     }
 
     if ((req.body.replyToId || req.body?.replyTo?.id) && !cleanReplyToId) {
@@ -662,35 +636,26 @@ export const sendCardMessage = async (req, res) => {
     let populatedReplyTo = null;
     if (cleanReplyToId) {
       const originalMessage = await Message.findOne({
-        where: {
-          id: cleanReplyToId,
-          conversationId
-        },
+        where: { id: cleanReplyToId, conversationId },
         include: getReplyIncludeConfig().include
       });
 
       if (!originalMessage) {
-        return res.status(400).json({
-          success: false,
-          message: "Referenced reply message not found in this conversation"
-        });
+        return res.status(400).json({ success: false, message: "Referenced reply message not found in this conversation" });
       }
 
       populatedReplyTo = sanitizeReplyObject(originalMessage);
     }
 
-    // 🔥 CDN Base URL
-    const CDN_BASE_URL = "http://34.160.65.14";
-
-    // 🚀 PRO-LEVEL: PARALLEL MEDIA & AUDIO PROCESSING (Supports JSON & Multipart)
+    // 🚀 PRO-LEVEL: PARALLEL MEDIA & AUDIO PROCESSING (JSON & Multipart)
     const processMainMedia = async () => {
-      // 1. Direct JSON check (Fast Path)
+      // 1. Direct JSON Upload check
       if (req.body.mainMediaUrl || req.body.uploadedImageName) {
         const raw = req.body.mainMediaUrl || req.body.uploadedImageName;
         return raw.startsWith('http') ? raw : `${CDN_BASE_URL}/${raw}`;
       }
 
-      // 2. Fallback Multipart (Legacy Path)
+      // 2. Fallback Multipart
       if (cardType === "image" && req.files?.image) {
         const imageFile = req.files.image[0];
         const fileName = `message_images/card_${senderId}_${Date.now()}.jpg`;
@@ -714,7 +679,7 @@ export const sendCardMessage = async (req, res) => {
     };
 
     const processAudio = async () => {
-      // 1. Direct JSON check (Fast Path)
+      // 1. Direct JSON Upload check
       if (req.body.audioUrl || req.body.uploadedAudioName) {
         const raw = req.body.audioUrl || req.body.uploadedAudioName;
         return {
@@ -723,7 +688,7 @@ export const sendCardMessage = async (req, res) => {
         };
       }
 
-      // 2. Fallback Multipart (Legacy Path)
+      // 2. Fallback Multipart
       if (req.files && req.files.audio && req.files.audio.length > 0) {
         const audioFile = req.files.audio[0];
         const originalExt = path.extname(audioFile.originalname || "").toLowerCase() || ".mp3";
@@ -765,7 +730,6 @@ export const sendCardMessage = async (req, res) => {
           });
 
           if (sourceDuration > 0 && trimStart >= sourceDuration) {
-            console.warn(`⚠️ [CARD AUDIO TRIM] trimStart (${trimStart}s) >= sourceDuration (${sourceDuration}s). Resetting to 0.`);
             trimStart = 0;
           }
 
@@ -777,16 +741,11 @@ export const sendCardMessage = async (req, res) => {
             let ffCommand = ffmpeg(tempAudioPath);
             if (trimStart > 0) ffCommand = ffCommand.setStartTime(trimStart);
             if (trimDuration && trimDuration > 0) ffCommand = ffCommand.setDuration(trimDuration);
-
-            ffCommand
-              .outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
-              .save(processedAudioPath)
-              .on('end', resolve)
-              .on('error', reject);
+            ffCommand.outputOptions(['-c:a', 'aac', '-b:a', '128k', '-vn', '-movflags', '+faststart'])
+              .save(processedAudioPath).on('end', resolve).on('error', reject);
           });
 
           uploadBuffer = fs.readFileSync(processedAudioPath);
-
           localDuration = await new Promise((resolve) => {
             ffmpeg.ffprobe(processedAudioPath, (err, metadata) => {
               if (err || !metadata?.format?.duration) resolve(trimDuration ? Math.round(trimDuration) : 0);
@@ -795,7 +754,6 @@ export const sendCardMessage = async (req, res) => {
           });
 
         } catch (e) {
-          console.error("⚠️ Backend Card Audio Trim Error:", e.message);
           finalContentType = audioFile.mimetype || "audio/mp4";
           localDuration = await new Promise((resolve) => {
             ffmpeg.ffprobe(tempAudioPath, (err, metadata) => {
@@ -811,10 +769,7 @@ export const sendCardMessage = async (req, res) => {
         const fileName = `message_audios/card_${senderId}_${Date.now()}_audio${outExt}`;
         const blob = bucket.file(fileName);
         await blob.save(uploadBuffer, { metadata: { contentType: finalContentType } });
-        return { 
-          url: `${CDN_BASE_URL}/${fileName}`, 
-          duration: localDuration 
-        };
+        return { url: `${CDN_BASE_URL}/${fileName}`, duration: localDuration };
       }
       return { url: null, duration: 0 };
     };
@@ -833,7 +788,6 @@ export const sendCardMessage = async (req, res) => {
       parsedDoodleData = typeof doodleData === "string" ? JSON.parse(doodleData) : doodleData;
     }
 
-    // 🛠️ 3. BUILD JSONB PAYLOAD & SAVE MESSAGE
     const cardPayload = [{
       type: cardType,
       mediaUrl: mainMediaUrl,
@@ -858,7 +812,6 @@ export const sendCardMessage = async (req, res) => {
       lastMessageAt: new Date()
     }, { where: { id: conversationId } });
 
-    // 🚀 4. FIRE SOCKETS & NOTIFICATIONS (Multi-Device Compatible + Correlation ID)
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
@@ -880,10 +833,7 @@ export const sendCardMessage = async (req, res) => {
         await Message.update({ status: "delivered" }, { where: { id: message.id } }).catch(() => {});
       }
 
-      io.to(conversationId)
-        .to(`user_${receiverId}`)
-        .to(`user_${senderId}`)
-        .emit("receive_message", messageData);
+      io.to(conversationId).to(`user_${receiverId}`).to(`user_${senderId}`).emit("receive_message", messageData);
 
       if (isReceiverOnline) {
         io.to(`user_${senderId}`).emit("message_status_update", {
@@ -922,7 +872,7 @@ export const sendCardMessage = async (req, res) => {
 };
 
 // ============================================================
-// MARK SEEN (Auto-heals if FE passes userId instead of conversationId)
+// MARK SEEN
 // ============================================================
 export const markSeen = async (req, res) => {
   try {
@@ -975,9 +925,8 @@ export const markSeen = async (req, res) => {
   }
 };
 
-
 // ============================================================
-// GET MESSAGES (Auto-heals if FE passes userId + Populates replyTo)
+// GET MESSAGES
 // ============================================================
 export const getMessages = async (req, res) => {
   try {
@@ -1009,7 +958,6 @@ export const getMessages = async (req, res) => {
 
     const realConversationId = conversation.id;
 
-    // Auto-join user's active socket(s) to the real conversation room (Multi-Device Set Safe)
     try {
       const io = getIO();
       const onlineUsers = getOnlineUsers();
@@ -1059,7 +1007,6 @@ export const getMessages = async (req, res) => {
   }
 };
 
-
 // ============================================================
 // EDIT MESSAGE
 // ============================================================
@@ -1094,15 +1041,13 @@ export const editMessage = async (req, res) => {
   }
 };
 
-
 // ============================================================
-// 🔥 DELETE (UNSEND) MESSAGE - Pro Level
+// DELETE (UNSEND) MESSAGE
 // ============================================================
 export const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
 
-    // 1. Validation
     if (!validateUUID(messageId)) {
       return res.status(400).json({ success: false, message: "Invalid messageId format" });
     }
@@ -1113,12 +1058,10 @@ export const deleteMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: "Message not found" });
     }
 
-    // 2. Security: Only sender can unsend their own message
     if (String(message.senderId) !== String(req.user.id)) {
       return res.status(403).json({ success: false, message: "Not allowed to delete this message" });
     }
 
-    // 3. True Unsend: Wipe data for privacy & update status
     await message.update({ 
       status: "deleted",
       content: "🚫 This message was deleted",
@@ -1126,10 +1069,9 @@ export const deleteMessage = async (req, res) => {
       thumbnail: null,
       cardSlides: null,
       duration: null,
-      type: "text" // Reset type to text to avoid media rendering errors on FE
+      type: "text"
     });
 
-    // 4. Update Conversation's Last Message Preview (If this was the latest message)
     const conversation = await Conversation.findByPk(message.conversationId);
     if (conversation) {
       const lastMsg = await Message.findOne({
@@ -1138,14 +1080,12 @@ export const deleteMessage = async (req, res) => {
         raw: true
       });
       
-      // If the deleted message is still structurally the latest record
       if (lastMsg && String(lastMsg.id) === String(messageId)) {
         await conversation.update({ lastMessage: "🚫 This message was deleted" });
         await clearConversationCache(req.user.id, message.receiverId);
       }
     }
 
-    // 5. Fire Real-time Socket Event
     try {
       getIO()
         .to(message.conversationId)
@@ -1165,7 +1105,6 @@ export const deleteMessage = async (req, res) => {
     res.status(500).json({ success: false, message: "Delete failed" });
   }
 };
-
 
 // ============================================================
 // ACCEPT REQUEST
@@ -1199,15 +1138,14 @@ export const rejectRequest = async (req, res) => {
 };
 
 // ============================================================
-// 🔥 REACT TO MESSAGE (Add / Update / Remove Emoji)
+// REACT TO MESSAGE
 // ============================================================
 export const reactToMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
-    const { emoji } = req.body; // e.g., "❤️", "😂", or null (to remove)
+    const { emoji } = req.body;
     const userId = String(req.user.id);
 
-    // 1. Validation
     if (!validateUUID(messageId)) {
       return res.status(400).json({ success: false, message: "Invalid messageId format" });
     }
@@ -1217,32 +1155,27 @@ export const reactToMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: "Message not found" });
     }
 
-    // Security Check: Only sender or receiver can react to this message
     if (String(message.senderId) !== userId && String(message.receiverId) !== userId) {
       return res.status(403).json({ success: false, message: "Not authorized to react to this message" });
     }
 
-    // 2. Update Reaction Data (JSON map of userId -> emoji)
-    // Structured as: { "user-uuid": "❤️" }
     const currentReactions = message.reactions || {};
 
     if (emoji) {
-      currentReactions[userId] = emoji; // Add or Update
+      currentReactions[userId] = emoji;
     } else {
-      delete currentReactions[userId];  // Remove reaction if emoji is null/empty
+      delete currentReactions[userId];
     }
 
-    // Save back to DB (Sequelize specific way for JSON objects)
     message.reactions = currentReactions;
-    message.changed('reactions', true); // Force update JSON field
+    message.changed('reactions', true);
     await message.save();
 
-    // 3. Fire Real-time Socket Event
     try {
       getIO()
         .to(message.conversationId)
         .to(`user_${message.receiverId}`)
-        .to(message.senderId) // Send to both parties
+        .to(message.senderId)
         .emit("message_reaction", {
           messageId,
           conversationId: message.conversationId,
