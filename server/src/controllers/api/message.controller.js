@@ -510,6 +510,15 @@ export const sendMessage = async (req, res) => {
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
 
+    // 🔥 THE MAGIC FIX FOR FRONTEND CRASH
+    // Frontend ko render karne ke liye sender details chahiye hoti hain
+    messageData.sender = {
+      id: req.user.id,
+      name: req.user.name,
+      username: req.user.username,
+      profilePhoto: req.user.profilePhoto
+    };
+
     if (clientMessageId) {
       messageData.clientMessageId = clientMessageId;
       messageData.tempId = clientMessageId;
