@@ -506,18 +506,17 @@ export const sendMessage = async (req, res) => {
 
     await transaction.commit();
 
+    // 🔥 FIX 1: Fetch exact sender details from DB so frontend doesn't crash on undefined
+    const senderDetails = await User.findByPk(senderId, {
+      attributes: ["id", "name", "username", "profilePhoto"]
+    });
+
     const messageData = message.get({ plain: true });
     messageData.replyToId = cleanReplyToId;
     messageData.replyTo = populatedReplyTo;
 
     // 🔥 THE MAGIC FIX FOR FRONTEND CRASH
-    // Frontend ko render karne ke liye sender details chahiye hoti hain
-    messageData.sender = {
-      id: req.user.id,
-      name: req.user.name,
-      username: req.user.username,
-      profilePhoto: req.user.profilePhoto
-    };
+    messageData.sender = senderDetails ? senderDetails.get({ plain: true }) : null;
 
     if (clientMessageId) {
       messageData.clientMessageId = clientMessageId;
