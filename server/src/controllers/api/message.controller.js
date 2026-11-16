@@ -542,14 +542,29 @@ export const sendMessage = async (req, res) => {
       console.error("⚠️ Socket delivery module failure:", socketErr.message);
     }
 
-    createNotification({
-      senderId,
-      receiverId,
-      type: "MESSAGE",
-      conversationId: conversation.id,
-      messageContent: finalType === "shared_post" ? "Shared a post" : (content || ""),
-      messageType: finalType
-    }).catch(() => {});
+    // createNotification({
+    //   senderId,
+    //   receiverId,
+    //   type: "MESSAGE",
+    //   conversationId: conversation.id,
+    //   messageContent: finalType === "shared_post" ? "Shared a post" : (content || ""),
+    //   messageType: finalType
+    // }).catch(() => {});
+    setTimeout(async () => {
+      try {
+        await createNotification({
+          senderId,
+          receiverId,
+          type: "MESSAGE",
+          conversationId: conversation.id,
+          messageContent: finalType === "shared_post" ? "Shared a post" : (content || ""),
+          messageType: finalType
+        });
+      } catch (pushErr) {
+        // Now it catches the Push Error cleanly without affecting the socket!
+        console.error("⚠️ Push Notification failed (Ignored):", pushErr.message || pushErr);
+      }
+    }, 100); // Small 100ms delay
 
     return res.json({
       success: true,
